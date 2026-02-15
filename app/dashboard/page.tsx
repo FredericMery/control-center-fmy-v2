@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import FloatingButton from "@/components/FloatingButton";
+import Link from "next/link";
 
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
@@ -39,13 +40,13 @@ export default function DashboardPage() {
   const getStatusStyle = (status: string) => {
     switch (status) {
       case "done":
-        return "bg-green-100 text-green-600";
+        return "bg-green-500/20 text-green-400";
       case "in_progress":
-        return "bg-blue-100 text-blue-600";
+        return "bg-blue-500/20 text-blue-400";
       case "waiting":
-        return "bg-yellow-100 text-yellow-700";
+        return "bg-yellow-500/20 text-yellow-400";
       default:
-        return "bg-gray-100 text-gray-600";
+        return "bg-white/10 text-gray-300";
     }
   };
 
@@ -55,47 +56,44 @@ export default function DashboardPage() {
     subscribeRealtime();
   }, [user]);
 
+  // PRO actif par défaut
+  useEffect(() => {
+    setActiveType("pro");
+  }, []);
+
   return (
-    <div className="p-6">
+    <div className="min-h-screen bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#1e1b4b] text-white px-3 pt-6 pb-28">
 
-      {/* 🔥 TEST THEME CARRE */}
-      <div className="w-24 h-24 bg-[var(--primary)] rounded-xl mb-6" />
-
-      {/* TYPE SELECTOR */}
-      <div className="flex gap-4 mb-6">
-        <button
-          onClick={() => setActiveType("perso")}
-          className={`px-5 py-2 rounded-full text-sm font-medium transition ${
-            activeType === "perso"
-              ? "bg-[var(--primary)] text-white shadow"
-              : "bg-[var(--primary-soft)] text-gray-600"
-          }`}
-        >
-          Perso
-        </button>
-
+      {/* 🔥 QUICK ACCESS BAR */}
+      <div className="flex gap-3 mb-8">
         <button
           onClick={() => setActiveType("pro")}
-          className={`px-5 py-2 rounded-full text-sm font-medium transition ${
+          className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
             activeType === "pro"
-              ? "bg-[var(--primary)] text-white shadow"
-              : "bg-[var(--primary-soft)] text-gray-600"
+              ? "bg-indigo-600 shadow-lg"
+              : "bg-white/10 text-gray-300"
           }`}
         >
-          Pro
+          PRO
         </button>
-      </div>
 
-      {/* ARCHIVE TOGGLE */}
-      <div className="mb-4">
         <button
-          onClick={() => setShowArchived(!showArchived)}
-          className="text-sm text-gray-500 underline"
+          onClick={() => setActiveType("perso")}
+          className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
+            activeType === "perso"
+              ? "bg-indigo-600 shadow-lg"
+              : "bg-white/10 text-gray-300"
+          }`}
         >
-          {showArchived
-            ? "Voir tâches actives"
-            : "Voir archives"}
+          PERSO
         </button>
+
+        <Link
+          href="/dashboard/memoire"
+          className="flex-1 py-2 rounded-full text-sm font-medium bg-white/10 text-gray-300 text-center hover:bg-white/20 transition"
+        >
+          MÉMOIRE
+        </Link>
       </div>
 
       {/* TASK LIST */}
@@ -111,64 +109,63 @@ export default function DashboardPage() {
               <div
                 onClick={() =>
                   setSelectedTaskId(
-                    selectedTaskId === task.id
-                      ? null
-                      : task.id
+                    selectedTaskId === task.id ? null : task.id
                   )
                 }
-                className={`bg-[var(--card-bg)] p-4 rounded-2xl shadow-sm flex justify-between items-center cursor-pointer active:scale-[0.98] transition border-l-4 ${
+                className={`w-full bg-white/5 backdrop-blur-md p-5 rounded-2xl shadow-xl border-l-4 cursor-pointer transition active:scale-[0.98] ${
                   task.deadline &&
                   new Date(task.deadline) <
                     new Date(new Date().toDateString())
                     ? "border-red-500"
-                    : "border-[var(--border-soft)]"
+                    : "border-indigo-500"
                 }`}
               >
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-gray-800">
-                    {task.title}
-                  </span>
+                <div className="flex justify-between items-start">
 
-                  {task.deadline && (
+                  <div className="pr-4">
+                    <p className="text-base font-medium leading-snug">
+                      {task.title}
+                    </p>
+
+                    {task.deadline && (
+                      <p
+                        className={`text-xs mt-2 ${
+                          new Date(task.deadline) <
+                          new Date(new Date().toDateString())
+                            ? "text-red-400"
+                            : "text-gray-400"
+                        }`}
+                      >
+                        📅{" "}
+                        {new Date(task.deadline).toLocaleDateString("fr-FR")}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col items-end gap-2">
                     <span
-                      className={`text-[11px] mt-1 ${
-                        new Date(task.deadline) <
-                        new Date(new Date().toDateString())
-                          ? "text-red-500"
-                          : "text-gray-400"
-                      }`}
+                      className={`text-[11px] px-3 py-1 rounded-full ${getStatusStyle(
+                        task.status
+                      )}`}
                     >
-                      📅{" "}
-                      {new Date(
-                        task.deadline
-                      ).toLocaleDateString("fr-FR")}
+                      {task.status.replace("_", " ")}
                     </span>
-                  )}
-                </div>
 
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`text-[11px] px-2 py-0.5 rounded-full ${getStatusStyle(
-                      task.status
-                    )}`}
-                  >
-                    {task.status.replace("_", " ")}
-                  </span>
-
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteTask(task.id);
-                    }}
-                    className="text-gray-400 hover:text-red-500 transition"
-                  >
-                    🗑
-                  </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteTask(task.id);
+                      }}
+                      className="text-gray-500 hover:text-red-400 transition"
+                    >
+                      🗑
+                    </button>
+                  </div>
                 </div>
               </div>
 
               {selectedTaskId === task.id && (
-                <div className="mt-2 flex gap-2 flex-wrap">
+                <div className="mt-3 flex gap-2 flex-wrap">
                   {statuses.map((status) => (
                     <button
                       key={status}
@@ -178,8 +175,8 @@ export default function DashboardPage() {
                       }}
                       className={`px-3 py-1 text-xs rounded-full transition ${
                         status === task.status
-                          ? "bg-[var(--primary)] text-white"
-                          : "bg-[var(--primary-soft)] hover:bg-gray-300"
+                          ? "bg-indigo-600 text-white"
+                          : "bg-white/10 text-gray-300 hover:bg-white/20"
                       }`}
                     >
                       {status.replace("_", " ")}
@@ -191,68 +188,7 @@ export default function DashboardPage() {
           ))}
       </div>
 
-      {/* FLOATING BUTTON */}
-      <FloatingButton
-        onClick={() => setShowForm(true)}
-      />
-
-      {/* MODAL FORM */}
-      {showForm && (
-        <div className="fixed inset-0 bg-[var(--primary)]/30 flex items-end justify-center z-50">
-          <div className="bg-[var(--card-bg)] w-full max-w-md p-6 rounded-t-3xl shadow-xl">
-            <h2 className="text-lg font-semibold mb-4">
-              Nouvelle tâche ({activeType})
-            </h2>
-
-            <input
-              type="text"
-              placeholder="Titre"
-              value={newTitle}
-              onChange={(e) =>
-                setNewTitle(e.target.value)
-              }
-              className="w-full p-3 border rounded-xl mb-4"
-            />
-
-            <input
-              type="date"
-              value={newDeadline}
-              onChange={(e) =>
-                setNewDeadline(e.target.value)
-              }
-              className="w-full p-3 border rounded-xl mb-4"
-            />
-
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowForm(false)}
-                className="px-4 py-2 text-sm text-gray-500"
-              >
-                Annuler
-              </button>
-
-              <button
-                onClick={() => {
-                  if (!newTitle) return;
-
-                  addTask(
-                    newTitle,
-                    activeType,
-                    newDeadline || null
-                  );
-
-                  setNewTitle("");
-                  setNewDeadline("");
-                  setShowForm(false);
-                }}
-                className="px-4 py-2 bg-[var(--primary)] text-white rounded-xl"
-              >
-                Ajouter
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <FloatingButton onClick={() => setShowForm(true)} />
     </div>
   );
 }
