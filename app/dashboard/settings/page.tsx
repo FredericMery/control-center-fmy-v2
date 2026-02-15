@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "next/navigation";
@@ -10,7 +10,9 @@ export default function SettingsPage() {
   const router = useRouter();
 
   const [profile, setProfile] = useState<any>(null);
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -33,6 +35,44 @@ export default function SettingsPage() {
   }, [user]);
 
   if (!user) return null;
+
+  /* ============================
+     AVATAR UPLOAD UX
+  =============================*/
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleAvatarChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    if (!e.target.files?.[0]) return;
+
+    setIsUploading(true);
+
+    const file = e.target.files[0];
+    const filePath = `${user.id}`;
+
+    await supabase.storage
+      .from("avatars")
+      .upload(filePath, file, { upsert: true });
+
+    const { data } = supabase.storage
+      .from("avatars")
+      .getPublicUrl(filePath);
+
+    await supabase
+      .from("profiles")
+      .update({ avatar_url: data.publicUrl })
+      .eq("id", user.id);
+
+    setProfile({
+      ...profile,
+      avatar_url: data.publicUrl,
+    });
+
+    setIsUploading(false);
+  };
 
   /* ============================
      LOGOUT
@@ -105,33 +145,6 @@ export default function SettingsPage() {
   };
 
   /* ============================
-     AVATAR UPLOAD
-  =============================*/
-  const uploadAvatar = async () => {
-    if (!avatarFile || !user) return;
-
-    const filePath = `${user.id}`;
-
-    await supabase.storage
-      .from("avatars")
-      .upload(filePath, avatarFile, { upsert: true });
-
-    const { data } = supabase.storage
-      .from("avatars")
-      .getPublicUrl(filePath);
-
-    await supabase
-      .from("profiles")
-      .update({ avatar_url: data.publicUrl })
-      .eq("id", user.id);
-
-    setProfile({
-      ...profile,
-      avatar_url: data.publicUrl,
-    });
-  };
-
-  /* ============================
      DELETE ACCOUNT – LEVEL 2
   =============================*/
   const confirmDeleteAccount = async () => {
@@ -163,41 +176,40 @@ export default function SettingsPage() {
 
         <h2 className="font-semibold text-lg">Compte</h2>
 
-        {/* Avatar */}
+        {/* Avatar amélioré */}
         <div className="flex items-center gap-6">
-          <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-200">
+
+          <div
+            onClick={handleAvatarClick}
+            className="relative w-24 h-24 rounded-full overflow-hidden bg-gray-200 cursor-pointer group"
+          >
             {profile?.avatar_url ? (
               <img
                 src={profile.avatar_url}
                 className="w-full h-full object-cover"
               />
             ) : null}
+
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs">
+              {isUploading ? "Upload..." : "Changer"}
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <input
-              type="file"
-              onChange={(e) =>
-                e.target.files &&
-                setAvatarFile(e.target.files[0])
-              }
-            />
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleAvatarChange}
+            className="hidden"
+          />
 
-            <button
-              onClick={uploadAvatar}
-              className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
-            >
-              Mettre à jour avatar
-            </button>
+          <div className="text-sm space-y-1">
+            <p><strong>Pseudo :</strong> {profile?.username}</p>
+            <p><strong>Email :</strong> {user.email}</p>
+            <p className="text-gray-500 text-xs">
+              ID : {user.id}
+            </p>
           </div>
-        </div>
 
-        <div className="text-sm space-y-1">
-          <p><strong>Pseudo :</strong> {profile?.username}</p>
-          <p><strong>Email :</strong> {user.email}</p>
-          <p className="text-gray-500 text-xs">
-            ID : {user.id}
-          </p>
         </div>
 
         <div className="flex gap-4 flex-wrap">
@@ -210,11 +222,12 @@ export default function SettingsPage() {
 
           <button
             onClick={handleSignOutAll}
-            className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+            className="px-4 py-2 bg-blue-950 text-white rounded-xl text-sm hover:bg-blue-900 transition"
           >
             Déconnexion tous les appareils
           </button>
         </div>
+
       </div>
 
       {/* PARTAGER */}
@@ -332,7 +345,7 @@ export default function SettingsPage() {
       {/* VERSION */}
       <div className="text-center text-xs text-gray-400 pt-10">
         My Hyppocampe<br />
-        Version 2.1<br />
+        Version 2.2<br />
         Built by Fred 🧠
       </div>
 
