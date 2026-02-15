@@ -6,13 +6,20 @@ import { useAuthStore } from "@/store/authStore";
 import TaskModal from "@/components/TaskModal";
 import Link from "next/link";
 
-const statuses = ["todo", "in_progress", "waiting", "done"];
+const statuses = ["todo", "in_progress", "waiting", "done"] as const;
 
 const statusLabels: Record<string, string> = {
   todo: "À faire",
   in_progress: "En cours",
   waiting: "En attente",
   done: "Terminé",
+};
+
+const statusColors: Record<string, string> = {
+  todo: "bg-gray-600/30 text-gray-300",
+  in_progress: "bg-blue-600/30 text-blue-300",
+  waiting: "bg-yellow-500/30 text-yellow-300",
+  done: "bg-green-600/30 text-green-300",
 };
 
 export default function DashboardPage() {
@@ -76,7 +83,7 @@ export default function DashboardPage() {
 
         <button
           onClick={() => setShowModal(true)}
-          className="w-10 h-10 rounded-xl bg-indigo-600 text-xl flex items-center justify-center"
+          className="w-10 h-10 rounded-xl bg-indigo-600 text-xl flex items-center justify-center hover:bg-indigo-500 transition"
         >
           +
         </button>
@@ -89,7 +96,7 @@ export default function DashboardPage() {
           .map((task) => (
             <div
               key={task.id}
-              className="bg-white/5 p-4 rounded-xl cursor-pointer transition hover:bg-white/10"
+              className="bg-white/5 p-5 rounded-2xl cursor-pointer transition hover:bg-white/10"
               onClick={() =>
                 setExpandedTaskId(
                   expandedTaskId === task.id ? null : task.id
@@ -98,11 +105,21 @@ export default function DashboardPage() {
             >
               <div className="flex justify-between items-start">
                 <div>
-                  <div className="font-medium">{task.title}</div>
+                  <div className="font-medium text-lg">
+                    {task.title}
+                  </div>
 
+                  {/* BADGE STATUT */}
+                  <div
+                    className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-medium ${statusColors[task.status]}`}
+                  >
+                    {statusLabels[task.status]}
+                  </div>
+
+                  {/* DEADLINE */}
                   {task.deadline && (
-                    <div className="text-xs text-gray-400 mt-1">
-                      Deadline :{" "}
+                    <div className="text-xs text-gray-400 mt-2">
+                      📅{" "}
                       {new Date(task.deadline).toLocaleDateString("fr-FR")}
                     </div>
                   )}
@@ -113,13 +130,13 @@ export default function DashboardPage() {
                     e.stopPropagation();
                     deleteTask(task.id);
                   }}
-                  className="text-red-400"
+                  className="text-red-400 hover:text-red-300 transition"
                 >
                   🗑
                 </button>
               </div>
 
-              {/* STATUTS affichés uniquement si cliqué */}
+              {/* STATUTS (clic pour ouvrir) */}
               {expandedTaskId === task.id && (
                 <div className="flex gap-2 mt-4 flex-wrap">
                   {statuses.map((status) => (
@@ -130,10 +147,8 @@ export default function DashboardPage() {
                         updateStatus(task.id, status);
                         setExpandedTaskId(null);
                       }}
-                      className={`px-3 py-1 rounded-lg text-xs ${
-                        task.status === status
-                          ? "bg-indigo-600"
-                          : "bg-white/10"
+                      className={`px-3 py-1 rounded-lg text-xs transition ${
+                        statusColors[status]
                       }`}
                     >
                       {statusLabels[status]}
