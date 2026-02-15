@@ -24,7 +24,6 @@ export default function MemoirePage() {
   const [allowImage, setAllowImage] = useState(true);
   const [templateParts, setTemplateParts] = useState<string[]>([]);
 
-  // 🔹 INITIAL LOAD + REALTIME
   useEffect(() => {
     if (!user) return;
 
@@ -40,7 +39,6 @@ export default function MemoirePage() {
 
     fetchSections();
 
-    // 🔥 REALTIME SUBSCRIPTION
     const channel = supabase
       .channel("memory_sections_changes")
       .on(
@@ -55,13 +53,11 @@ export default function MemoirePage() {
           if (payload.eventType === "INSERT") {
             setSections((prev) => [payload.new as Section, ...prev]);
           }
-
           if (payload.eventType === "DELETE") {
             setSections((prev) =>
               prev.filter((s) => s.id !== payload.old.id)
             );
           }
-
           if (payload.eventType === "UPDATE") {
             setSections((prev) =>
               prev.map((s) =>
@@ -137,142 +133,152 @@ export default function MemoirePage() {
   };
 
   return (
-    <div className="text-blue-950">
+    <div className="relative min-h-screen text-blue-950">
+
+      {/* SUBTLE PREMIUM BACKGROUND */}
+      <div className="absolute inset-0 -z-10 bg-gradient-to-br from-gray-50 via-white to-gray-100" />
+      <div className="absolute -top-40 -right-40 w-[500px] h-[500px] bg-black/5 rounded-full blur-3xl -z-10" />
+      <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] bg-gray-400/5 rounded-full blur-3xl -z-10" />
+
       {/* HEADER */}
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-semibold">
+      <div className="flex justify-between items-center mb-14">
+        <h1 className="text-3xl font-semibold tracking-tight">
           Mémoire
         </h1>
 
         <button
           onClick={() => setShowForm(true)}
-          className="px-4 py-2 bg-black text-white rounded-xl text-sm hover:opacity-80 transition"
+          className="
+          relative inline-flex items-center gap-2 px-7 py-3
+          rounded-full text-sm font-medium text-white
+          bg-gradient-to-r from-black via-gray-900 to-black
+          shadow-lg shadow-black/20
+          hover:shadow-2xl hover:shadow-black/30
+          hover:scale-105 active:scale-95
+          transition-all duration-300
+          "
         >
-          + Section
+          <span className="text-lg">＋</span>
+          Section
         </button>
       </div>
 
-      {/* LISTE SECTIONS */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {sections.map((section) => (
+      {/* GRID */}
+      <div className="grid gap-10 md:grid-cols-2">
+
+        {sections.map((section, index) => (
           <div
             key={section.id}
-            className="bg-white p-6 rounded-2xl shadow-sm flex justify-between items-center hover:shadow-md transition"
+            className="
+            group relative
+            rounded-3xl
+            transition-all duration-500
+            hover:-translate-y-2
+            "
+            style={{
+              animation: `fadeInUp 0.5s ease ${index * 0.08}s forwards`,
+              opacity: 0,
+            }}
           >
-            <Link
-              href={`/dashboard/memoire/${section.slug}`}
-              className="flex-1"
+            <div
+              className="
+              relative p-[1px] rounded-3xl
+              bg-gradient-to-br from-gray-200 via-white to-gray-200
+              group-hover:from-black/30 group-hover:to-gray-400/20
+              transition-all duration-500
+              "
             >
-              <h2 className="font-medium text-lg">
-                {section.name}
-              </h2>
-            </Link>
+              <div
+                className="
+                bg-white/70 backdrop-blur-2xl
+                rounded-3xl p-8
+                shadow-md
+                group-hover:shadow-2xl
+                transition-all duration-500
+                "
+              >
+                <Link
+                  href={`/dashboard/memoire/${section.slug}`}
+                  className="block space-y-6"
+                >
+                  <div className="flex items-center gap-4">
 
-            <button
-              onClick={() => deleteSection(section.id)}
-              className="text-gray-400 hover:text-red-500 transition"
-            >
-              🗑
-            </button>
+                    <div
+                      className="
+                      w-12 h-12 rounded-2xl
+                      bg-gradient-to-br from-black to-gray-800
+                      text-white flex items-center justify-center
+                      text-lg font-semibold
+                      shadow-lg
+                      "
+                    >
+                      {section.name.charAt(0).toUpperCase()}
+                    </div>
+
+                    <h2 className="text-xl font-semibold tracking-tight">
+                      {section.name}
+                    </h2>
+                  </div>
+
+                  <div className="flex items-center gap-3 text-xs text-gray-500">
+                    {section.allow_image && (
+                      <span className="px-3 py-1 bg-gray-100 rounded-full">
+                        Image autorisée
+                      </span>
+                    )}
+                    <span className="px-3 py-1 bg-gray-50 border border-gray-200 rounded-full">
+                      Section
+                    </span>
+                  </div>
+                </Link>
+
+                {/* DELETE */}
+                <button
+                  onClick={() => deleteSection(section.id)}
+                  className="
+                  absolute top-6 right-6
+                  opacity-0 group-hover:opacity-100
+                  transition-all duration-300
+                  text-gray-400 hover:text-red-500
+                  "
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="w-4 h-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={1.8}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M6 7h12M9 7v12m6-12v12M5 7l1 14h12l1-14M10 4h4"
+                    />
+                  </svg>
+                </button>
+
+              </div>
+            </div>
           </div>
         ))}
+
       </div>
 
-      {/* FORMULAIRE */}
+      {/* MODAL IDENTIQUE LOGIQUE */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-50 w-full max-w-xl rounded-3xl shadow-xl p-8 space-y-6 text-blue-950">
-
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl p-10 space-y-6 text-blue-950">
             <h2 className="text-xl font-semibold">
               Créer une nouvelle section mémoire
             </h2>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Nom de la section
-              </label>
-              <input
-                value={sectionName}
-                onChange={(e) => setSectionName(e.target.value)}
-                className="w-full p-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black"
-              />
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-sm font-medium">
-                Champs personnalisés
-              </p>
-
-              {fields.map((field, index) => (
-                <input
-                  key={index}
-                  placeholder={`Champ ${index + 1}`}
-                  value={field}
-                  onChange={(e) => {
-                    const updated = [...fields];
-                    updated[index] = e.target.value;
-                    setFields(updated);
-                  }}
-                  className="w-full p-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black"
-                />
-              ))}
-            </div>
-
-            <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-gray-200">
-              <div>
-                <p className="text-sm font-medium">
-                  Autoriser une photo
-                </p>
-                <p className="text-xs text-gray-500">
-                  Permet d’ajouter une image à chaque fiche mémoire
-                </p>
-              </div>
-
-              <input
-                type="checkbox"
-                checked={allowImage}
-                onChange={() => setAllowImage(!allowImage)}
-                className="w-5 h-5"
-              />
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-sm font-medium">
-                Template de recherche Internet
-              </p>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() =>
-                    setTemplateParts([...templateParts, "${title}"])
-                  }
-                  className="px-3 py-1 bg-black text-white rounded-xl text-xs"
-                >
-                  Titre
-                </button>
-
-                {fields
-                  .filter((f) => f.trim() !== "")
-                  .map((field, i) => (
-                    <button
-                      key={i}
-                      onClick={() =>
-                        setTemplateParts([
-                          ...templateParts,
-                          `\${${field.toLowerCase().replace(/\s+/g, "_")}}`,
-                        ])
-                      }
-                      className="px-3 py-1 bg-gray-300 rounded-xl text-xs"
-                    >
-                      {field}
-                    </button>
-                  ))}
-              </div>
-
-              <div className="bg-white p-3 rounded-xl border text-sm min-h-[40px]">
-                {templateParts.join(" ") || "Aucun template défini"}
-              </div>
-            </div>
+            <input
+              value={sectionName}
+              onChange={(e) => setSectionName(e.target.value)}
+              placeholder="Nom de la section"
+              className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black"
+            />
 
             <div className="flex justify-end gap-4 pt-4">
               <button
@@ -284,15 +290,29 @@ export default function MemoirePage() {
 
               <button
                 onClick={createSection}
-                className="px-6 py-2 bg-black text-white rounded-xl hover:opacity-80 transition"
+                className="px-6 py-2 bg-black text-white rounded-xl hover:opacity-90 transition"
               >
                 Créer
               </button>
             </div>
-
           </div>
         </div>
       )}
+
+      {/* ANIMATION KEYFRAMES */}
+      <style jsx global>{`
+        @keyframes fadeInUp {
+          from {
+            transform: translateY(20px);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
+
     </div>
   );
 }
