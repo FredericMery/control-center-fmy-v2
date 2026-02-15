@@ -57,7 +57,7 @@ export default function SettingsPage() {
     setUploadStatus("Chargement...");
 
     try {
-      const filePath = `${user.id}.jpg`;
+      const filePath = `${user.id}/avatar.jpg`;
 
       const { error: uploadError } = await supabase.storage
         .from("avatars")
