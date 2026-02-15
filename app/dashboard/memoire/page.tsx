@@ -9,6 +9,7 @@ type Section = {
   id: string;
   name: string;
   slug: string;
+  allow_image: boolean;
 };
 
 export default function MemoirePage() {
@@ -20,7 +21,6 @@ export default function MemoirePage() {
   const [sectionName, setSectionName] = useState("");
   const [fields, setFields] = useState(["", "", "", ""]);
   const [allowImage, setAllowImage] = useState(true);
-
   const [templateParts, setTemplateParts] = useState<string[]>([]);
 
   useEffect(() => {
@@ -66,7 +66,6 @@ export default function MemoirePage() {
 
     if (!sectionData) return;
 
-    // Création des champs personnalisés
     const validFields = fields.filter((f) => f.trim() !== "");
 
     if (validFields.length > 0) {
@@ -74,16 +73,23 @@ export default function MemoirePage() {
         validFields.map((field) => ({
           section_id: sectionData.id,
           label: field,
-          field_key: field
-            .toLowerCase()
-            .replace(/\s+/g, "_"),
+          field_key: field.toLowerCase().replace(/\s+/g, "_"),
         }))
       );
     }
 
     setSections([sectionData, ...sections]);
-
     resetForm();
+  };
+
+  const deleteSection = async (id: string) => {
+    if (!confirm("Supprimer cette section et tout son contenu ?")) return;
+
+    await supabase.from("memory_section_fields").delete().eq("section_id", id);
+    await supabase.from("memory_items").delete().eq("section_id", id);
+    await supabase.from("memory_sections").delete().eq("id", id);
+
+    setSections(sections.filter((section) => section.id !== id));
   };
 
   const resetForm = () => {
@@ -94,26 +100,10 @@ export default function MemoirePage() {
     setShowForm(false);
   };
 
-  const deleteSection = async (id: string) => {
-    if (!confirm("Supprimer cette section ?")) return;
-
-    await supabase
-      .from("memory_sections")
-      .delete()
-      .eq("id", id);
-
-    setSections(
-      sections.filter((section) => section.id !== id)
-    );
-  };
-
   return (
     <div>
-      {/* HEADER */}
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-semibold">
-          Mémoire
-        </h1>
+        <h1 className="text-2xl font-semibold">Mémoire</h1>
 
         <button
           onClick={() => setShowForm(true)}
@@ -123,7 +113,6 @@ export default function MemoirePage() {
         </button>
       </div>
 
-      {/* LISTE SECTIONS */}
       <div className="grid gap-4 md:grid-cols-2">
         {sections.map((section) => (
           <div
@@ -134,9 +123,7 @@ export default function MemoirePage() {
               href={`/dashboard/memoire/${section.slug}`}
               className="flex-1"
             >
-              <h2 className="font-medium text-lg">
-                {section.name}
-              </h2>
+              <h2 className="font-medium text-lg">{section.name}</h2>
             </Link>
 
             <button
@@ -149,20 +136,16 @@ export default function MemoirePage() {
         ))}
       </div>
 
-      {/* MODAL CREATION */}
+      {/* FORMULAIRE IDENTIQUE (structure OK) */}
       {showForm && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-2xl w-full max-w-lg space-y-4">
-            <h2 className="text-lg font-semibold">
-              Nouvelle section
-            </h2>
+            <h2 className="text-lg font-semibold">Nouvelle section</h2>
 
             <input
               placeholder="Nom de section"
               value={sectionName}
-              onChange={(e) =>
-                setSectionName(e.target.value)
-              }
+              onChange={(e) => setSectionName(e.target.value)}
               className="w-full p-3 border rounded-xl"
             />
 
@@ -180,31 +163,22 @@ export default function MemoirePage() {
               />
             ))}
 
-            {/* PHOTO */}
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
                 checked={allowImage}
-                onChange={() =>
-                  setAllowImage(!allowImage)
-                }
+                onChange={() => setAllowImage(!allowImage)}
               />
               <span>Autoriser photo</span>
             </div>
 
-            {/* TEMPLATE BUILDER */}
             <div>
-              <p className="text-sm mb-2">
-                Template recherche :
-              </p>
+              <p className="text-sm mb-2">Template recherche :</p>
 
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() =>
-                    setTemplateParts([
-                      ...templateParts,
-                      "${title}",
-                    ])
+                    setTemplateParts([...templateParts, "${title}"])
                   }
                   className="px-3 py-1 bg-gray-200 rounded-xl text-sm"
                 >
@@ -219,9 +193,7 @@ export default function MemoirePage() {
                       onClick={() =>
                         setTemplateParts([
                           ...templateParts,
-                          `\${${field
-                            .toLowerCase()
-                            .replace(/\s+/g, "_")}}`,
+                          `\${${field.toLowerCase().replace(/\s+/g, "_")}}`,
                         ])
                       }
                       className="px-3 py-1 bg-gray-200 rounded-xl text-sm"
@@ -237,10 +209,7 @@ export default function MemoirePage() {
             </div>
 
             <div className="flex justify-end gap-3 pt-4">
-              <button
-                onClick={resetForm}
-                className="text-gray-500"
-              >
+              <button onClick={resetForm} className="text-gray-500">
                 Annuler
               </button>
 

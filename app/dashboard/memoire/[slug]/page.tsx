@@ -9,6 +9,7 @@ type Section = {
   id: string;
   name: string;
   search_template: string | null;
+  allow_image: boolean;
 };
 
 type Field = {
@@ -48,6 +49,7 @@ export default function SectionPage() {
         .from("memory_sections")
         .select("*")
         .eq("slug", slug)
+        .eq("user_id", user.id)
         .single();
 
       if (!sectionData) return;
@@ -65,6 +67,7 @@ export default function SectionPage() {
         .from("memory_items")
         .select("*")
         .eq("section_id", sectionData.id)
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
       setItems(itemData || []);
@@ -78,19 +81,17 @@ export default function SectionPage() {
 
     let uploadedImageUrl: string | null = null;
 
-    if (imageFile) {
-      const fileName = `${user.id}-${Date.now()}`;
+    if (imageFile && section.allow_image) {
+      const filePath = `${user.id}/${Date.now()}`;
 
       const { error } = await supabase.storage
         .from("memory-images")
-        .upload(fileName, imageFile, {
-          upsert: false,
-        });
+        .upload(filePath, imageFile);
 
       if (!error) {
         const { data } = supabase.storage
           .from("memory-images")
-          .getPublicUrl(fileName);
+          .getPublicUrl(filePath);
 
         uploadedImageUrl = data.publicUrl;
       }
@@ -118,15 +119,22 @@ export default function SectionPage() {
   };
 
   const deleteItem = async (id: string) => {
-    const confirmDelete = confirm("Supprimer cette entrée ?");
-    if (!confirmDelete) return;
+    if (!confirm("Supprimer cette entrée ?")) return;
 
-    await supabase
-      .from("memory_items")
-      .delete()
-      .eq("id", id);
-
+    await supabase.from("memory_items").delete().eq("id", id);
     setItems(items.filter((item) => item.id !== id));
+  };
+
+  const buildSearchUrl = (item: Item) => {
+    if (!section?.search_template) return null;
+
+    let query = section.search_template.replace(/\$\{title\}/g, item.title);
+
+    Object.entries(item.extra_data || {}).forEach(([key, value]) => {
+      query = query.replace(new RegExp(`\\$\\{${key}\\}`, "g"), String(value));
+    });
+
+    return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
   };
 
   const resetForm = () => {
@@ -137,32 +145,12 @@ export default function SectionPage() {
     setShowForm(false);
   };
 
-  const buildSearchUrl = (item: Item) => {
-    if (!section?.search_template) return null;
-
-    let query = section.search_template;
-
-    query = query.replace(/\$\{title\}/g, item.title);
-
-    Object.entries(item.extra_data || {}).forEach(([key, value]) => {
-      query = query.replace(
-        new RegExp(`\\$\\{${key}\\}`, "g"),
-        String(value)
-      );
-    });
-
-    return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-  };
-
   if (!section) return <div>Loading...</div>;
 
   return (
     <div>
-      {/* HEADER */}
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-semibold">
-          {section.name}
-        </h1>
+        <h1 className="text-2xl font-semibold">{section.name}</h1>
 
         <button
           onClick={() => setShowForm(true)}
@@ -172,13 +160,10 @@ export default function SectionPage() {
         </button>
       </div>
 
-      {/* MODAL */}
       {showForm && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-2xl w-full max-w-md">
-            <h2 className="text-lg font-semibold mb-4">
-              Nouvelle entrée
-            </h2>
+            <h2 className="text-lg font-semibold mb-4">Nouvelle entrée</h2>
 
             <input
               placeholder="Titre"
@@ -187,33 +172,19 @@ export default function SectionPage() {
               className="w-full p-3 border rounded-xl mb-4"
             />
 
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={(e) => {
-                if (e.target.files?.[0]) {
-                  setImageFile(e.target.files[0]);
-                }
-              }}
-              className="mb-4"
-            />
-
-            <div className="mb-4">
-              <label className="block text-sm mb-1">
-                Note (0-5)
-              </label>
+            {section.allow_image && (
               <input
-                type="number"
-                min="0"
-                max="5"
-                value={rating}
-                onChange={(e) =>
-                  setRating(Number(e.target.value))
-                }
-                className="w-24 p-2 border rounded-xl"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) {
+                    setImageFile(e.target.files[0]);
+                  }
+                }}
+                className="mb-4"
               />
-            </div>
+            )}
 
             {fields.map((field) => (
               <input
@@ -231,10 +202,7 @@ export default function SectionPage() {
             ))}
 
             <div className="flex justify-end gap-3 mt-4">
-              <button
-                onClick={resetForm}
-                className="text-gray-500"
-              >
+              <button onClick={resetForm} className="text-gray-500">
                 Annuler
               </button>
 
@@ -249,27 +217,17 @@ export default function SectionPage() {
         </div>
       )}
 
-      {/* LISTE */}
       <div className="grid gap-4 md:grid-cols-2">
         {items.map((item) => (
           <div
             key={item.id}
-            onClick={() => {
-              const url = buildSearchUrl(item);
-              if (url) window.open(url, "_blank");
-            }}
-            className="bg-white p-6 rounded-2xl shadow-sm space-y-3 cursor-pointer hover:shadow-md transition"
+            className="bg-white p-6 rounded-2xl shadow-sm space-y-3 hover:shadow-md transition"
           >
             <div className="flex justify-between items-start">
-              <h2 className="font-semibold text-lg">
-                {item.title}
-              </h2>
+              <h2 className="font-semibold text-lg">{item.title}</h2>
 
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteItem(item.id);
-                }}
+                onClick={() => deleteItem(item.id)}
                 className="text-gray-400 hover:text-red-500 transition text-sm"
               >
                 🗑
@@ -277,34 +235,30 @@ export default function SectionPage() {
             </div>
 
             {item.image_url && (
-              <div className="relative w-full h-40 overflow-hidden rounded-xl">
-                <img
-                  src={item.image_url}
-                  alt=""
-                  className="w-full h-full object-cover"
-                  onError={(e) =>
-                    (e.currentTarget.style.display = "none")
-                  }
-                />
-              </div>
+              <img
+                src={item.image_url}
+                className="w-full h-40 object-cover rounded-xl"
+              />
             )}
 
-            {item.rating !== null && (
-              <p className="text-sm text-gray-500">
-                ⭐ {item.rating}/5
-              </p>
-            )}
-
-            {Object.entries(item.extra_data || {}).map(
-              ([key, value]) => (
-                <p
-                  key={key}
-                  className="text-sm text-gray-600"
-                >
-                  <strong>{key}:</strong> {String(value)}
+            {Object.entries(item.extra_data || {}).map(([key, value]) => {
+              const field = fields.find((f) => f.field_key === key);
+              return (
+                <p key={key} className="text-sm text-gray-600">
+                  <strong>{field?.label || key}:</strong> {value}
                 </p>
-              )
-            )}
+              );
+            })}
+
+            <button
+              onClick={() => {
+                const url = buildSearchUrl(item);
+                if (url) window.open(url, "_blank");
+              }}
+              className="text-sm text-blue-600 underline"
+            >
+              🔎 Rechercher
+            </button>
           </div>
         ))}
       </div>
