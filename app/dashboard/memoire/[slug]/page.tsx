@@ -34,6 +34,7 @@ export default function SectionPage() {
   const [section, setSection] = useState<Section | null>(null);
   const [fields, setFields] = useState<Field[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [imagePopup, setImagePopup] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [rating, setRating] = useState(0);
@@ -75,6 +76,18 @@ export default function SectionPage() {
 
     init();
   }, [slug, user]);
+
+  const buildSearchUrl = (item: Item) => {
+    if (!section?.search_template) return null;
+
+    let query = section.search_template.replace(/\$\{title\}/g, item.title);
+
+    Object.entries(item.extra_data || {}).forEach(([key, value]) => {
+      query = query.replace(new RegExp(`\\$\\{${key}\\}`, "g"), String(value));
+    });
+
+    return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  };
 
   const addItem = async () => {
     if (!user || !section || !title) return;
@@ -138,6 +151,19 @@ export default function SectionPage() {
   return (
     <div className="text-blue-950">
 
+      {/* IMAGE POPUP */}
+      {imagePopup && (
+        <div
+          onClick={() => setImagePopup(null)}
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
+        >
+          <img
+            src={imagePopup}
+            className="max-h-[90vh] max-w-[90vw] rounded-2xl shadow-2xl"
+          />
+        </div>
+      )}
+
       {/* HEADER */}
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-2xl font-semibold">
@@ -152,154 +178,83 @@ export default function SectionPage() {
         </button>
       </div>
 
-      {/* MODAL FORMULAIRE PREMIUM */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-50 w-full max-w-xl rounded-3xl shadow-xl p-8 space-y-6">
+      {/* LISTE */}
+      <div className="grid gap-6">
 
-            <h2 className="text-xl font-semibold">
-              Nouvelle fiche mémoire
-            </h2>
+        {items.map((item) => {
 
-            {/* TITRE */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Titre
-              </label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full p-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black"
-              />
-            </div>
+          const searchUrl = buildSearchUrl(item);
 
-            {/* PHOTO */}
-            {section.allow_image && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Photo
-                </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(e) => {
-                    if (e.target.files?.[0]) {
-                      setImageFile(e.target.files[0]);
-                    }
-                  }}
-                  className="w-full"
-                />
+          return (
+            <div
+              key={item.id}
+              className="bg-white rounded-2xl shadow-sm hover:shadow-md transition p-6 flex gap-6"
+            >
+
+              {/* CONTENU TEXTE */}
+              <div className="flex-1 space-y-3">
+
+                <div className="flex justify-between items-start">
+
+                  <h2 className="font-semibold text-lg">
+                    {item.title}
+                  </h2>
+
+                  <div className="flex gap-3 items-center">
+
+                    {/* Pastille recherche */}
+                    {searchUrl && (
+                      <button
+                        onClick={() => window.open(searchUrl, "_blank")}
+                        className="w-8 h-8 rounded-full bg-blue-950 text-white text-sm flex items-center justify-center hover:opacity-80 transition"
+                      >
+                        @
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => deleteItem(item.id)}
+                      className="text-gray-400 hover:text-red-500 transition text-sm"
+                    >
+                      🗑
+                    </button>
+
+                  </div>
+                </div>
+
+                {item.rating && (
+                  <div className="text-yellow-500 text-sm">
+                    {"★".repeat(item.rating)}
+                  </div>
+                )}
+
+                {Object.entries(item.extra_data || {}).map(([key, value]) => {
+                  const field = fields.find((f) => f.field_key === key);
+                  return (
+                    <p key={key} className="text-sm text-gray-600">
+                      <strong>{field?.label || key}:</strong> {value}
+                    </p>
+                  );
+                })}
               </div>
-            )}
 
-            {/* NOTE */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Note
-              </label>
-              <div className="flex gap-2">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    onClick={() => setRating(star)}
-                    className={`text-2xl transition ${
-                      rating >= star
-                        ? "text-yellow-500"
-                        : "text-gray-300"
-                    }`}
-                  >
-                    ★
-                  </button>
-                ))}
-              </div>
+              {/* IMAGE A DROITE */}
+              {item.image_url && (
+                <div
+                  className="w-40 aspect-square shrink-0 cursor-pointer"
+                  onClick={() => setImagePopup(item.image_url)}
+                >
+                  <img
+                    src={item.image_url}
+                    className="w-full h-full object-cover rounded-xl"
+                  />
+                </div>
+              )}
+
             </div>
-
-            {/* CHAMPS PERSONNALISÉS */}
-            {fields.map((field) => (
-              <div key={field.id} className="space-y-2">
-                <label className="text-sm font-medium">
-                  {field.label}
-                </label>
-                <input
-                  value={extraData[field.field_key] || ""}
-                  onChange={(e) =>
-                    setExtraData({
-                      ...extraData,
-                      [field.field_key]: e.target.value,
-                    })
-                  }
-                  className="w-full p-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black"
-                />
-              </div>
-            ))}
-
-            {/* ACTIONS */}
-            <div className="flex justify-end gap-4 pt-4">
-              <button
-                onClick={resetForm}
-                className="px-4 py-2 text-gray-600"
-              >
-                Annuler
-              </button>
-
-              <button
-                onClick={addItem}
-                className="px-6 py-2 bg-black text-white rounded-xl hover:opacity-80 transition"
-              >
-                Ajouter
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* LISTE FICHES */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {items.map((item) => (
-          <div
-            key={item.id}
-            className="bg-white p-6 rounded-2xl shadow-sm space-y-3 hover:shadow-md transition"
-          >
-            <div className="flex justify-between items-start">
-              <h2 className="font-semibold text-lg">
-                {item.title}
-              </h2>
-
-              <button
-                onClick={() => deleteItem(item.id)}
-                className="text-gray-400 hover:text-red-500 transition text-sm"
-              >
-                🗑
-              </button>
-            </div>
-
-            {item.image_url && (
-              <img
-                src={item.image_url}
-                className="w-full h-40 object-cover rounded-xl"
-              />
-            )}
-
-            {item.rating && (
-              <div className="text-yellow-500 text-sm">
-                {"★".repeat(item.rating)}
-              </div>
-            )}
-
-            {Object.entries(item.extra_data || {}).map(([key, value]) => {
-              const field = fields.find((f) => f.field_key === key);
-              return (
-                <p key={key} className="text-sm text-gray-600">
-                  <strong>{field?.label || key}:</strong> {value}
-                </p>
-              );
-            })}
-          </div>
-        ))}
+          );
+        })}
       </div>
-
     </div>
   );
 }
