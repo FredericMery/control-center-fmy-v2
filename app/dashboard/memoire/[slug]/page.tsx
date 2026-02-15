@@ -46,23 +46,20 @@ export default function SectionPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   /* =============================
-     INITIAL LOAD
+     LOAD INITIAL DATA
   ==============================*/
   useEffect(() => {
     if (!user || !slug) return;
 
     const load = async () => {
-      const { data: sectionData, error } = await supabase
+      const { data: sectionData } = await supabase
         .from("memory_sections")
         .select("*")
         .eq("slug", slug)
         .eq("user_id", user.id)
         .single();
 
-      if (error || !sectionData) {
-        console.error("Section load error:", error);
-        return;
-      }
+      if (!sectionData) return;
 
       setSection(sectionData);
 
@@ -140,58 +137,47 @@ export default function SectionPage() {
 
     setIsSaving(true);
 
-    try {
-      let uploadedImageUrl: string | null = null;
+    let uploadedImageUrl: string | null = null;
 
-      if (imageFile && section.allow_image) {
-        const filePath = `${user.id}/${Date.now()}`;
+    if (imageFile && section.allow_image) {
+      const filePath = `${user.id}/${Date.now()}`;
 
-        const { error } = await supabase.storage
+      const { error } = await supabase.storage
+        .from("memory-images")
+        .upload(filePath, imageFile);
+
+      if (!error) {
+        const { data } = supabase.storage
           .from("memory-images")
-          .upload(filePath, imageFile);
+          .getPublicUrl(filePath);
 
-        if (!error) {
-          const { data } = supabase.storage
-            .from("memory-images")
-            .getPublicUrl(filePath);
-
-          uploadedImageUrl = data.publicUrl;
-        }
+        uploadedImageUrl = data.publicUrl;
       }
-
-      const { data, error } = await supabase
-        .from("memory_items")
-        .insert([
-          {
-            title,
-            image_url: uploadedImageUrl,
-            rating,
-            extra_data: extraData || {},
-            section_id: section.id,
-            user_id: user.id,
-          },
-        ])
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Insert error:", error);
-        setIsSaving(false);
-        return;
-      }
-
-      if (data) {
-        setItems((prev) => {
-          if (prev.find((i) => i.id === data.id)) return prev;
-          return [data, ...prev];
-        });
-      }
-
-      resetForm();
-    } catch (err) {
-      console.error("Unexpected error:", err);
     }
 
+    const { data, error } = await supabase
+      .from("memory_items")
+      .insert([
+        {
+          title,
+          image_url: uploadedImageUrl,
+          rating,
+          extra_data: extraData,
+          section_id: section.id,
+          user_id: user.id,
+        },
+      ])
+      .select()
+      .single();
+
+    if (!error && data) {
+      setItems((prev) => {
+        if (prev.find((i) => i.id === data.id)) return prev;
+        return [data, ...prev];
+      });
+    }
+
+    resetForm();
     setIsSaving(false);
   };
 
@@ -225,6 +211,7 @@ export default function SectionPage() {
   return (
     <div className="text-blue-950">
 
+      {/* IMAGE POPUP */}
       {imagePopup && (
         <div
           onClick={() => setImagePopup(null)}
@@ -237,6 +224,7 @@ export default function SectionPage() {
         </div>
       )}
 
+      {/* HEADER */}
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-2xl font-semibold">
           {section.name}
@@ -250,6 +238,7 @@ export default function SectionPage() {
         </button>
       </div>
 
+      {/* FORMULAIRE COMPLET */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-gray-50 w-full max-w-xl rounded-3xl shadow-xl p-8 space-y-6">
@@ -258,25 +247,94 @@ export default function SectionPage() {
               Nouvelle fiche mémoire
             </h2>
 
-            <input
-              placeholder="Titre"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full p-3 bg-white border border-gray-300 rounded-xl"
-            />
+            {/* TITRE */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Titre</label>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full p-3 bg-white border border-gray-300 rounded-xl"
+              />
+            </div>
 
-            <button
-              onClick={addItem}
-              disabled={isSaving}
-              className="px-6 py-2 bg-black text-white rounded-xl disabled:opacity-50"
-            >
-              {isSaving ? "Enregistrement..." : "Ajouter"}
-            </button>
+            {/* PHOTO */}
+            {section.allow_image && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Photo</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) {
+                      setImageFile(e.target.files[0]);
+                    }
+                  }}
+                />
+              </div>
+            )}
+
+            {/* NOTE */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Note</label>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    onClick={() => setRating(star)}
+                    className={`text-2xl ${
+                      rating >= star
+                        ? "text-yellow-500"
+                        : "text-gray-300"
+                    }`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* CHAMPS DYNAMIQUES */}
+            {fields.map((field) => (
+              <div key={field.id} className="space-y-2">
+                <label className="text-sm font-medium">
+                  {field.label}
+                </label>
+                <input
+                  value={extraData[field.field_key] || ""}
+                  onChange={(e) =>
+                    setExtraData({
+                      ...extraData,
+                      [field.field_key]: e.target.value,
+                    })
+                  }
+                  className="w-full p-3 bg-white border border-gray-300 rounded-xl"
+                />
+              </div>
+            ))}
+
+            <div className="flex justify-end gap-4 pt-4">
+              <button
+                onClick={resetForm}
+                className="px-4 py-2 text-gray-600"
+              >
+                Annuler
+              </button>
+
+              <button
+                onClick={addItem}
+                disabled={isSaving}
+                className="px-6 py-2 bg-black text-white rounded-xl disabled:opacity-50"
+              >
+                {isSaving ? "Enregistrement..." : "Ajouter"}
+              </button>
+            </div>
 
           </div>
         </div>
       )}
 
+      {/* LISTE */}
       <div className="grid gap-6">
         {items.map((item) => {
           const searchUrl = buildSearchUrl(item);
@@ -310,6 +368,21 @@ export default function SectionPage() {
                     </button>
                   </div>
                 </div>
+
+                {item.rating && (
+                  <div className="text-yellow-500 text-sm">
+                    {"★".repeat(item.rating)}
+                  </div>
+                )}
+
+                {Object.entries(item.extra_data || {}).map(([key, value]) => {
+                  const field = fields.find((f) => f.field_key === key);
+                  return (
+                    <p key={key} className="text-sm text-gray-600">
+                      <strong>{field?.label || key}:</strong> {value}
+                    </p>
+                  );
+                })}
               </div>
 
               {item.image_url && (
@@ -327,6 +400,7 @@ export default function SectionPage() {
           );
         })}
       </div>
+
     </div>
   );
 }
