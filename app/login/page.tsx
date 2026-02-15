@@ -16,37 +16,54 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-100 px-4">
-      <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md">
-        <div className="flex flex-col items-center mb-6">
-          <div className="w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg text-white text-2xl font-bold mb-3">
-            +
-          </div>
-          <h1 className="text-2xl font-bold">My Hyppocampe</h1>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#1e1b4b] px-6 text-white">
+
+      <div className="w-full max-w-md">
+
+        {/* Branding */}
+        <div className="text-center mb-10">
+          <h1 className="text-5xl font-bold tracking-tight">
+            H<span className="text-indigo-400">+</span>
+          </h1>
+          <p className="mt-3 text-gray-400 text-sm">
+            Mémorise ce qui compte
+          </p>
         </div>
 
-        <input
-          type="email"
-          placeholder="Votre email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full p-3 border rounded-xl mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
+        {/* Card */}
+        <div className="bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl p-8 shadow-2xl">
 
-        <input
-          type="password"
-          placeholder="Votre mot de passe"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full p-3 border rounded-xl mb-6 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
+          <label className="text-sm text-gray-300">
+            Adresse email
+          </label>
+          <input
+            type="email"
+            placeholder="Votre email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="mt-2 w-full px-4 py-3 rounded-xl bg-white/10 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white placeholder-gray-400 transition"
+          />
 
-        <button
-          onClick={handleLogin}
-          className="w-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white py-3 rounded-xl font-medium hover:opacity-90 transition"
-        >
-          Se connecter
-        </button>
+          <label className="text-sm text-gray-300 mt-5 block">
+            Mot de passe
+          </label>
+          <input
+            type="password"
+            placeholder="Votre mot de passe"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mt-2 w-full px-4 py-3 rounded-xl bg-white/10 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white placeholder-gray-400 transition"
+          />
+
+          <button
+            onClick={handleLogin}
+            className="mt-8 w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition font-semibold shadow-lg"
+          >
+            Se connecter
+          </button>
+
+        </div>
+
       </div>
     </div>
   );
