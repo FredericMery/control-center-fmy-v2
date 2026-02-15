@@ -103,26 +103,10 @@ export default function DashboardPage() {
                 )
               }
             >
+              {/* LIGNE 1 : TITRE + CORBEILLE */}
               <div className="flex justify-between items-start">
-                <div>
-                  <div className="font-medium text-lg">
-                    {task.title}
-                  </div>
-
-                  {/* BADGE STATUT */}
-                  <div
-                    className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-medium ${statusColors[task.status]}`}
-                  >
-                    {statusLabels[task.status]}
-                  </div>
-
-                  {/* DEADLINE */}
-                  {task.deadline && (
-                    <div className="text-xs text-gray-400 mt-2">
-                      📅{" "}
-                      {new Date(task.deadline).toLocaleDateString("fr-FR")}
-                    </div>
-                  )}
+                <div className="font-medium text-lg">
+                  {task.title}
                 </div>
 
                 <button
@@ -136,7 +120,26 @@ export default function DashboardPage() {
                 </button>
               </div>
 
-              {/* STATUTS (clic pour ouvrir) */}
+              {/* LIGNE 2 : STATUT GAUCHE / DEADLINE DROITE */}
+              <div className="flex justify-between items-center mt-3">
+
+                {/* BADGE STATUT */}
+                <div
+                  className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[task.status]}`}
+                >
+                  {statusLabels[task.status]}
+                </div>
+
+                {/* DEADLINE */}
+                {task.deadline && (
+                  <div className="text-xs text-gray-400">
+                    📅{" "}
+                    {new Date(task.deadline).toLocaleDateString("fr-FR")}
+                  </div>
+                )}
+              </div>
+
+              {/* STATUTS AU CLIC */}
               {expandedTaskId === task.id && (
                 <div className="flex gap-2 mt-4 flex-wrap">
                   {statuses.map((status) => (
@@ -147,9 +150,7 @@ export default function DashboardPage() {
                         updateStatus(task.id, status);
                         setExpandedTaskId(null);
                       }}
-                      className={`px-3 py-1 rounded-lg text-xs transition ${
-                        statusColors[status]
-                      }`}
+                      className={`px-3 py-1 rounded-lg text-xs transition ${statusColors[status]}`}
                     >
                       {statusLabels[status]}
                     </button>
