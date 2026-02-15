@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "next/navigation";
@@ -9,9 +9,28 @@ export default function SettingsPage() {
   const user = useAuthStore((s) => s.user);
   const router = useRouter();
 
+  const [profile, setProfile] = useState<any>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
+
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchProfile = async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      setProfile(data);
+    };
+
+    fetchProfile();
+  }, [user]);
 
   if (!user) return null;
 
@@ -20,6 +39,11 @@ export default function SettingsPage() {
   =============================*/
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    router.push("/");
+  };
+
+  const handleSignOutAll = async () => {
+    await supabase.auth.signOut({ scope: "global" });
     router.push("/");
   };
 
@@ -62,11 +86,9 @@ export default function SettingsPage() {
 
     const exportData = {
       user,
+      profile,
       tasks,
-      memory: {
-        sections,
-        items,
-      },
+      memory: { sections, items },
     };
 
     const blob = new Blob(
@@ -83,6 +105,33 @@ export default function SettingsPage() {
   };
 
   /* ============================
+     AVATAR UPLOAD
+  =============================*/
+  const uploadAvatar = async () => {
+    if (!avatarFile || !user) return;
+
+    const filePath = `${user.id}`;
+
+    await supabase.storage
+      .from("avatars")
+      .upload(filePath, avatarFile, { upsert: true });
+
+    const { data } = supabase.storage
+      .from("avatars")
+      .getPublicUrl(filePath);
+
+    await supabase
+      .from("profiles")
+      .update({ avatar_url: data.publicUrl })
+      .eq("id", user.id);
+
+    setProfile({
+      ...profile,
+      avatar_url: data.publicUrl,
+    });
+  };
+
+  /* ============================
      DELETE ACCOUNT – LEVEL 2
   =============================*/
   const confirmDeleteAccount = async () => {
@@ -92,12 +141,8 @@ export default function SettingsPage() {
 
     await fetch("/api/delete-account", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        userId: user.id,
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: user.id }),
     });
 
     await supabase.auth.signOut();
@@ -114,27 +159,65 @@ export default function SettingsPage() {
       {/* ============================
           COMPTE
       =============================*/}
-      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-6">
+
         <h2 className="font-semibold text-lg">Compte</h2>
 
+        {/* Avatar */}
+        <div className="flex items-center gap-6">
+          <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-200">
+            {profile?.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                className="w-full h-full object-cover"
+              />
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <input
+              type="file"
+              onChange={(e) =>
+                e.target.files &&
+                setAvatarFile(e.target.files[0])
+              }
+            />
+
+            <button
+              onClick={uploadAvatar}
+              className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+            >
+              Mettre à jour avatar
+            </button>
+          </div>
+        </div>
+
         <div className="text-sm space-y-1">
+          <p><strong>Pseudo :</strong> {profile?.username}</p>
           <p><strong>Email :</strong> {user.email}</p>
           <p className="text-gray-500 text-xs">
             ID : {user.id}
           </p>
         </div>
 
-        <button
-          onClick={handleLogout}
-          className="px-4 py-2 bg-black text-white rounded-xl text-sm"
-        >
-          Se déconnecter
-        </button>
+        <div className="flex gap-4 flex-wrap">
+          <button
+            onClick={handleLogout}
+            className="px-4 py-2 bg-black text-white rounded-xl text-sm"
+          >
+            Se déconnecter
+          </button>
+
+          <button
+            onClick={handleSignOutAll}
+            className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+          >
+            Déconnexion tous les appareils
+          </button>
+        </div>
       </div>
 
-      {/* ============================
-          PARTAGER
-      =============================*/}
+      {/* PARTAGER */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
         <h2 className="font-semibold text-lg">
           Partager l'application
@@ -148,9 +231,7 @@ export default function SettingsPage() {
         </button>
       </div>
 
-      {/* ============================
-          ACCÈS RAPIDE
-      =============================*/}
+      {/* ACCÈS RAPIDE */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
         <h2 className="font-semibold text-lg">
           Accès rapide
@@ -180,9 +261,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* ============================
-          DONNÉES
-      =============================*/}
+      {/* DONNÉES */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
         <h2 className="font-semibold text-lg">
           Données
@@ -205,9 +284,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* ============================
-          DELETE MODAL
-      =============================*/}
+      {/* DELETE MODAL */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-xl p-8 space-y-6 text-blue-950">
@@ -255,7 +332,7 @@ export default function SettingsPage() {
       {/* VERSION */}
       <div className="text-center text-xs text-gray-400 pt-10">
         My Hyppocampe<br />
-        Version 2.0<br />
+        Version 2.1<br />
         Built by Fred 🧠
       </div>
 
