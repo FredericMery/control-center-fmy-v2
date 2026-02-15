@@ -102,17 +102,19 @@ export default function MemoirePage() {
 
   return (
     <div>
+      {/* HEADER */}
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-2xl font-semibold">Mémoire</h1>
 
         <button
           onClick={() => setShowForm(true)}
-          className="px-4 py-2 bg-black text-white rounded-xl text-sm"
+          className="px-4 py-2 bg-black text-white rounded-xl text-sm hover:opacity-80 transition"
         >
           + Section
         </button>
       </div>
 
+      {/* LISTE SECTIONS */}
       <div className="grid gap-4 md:grid-cols-2">
         {sections.map((section) => (
           <div
@@ -136,51 +138,77 @@ export default function MemoirePage() {
         ))}
       </div>
 
-      {/* FORMULAIRE IDENTIQUE (structure OK) */}
+      {/* FORMULAIRE CREATION */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-2xl w-full max-w-lg space-y-4">
-            <h2 className="text-lg font-semibold">Nouvelle section</h2>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-50 w-full max-w-xl rounded-3xl shadow-xl p-8 space-y-6">
 
-            <input
-              placeholder="Nom de section"
-              value={sectionName}
-              onChange={(e) => setSectionName(e.target.value)}
-              className="w-full p-3 border rounded-xl"
-            />
+            <h2 className="text-xl font-semibold">
+              Créer une nouvelle section mémoire
+            </h2>
 
-            {fields.map((field, index) => (
+            {/* NOM */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">
+                Nom de la section
+              </label>
               <input
-                key={index}
-                placeholder={`Champ perso ${index + 1}`}
-                value={field}
-                onChange={(e) => {
-                  const updated = [...fields];
-                  updated[index] = e.target.value;
-                  setFields(updated);
-                }}
-                className="w-full p-3 border rounded-xl"
+                value={sectionName}
+                onChange={(e) => setSectionName(e.target.value)}
+                className="w-full p-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black"
               />
-            ))}
+            </div>
 
-            <div className="flex items-center gap-2">
+            {/* CHAMPS PERSONNALISÉS */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-gray-700">
+                Champs personnalisés
+              </p>
+
+              {fields.map((field, index) => (
+                <input
+                  key={index}
+                  placeholder={`Champ ${index + 1}`}
+                  value={field}
+                  onChange={(e) => {
+                    const updated = [...fields];
+                    updated[index] = e.target.value;
+                    setFields(updated);
+                  }}
+                  className="w-full p-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-black"
+                />
+              ))}
+            </div>
+
+            {/* PHOTO */}
+            <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-gray-200">
+              <div>
+                <p className="text-sm font-medium">Autoriser une photo</p>
+                <p className="text-xs text-gray-500">
+                  Permet d’ajouter une image à chaque fiche mémoire
+                </p>
+              </div>
+
               <input
                 type="checkbox"
                 checked={allowImage}
                 onChange={() => setAllowImage(!allowImage)}
+                className="w-5 h-5"
               />
-              <span>Autoriser photo</span>
             </div>
 
-            <div>
-              <p className="text-sm mb-2">Template recherche :</p>
+            {/* TEMPLATE */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-gray-700">
+                Template de recherche Internet
+              </p>
 
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() =>
                     setTemplateParts([...templateParts, "${title}"])
                   }
-                  className="px-3 py-1 bg-gray-200 rounded-xl text-sm"
+                  className="px-3 py-1 bg-black text-white rounded-xl text-xs"
                 >
                   Titre
                 </button>
@@ -196,30 +224,35 @@ export default function MemoirePage() {
                           `\${${field.toLowerCase().replace(/\s+/g, "_")}}`,
                         ])
                       }
-                      className="px-3 py-1 bg-gray-200 rounded-xl text-sm"
+                      className="px-3 py-1 bg-gray-300 rounded-xl text-xs"
                     >
                       {field}
                     </button>
                   ))}
               </div>
 
-              <div className="mt-2 text-sm text-gray-600">
-                {templateParts.join(" ")}
+              <div className="bg-white p-3 rounded-xl border text-sm text-gray-600 min-h-[40px]">
+                {templateParts.join(" ") || "Aucun template défini"}
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4">
-              <button onClick={resetForm} className="text-gray-500">
+            {/* ACTIONS */}
+            <div className="flex justify-end gap-4 pt-4">
+              <button
+                onClick={resetForm}
+                className="px-4 py-2 text-gray-600"
+              >
                 Annuler
               </button>
 
               <button
                 onClick={createSection}
-                className="bg-black text-white px-4 py-2 rounded-xl"
+                className="px-6 py-2 bg-black text-white rounded-xl hover:opacity-80 transition"
               >
                 Créer
               </button>
             </div>
+
           </div>
         </div>
       )}
