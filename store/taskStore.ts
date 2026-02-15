@@ -17,10 +17,12 @@ type TaskState = {
   loading: boolean;
 
   activeType: "perso" | "pro";
+  showArchived: boolean;
+
   setActiveType: (type: "perso" | "pro") => void;
+  toggleArchivedView: () => void;
 
   fetchTasks: () => Promise<void>;
-
   addTask: (
     title: string,
     type: "perso" | "pro",
@@ -39,8 +41,12 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   tasks: [],
   loading: false,
   activeType: "perso",
+  showArchived: false,
 
   setActiveType: (type) => set({ activeType: type }),
+
+  toggleArchivedView: () =>
+    set((state) => ({ showArchived: !state.showArchived })),
 
   fetchTasks: async () => {
     const user = useAuthStore.getState().user;
