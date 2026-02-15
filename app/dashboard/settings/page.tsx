@@ -1,146 +1,225 @@
 "use client";
 
-import { useAuthStore } from "@/store/authStore";
+import { useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { useUIStore } from "@/store/uiStore";
+import { useAuthStore } from "@/store/authStore";
+import { useRouter } from "next/navigation";
 
 export default function SettingsPage() {
   const user = useAuthStore((s) => s.user);
-  const { mode, setMode, style, setStyle } = useUIStore();
+  const router = useRouter();
 
-  const logout = async () => {
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  if (!user) return null;
+
+  /* ============================
+     LOGOUT
+  =============================*/
+  const handleLogout = async () => {
     await supabase.auth.signOut();
+    router.push("/");
   };
 
-  const resetMemory = async () => {
-    if (!user) return;
+  /* ============================
+     SHARE
+  =============================*/
+  const handleShare = async () => {
+    const shareData = {
+      title: "My Hyppocampe",
+      text: "Découvre mon cerveau externe 🧠",
+      url: window.location.origin,
+    };
 
-    const confirmDelete = confirm(
-      "Supprimer toutes vos données mémoire ?"
+    if (navigator.share) {
+      await navigator.share(shareData);
+    } else {
+      await navigator.clipboard.writeText(window.location.origin);
+      alert("Lien copié !");
+    }
+  };
+
+  /* ============================
+     EXPORT DATA
+  =============================*/
+  const handleExport = async () => {
+    const { data: tasks } = await supabase
+      .from("tasks")
+      .select("*")
+      .eq("user_id", user.id);
+
+    const { data: sections } = await supabase
+      .from("memory_sections")
+      .select("*")
+      .eq("user_id", user.id);
+
+    const { data: items } = await supabase
+      .from("memory_items")
+      .select("*")
+      .eq("user_id", user.id);
+
+    const exportData = {
+      user,
+      tasks,
+      memory: {
+        sections,
+        items,
+      },
+    };
+
+    const blob = new Blob(
+      [JSON.stringify(exportData, null, 2)],
+      { type: "application/json" }
     );
 
-    if (!confirmDelete) return;
-
-    await supabase
-      .from("memory_items")
-      .delete()
-      .eq("user_id", user.id);
-
-    await supabase
-      .from("memory_sections")
-      .delete()
-      .eq("user_id", user.id);
-
-    alert("Mémoire réinitialisée");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "my-hyppocampe-export.json";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
+  /* ============================
+     DELETE ACCOUNT
+  =============================*/
+const handleDeleteAccount = async () => {
+  const confirmDelete = confirm(
+    "Supprimer définitivement ton compte ?"
+  );
+  if (!confirmDelete) return;
+
+  setIsDeleting(true);
+
+  await fetch("/api/delete-account", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      userId: user.id,
+    }),
+  });
+
+  await supabase.auth.signOut();
+  router.push("/");
+};
+
+
   return (
-    <div className="max-w-2xl mx-auto space-y-10">
+    <div className="text-blue-950 max-w-3xl mx-auto space-y-10 pb-20">
+
+      {/* TITLE */}
       <h1 className="text-2xl font-semibold">
         Paramètres
       </h1>
 
-      {/* APPARENCE */}
-      <div className="bg-[var(--card-bg)] dark:bg-gray-800 p-6 rounded-2xl shadow-sm space-y-8">
-        <h2 className="text-lg font-semibold">
-          Apparence
-        </h2>
+      {/* ============================
+          COMPTE
+      =============================*/}
+      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+        <h2 className="font-semibold text-lg">Compte</h2>
 
-        {/* MODE */}
-        <div>
-          <p className="text-sm text-gray-500 mb-3">
-            Mode
+        <div className="text-sm space-y-1">
+          <p><strong>Email :</strong> {user.email}</p>
+          <p className="text-gray-500 text-xs">
+            ID : {user.id}
           </p>
-
-          <div className="flex gap-3">
-            {["light", "dark", "system"].map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m as any)}
-                className={`px-4 py-2 rounded-xl text-sm capitalize transition ${
-                  mode === m
-                    ? "bg-[var(--primary)] text-white"
-                    : "bg-[var(--primary-soft)] dark:bg-gray-700"
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
         </div>
-
-        {/* STYLE */}
-        <div>
-          <p className="text-sm text-gray-500 mb-3">
-            Style d'interface
-          </p>
-
-          <div className="grid grid-cols-2 gap-3">
-            {["apple", "startup", "colorful", "tech"].map(
-              (s) => (
-                <button
-                  key={s}
-                  onClick={() => setStyle(s as any)}
-                  className={`p-4 rounded-xl text-sm capitalize transition ${
-                    style === s
-                      ? "bg-[var(--primary)] text-white"
-                      : "bg-gray-100 dark:bg-gray-700"
-                  }`}
-                >
-                  {s}
-                </button>
-              )
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* COMPTE */}
-      <div className="bg-[var(--card-bg)] dark:bg-gray-800 p-6 rounded-2xl shadow-sm space-y-4">
-        <h2 className="font-medium text-lg">
-          Compte
-        </h2>
-
-        <p className="text-sm text-gray-500">
-          Connecté en tant que :
-        </p>
-
-        <p className="font-medium">
-          {user?.email}
-        </p>
 
         <button
-          onClick={logout}
-          className="mt-4 px-4 py-2 bg-[var(--primary)] text-white rounded-xl text-sm"
+          onClick={handleLogout}
+          className="px-4 py-2 bg-black text-white rounded-xl text-sm"
         >
           Se déconnecter
         </button>
       </div>
 
-      {/* MEMOIRE */}
-      <div className="bg-[var(--card-bg)] dark:bg-gray-800 p-6 rounded-2xl shadow-sm space-y-4">
-        <h2 className="font-medium text-lg">
-          Mémoire
+      {/* ============================
+          PARTAGER
+      =============================*/}
+      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+        <h2 className="font-semibold text-lg">
+          Partager l'application
         </h2>
 
         <button
-          onClick={resetMemory}
-          className="px-4 py-2 bg-red-500 text-white rounded-xl text-sm"
+          onClick={handleShare}
+          className="px-4 py-2 bg-black text-white rounded-xl text-sm"
         >
-          Réinitialiser mes données
+          Partager
         </button>
       </div>
 
-      {/* DANGER ZONE */}
-      <div className="bg-[var(--card-bg)] dark:bg-gray-800 p-6 rounded-2xl shadow-sm space-y-4 border border-red-200">
-        <h2 className="font-medium text-lg text-red-500">
-          Zone dangereuse
+      {/* ============================
+          ACCÈS RAPIDE
+      =============================*/}
+      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+        <h2 className="font-semibold text-lg">
+          Accès rapide
         </h2>
 
-        <button className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm">
-          Supprimer mon compte (bientôt)
-        </button>
+        <div className="flex gap-4 flex-wrap">
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+          >
+            Tableau de bord
+          </button>
+
+          <button
+            onClick={() => router.push("/dashboard/tasks")}
+            className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+          >
+            Tâches
+          </button>
+
+          <button
+            onClick={() => router.push("/dashboard/memoire")}
+            className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+          >
+            Mémoire
+          </button>
+        </div>
       </div>
+
+      {/* ============================
+          DONNÉES
+      =============================*/}
+      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+        <h2 className="font-semibold text-lg">
+          Données
+        </h2>
+
+        <div className="flex gap-4 flex-wrap">
+
+          <button
+            onClick={handleExport}
+            className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+          >
+            Exporter mes données
+          </button>
+
+          <button
+            onClick={handleDeleteAccount}
+            disabled={isDeleting}
+            className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm disabled:opacity-50"
+          >
+            {isDeleting ? "Suppression..." : "Supprimer mon compte"}
+          </button>
+
+        </div>
+      </div>
+
+      {/* ============================
+          VERSION
+      =============================*/}
+      <div className="text-center text-xs text-gray-400 pt-10">
+        My Hyppocampe<br />
+        Version 2.0<br />
+        Built by Fred 🧠
+      </div>
+
     </div>
   );
 }
