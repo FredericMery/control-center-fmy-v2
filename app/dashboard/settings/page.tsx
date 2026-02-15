@@ -10,6 +10,8 @@ export default function SettingsPage() {
   const router = useRouter();
 
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteInput, setDeleteInput] = useState("");
 
   if (!user) return null;
 
@@ -40,7 +42,7 @@ export default function SettingsPage() {
   };
 
   /* ============================
-     EXPORT DATA
+     EXPORT
   =============================*/
   const handleExport = async () => {
     const { data: tasks } = await supabase
@@ -81,35 +83,30 @@ export default function SettingsPage() {
   };
 
   /* ============================
-     DELETE ACCOUNT
+     DELETE ACCOUNT – LEVEL 2
   =============================*/
-const handleDeleteAccount = async () => {
-  const confirmDelete = confirm(
-    "Supprimer définitivement ton compte ?"
-  );
-  if (!confirmDelete) return;
+  const confirmDeleteAccount = async () => {
+    if (deleteInput !== "SUPPRIMER") return;
 
-  setIsDeleting(true);
+    setIsDeleting(true);
 
-  await fetch("/api/delete-account", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      userId: user.id,
-    }),
-  });
+    await fetch("/api/delete-account", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userId: user.id,
+      }),
+    });
 
-  await supabase.auth.signOut();
-  router.push("/");
-};
-
+    await supabase.auth.signOut();
+    router.push("/");
+  };
 
   return (
     <div className="text-blue-950 max-w-3xl mx-auto space-y-10 pb-20">
 
-      {/* TITLE */}
       <h1 className="text-2xl font-semibold">
         Paramètres
       </h1>
@@ -192,7 +189,6 @@ const handleDeleteAccount = async () => {
         </h2>
 
         <div className="flex gap-4 flex-wrap">
-
           <button
             onClick={handleExport}
             className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
@@ -201,19 +197,62 @@ const handleDeleteAccount = async () => {
           </button>
 
           <button
-            onClick={handleDeleteAccount}
-            disabled={isDeleting}
-            className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm disabled:opacity-50"
+            onClick={() => setShowDeleteModal(true)}
+            className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm"
           >
-            {isDeleting ? "Suppression..." : "Supprimer mon compte"}
+            Supprimer mon compte
           </button>
-
         </div>
       </div>
 
       {/* ============================
-          VERSION
+          DELETE MODAL
       =============================*/}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-xl p-8 space-y-6 text-blue-950">
+
+            <h2 className="text-lg font-semibold">
+              Suppression du compte
+            </h2>
+
+            <p className="text-sm text-gray-600">
+              Cette action est irréversible.  
+              Tape <strong>SUPPRIMER</strong> pour confirmer.
+            </p>
+
+            <input
+              value={deleteInput}
+              onChange={(e) => setDeleteInput(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-xl"
+              placeholder="SUPPRIMER"
+            />
+
+            <div className="flex justify-end gap-4 pt-4">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteInput("");
+                }}
+                className="px-4 py-2 text-gray-600"
+              >
+                Annuler
+              </button>
+
+              <button
+                onClick={confirmDeleteAccount}
+                disabled={deleteInput !== "SUPPRIMER" || isDeleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-xl disabled:opacity-50"
+              >
+                {isDeleting ? "Suppression..." : "Confirmer"}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* VERSION */}
       <div className="text-center text-xs text-gray-400 pt-10">
         My Hyppocampe<br />
         Version 2.0<br />
