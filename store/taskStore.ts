@@ -2,52 +2,43 @@ import { create } from "zustand";
 import { supabase } from "@/lib/supabase/client";
 import { useAuthStore } from "./authStore";
 
-export type Task = {
+type Task = {
   id: string;
-  title: string;
-  status: string;
-  type: "perso" | "pro";
-  deadline: string | null;
   user_id: string;
+  title: string;
+  type: "pro" | "perso";
+  status: string;
+  deadline: string | null;
   archived: boolean;
 };
 
 type TaskState = {
   tasks: Task[];
-  loading: boolean;
-
-  activeType: "perso" | "pro";
+  activeType: "pro" | "perso";
   showArchived: boolean;
 
-  setActiveType: (type: "perso" | "pro") => void;
+  fetchTasks: () => Promise<void>;
+  updateStatus: (id: string, status: string) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
+
+  setActiveType: (type: "pro" | "perso") => void;
   toggleArchivedView: () => void;
 
-  fetchTasks: () => Promise<void>;
-  addTask: (
-    title: string,
-    type: "perso" | "pro",
-    deadline: Date | null
-  ) => Promise<void>;
-
-  updateStatus: (taskId: string, newStatus: string) => Promise<void>;
-  deleteTask: (taskId: string) => Promise<void>;
-
   subscribeRealtime: () => void;
+  unsubscribeRealtime: () => void;
 };
 
-let channel: any = null;
+let channel: ReturnType<typeof supabase.channel> | null = null;
 
 export const useTaskStore = create<TaskState>((set, get) => ({
+
   tasks: [],
-  loading: false,
-  activeType: "perso",
+  activeType: "pro",
   showArchived: false,
 
-  setActiveType: (type) => set({ activeType: type }),
-
-  toggleArchivedView: () =>
-    set((state) => ({ showArchived: !state.showArchived })),
-
+  /* ============================
+     FETCH
+  =============================*/
   fetchTasks: async () => {
     const user = useAuthStore.getState().user;
     if (!user) return;
@@ -55,86 +46,114 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const { data } = await supabase
       .from("tasks")
       .select("*")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
     set({ tasks: data || [] });
   },
 
-  addTask: async (
-    title: string,
-    type: "perso" | "pro",
-    deadline: Date | null
-  ) => {
+  /* ============================
+     UPDATE STATUS
+  =============================*/
+  updateStatus: async (id, status) => {
+    await supabase
+      .from("tasks")
+      .update({ status })
+      .eq("id", id);
+
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        t.id === id ? { ...t, status } : t
+      ),
+    }));
+  },
+
+  /* ============================
+     DELETE
+  =============================*/
+  deleteTask: async (id) => {
+    await supabase
+      .from("tasks")
+      .delete()
+      .eq("id", id);
+
+    set((state) => ({
+      tasks: state.tasks.filter((t) => t.id !== id),
+    }));
+  },
+
+  /* ============================
+     UI STATE
+  =============================*/
+  setActiveType: (type) => set({ activeType: type }),
+
+  toggleArchivedView: () =>
+    set((state) => ({ showArchived: !state.showArchived })),
+
+  /* ============================
+     REALTIME SAFE
+  =============================*/
+  subscribeRealtime: () => {
+
     const user = useAuthStore.getState().user;
     if (!user) return;
 
-    await supabase.from("tasks").insert({
-      title,
-      type,
-      status: "todo",
-      deadline: deadline ? deadline.toISOString() : null,
-      user_id: user.id,
-      archived: false,
-    });
-  },
-
-  updateStatus: async (taskId, newStatus) => {
-    const updateData: any = { status: newStatus };
-
-    // 🔥 LOGIQUE INTELLIGENTE
-    if (newStatus === "done") {
-      updateData.archived = true;
-    } else {
-      updateData.archived = false; // restauration auto
-    }
-
-    await supabase.from("tasks").update(updateData).eq("id", taskId);
-  },
-
-  deleteTask: async (taskId) => {
-    await supabase.from("tasks").delete().eq("id", taskId);
-  },
-
-  subscribeRealtime: () => {
-    if (channel) return;
+    if (channel) return; // 🔥 anti multi subscribe
 
     channel = supabase
-      .channel("tasks-realtime")
+      .channel(`tasks-${user.id}`)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
           table: "tasks",
+          filter: `user_id=eq.${user.id}`,
         },
-        (payload: any) => {
-          const { eventType, new: newTask, old: oldTask } = payload;
+        (payload) => {
 
           set((state) => {
-            if (eventType === "INSERT") {
-              return { tasks: [newTask, ...state.tasks] };
-            }
 
-            if (eventType === "UPDATE") {
-              return {
-                tasks: state.tasks.map((t) =>
-                  t.id === newTask.id ? newTask : t
-                ),
-              };
-            }
+            const newTask = payload.new as Task;
+            const oldTask = payload.old as Task;
 
-            if (eventType === "DELETE") {
-              return {
-                tasks: state.tasks.filter(
-                  (t) => t.id !== oldTask.id
-                ),
-              };
-            }
+            switch (payload.eventType) {
 
-            return state;
+              case "INSERT":
+                if (state.tasks.some(t => t.id === newTask.id)) {
+                  return state;
+                }
+                return { tasks: [newTask, ...state.tasks] };
+
+              case "UPDATE":
+                return {
+                  tasks: state.tasks.map(t =>
+                    t.id === newTask.id ? newTask : t
+                  ),
+                };
+
+              case "DELETE":
+                return {
+                  tasks: state.tasks.filter(t =>
+                    t.id !== oldTask.id
+                  ),
+                };
+
+              default:
+                return state;
+            }
           });
+
         }
       )
       .subscribe();
   },
+
+  unsubscribeRealtime: () => {
+    if (channel) {
+      supabase.removeChannel(channel);
+      channel = null;
+    }
+  },
+
 }));

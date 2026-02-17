@@ -6,8 +6,6 @@ import { useAuthStore } from "@/store/authStore";
 import TaskModal from "@/components/TaskModal";
 import Link from "next/link";
 import NotificationBell from "@/components/NotificationBell";
-import { useNotificationStore } from "@/store/notificationStore";
-
 
 const statuses = ["todo", "in_progress", "waiting", "done"] as const;
 
@@ -26,6 +24,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function DashboardPage() {
+
   const user = useAuthStore((state) => state.user);
 
   const {
@@ -36,40 +35,36 @@ export default function DashboardPage() {
     activeType,
     setActiveType,
     subscribeRealtime,
+    unsubscribeRealtime,
     showArchived,
     toggleArchivedView,
   } = useTaskStore();
 
   const [showModal, setShowModal] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
-  const { createNotification } = useNotificationStore();
 
-
+  /* ============================
+     INIT DATA + REALTIME
+  =============================*/
   useEffect(() => {
     if (!user) return;
+
     fetchTasks();
     subscribeRealtime();
+
+    return () => {
+      unsubscribeRealtime();
+    };
+
   }, [user]);
 
   useEffect(() => {
     setActiveType("pro");
   }, []);
 
-  useEffect(() => {
-  tasks.forEach((task) => {
-    if (
-      task.deadline &&
-      new Date(task.deadline) < new Date() &&
-      !task.archived
-    ) {
-      
-    }
-  });
-}, [tasks]);
-
-
-
-
+  /* ============================
+     DEADLINE CHECK
+  =============================*/
   const isDeadlinePassed = (deadline: string | null) => {
     if (!deadline) return false;
     return new Date(deadline) < new Date();
@@ -81,7 +76,9 @@ export default function DashboardPage() {
       task.archived === showArchived
   );
 
-  // 🔥 COMPTEURS DISCRETS
+  /* ============================
+     COUNTERS
+  =============================*/
   const proActiveCount = useMemo(
     () =>
       tasks.filter(
@@ -103,7 +100,6 @@ export default function DashboardPage() {
 
       {/* HEADER */}
       <div className="flex justify-between items-center mb-2">
-
 
         <div className="flex gap-2">
           <NotificationBell />
@@ -138,12 +134,12 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* 🔥 SYNTHÈSE DISCRÈTE */}
+      {/* SYNTHÈSE */}
       <div className="text-xs text-gray-500 mb-6">
         {proActiveCount} PRO actives • {persoActiveCount} PERSO actives
       </div>
 
-      {/* TOGGLE ARCHIVE */}
+      {/* ARCHIVE TOGGLE */}
       <div className="mb-8">
         <button
           onClick={toggleArchivedView}
@@ -158,6 +154,7 @@ export default function DashboardPage() {
       {/* TASK LIST */}
       <div className="space-y-5">
         {filteredTasks.map((task) => {
+
           const deadlinePassed = isDeadlinePassed(task.deadline);
 
           return (
@@ -218,11 +215,6 @@ export default function DashboardPage() {
                       onClick={(e) => {
                         e.stopPropagation();
                         updateStatus(task.id, status);
-                            createNotification(
-                              "Statut modifié",
-                              `La tâche "${task.title}" est maintenant "${statusLabels[status]}"`,
-                              "/dashboard"
-                            );
                         setExpandedTaskId(null);
                       }}
                       className={`px-3 py-1 rounded-lg text-[10px] uppercase tracking-wide transition ${statusColors[status]}`}

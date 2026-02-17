@@ -4,11 +4,13 @@ import { useAuthStore } from "./authStore";
 
 export type Notification = {
   id: string;
+  user_id: string;
+  type: string;
   title: string;
   message: string;
   read: boolean;
-  link: string | null;
-  created_at: string;
+  ref_key?: string;
+  created_at?: string;
 };
 
 type NotificationState = {
@@ -17,17 +19,20 @@ type NotificationState = {
 
   fetchNotifications: () => Promise<void>;
   markAsRead: (id: string) => Promise<void>;
-  createNotification: (
-    title: string,
-    message: string,
-    link?: string
-  ) => Promise<void>;
+  subscribeRealtime: () => void;
+  unsubscribeRealtime: () => void;
 };
 
+let channel: ReturnType<typeof supabase.channel> | null = null;
+
 export const useNotificationStore = create<NotificationState>((set, get) => ({
+
   notifications: [],
   unreadCount: 0,
 
+  /* ============================
+     FETCH INITIAL DATA
+  =============================*/
   fetchNotifications: async () => {
     const user = useAuthStore.getState().user;
     if (!user) return;
@@ -38,14 +43,15 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
-    const unread = data?.filter((n) => !n.read).length || 0;
-
     set({
       notifications: data || [],
-      unreadCount: unread,
+      unreadCount: data?.filter(n => !n.read).length || 0
     });
   },
 
+  /* ============================
+     MARK AS READ
+  =============================*/
   markAsRead: async (id) => {
     await supabase
       .from("notifications")
@@ -53,59 +59,68 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       .eq("id", id);
 
     set((state) => {
-      const updated = state.notifications.map((n) =>
+      const updated = state.notifications.map(n =>
         n.id === id ? { ...n, read: true } : n
       );
 
       return {
         notifications: updated,
-        unreadCount: updated.filter((n) => !n.read).length,
+        unreadCount: updated.filter(n => !n.read).length
       };
     });
   },
 
- createNotification: async (title, message, link) => {
+  /* ============================
+     REALTIME SUBSCRIBE SAFE
+  =============================*/
+  subscribeRealtime: () => {
 
-  const { data: sessionData } = await supabase.auth.getSession();
-  const user = sessionData?.session?.user;
+    const user = useAuthStore.getState().user;
+    if (!user) return;
 
-  if (!user) return;
+    // 🔥 Protection totale multi subscribe
+    if (channel) return;
 
-  const { error } = await supabase
-    .from("notifications")
-    .insert({
-      user_id: user.id,
-      type: "info",
-      title,
-      message,
-      link: link || null,
-      read: false,
-    });
+    channel = supabase
+      .channel(`notifications-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
 
-  if (error) {
-    console.error("INSERT ERROR:", error);
-    return;
-  }
+          set((state) => {
 
-  // 🔥 Vérifier si push activé
-  const { data: settings } = await supabase
-    .from("notification_settings")
-    .select("*")
-    .eq("user_id", user.id)
-    .single();
+            // 🔥 Protection anti doublon
+            if (state.notifications.some(n => n.id === payload.new.id)) {
+              return state;
+            }
 
-  if (settings?.push_enabled) {
-    await fetch("/api/push/trigger", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: user.id,
-        title,
-        message,
-      }),
-    });
-  }
-},
+            const updated = [payload.new as Notification, ...state.notifications];
 
+            return {
+              notifications: updated,
+              unreadCount: updated.filter(n => !n.read).length
+            };
+          });
+
+        }
+      )
+      .subscribe();
+  },
+
+  /* ============================
+     CLEANUP (IMPORTANT)
+  =============================*/
+  unsubscribeRealtime: () => {
+    if (channel) {
+      supabase.removeChannel(channel);
+      channel = null;
+    }
+  },
 
 }));

@@ -6,11 +6,13 @@ import { useAuthStore } from "@/store/authStore";
 import Link from "next/link";
 
 export default function NotificationBell() {
+
   const {
     notifications,
     unreadCount,
     fetchNotifications,
     markAsRead,
+    subscribeRealtime, // ✅ IMPORTANT
   } = useNotificationStore();
 
   const user = useAuthStore((s) => s.user);
@@ -18,14 +20,20 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // 🔄 Charger uniquement quand user dispo
+  /* ============================
+     LOAD + REALTIME
+  =============================*/
   useEffect(() => {
-    if (user) {
-      fetchNotifications();
-    }
+    if (!user) return;
+
+    fetchNotifications();
+    subscribeRealtime(); // 🔥 un seul subscribe (protégé côté store)
+
   }, [user]);
 
-  // 🔒 Fermer si clic extérieur
+  /* ============================
+     CLOSE ON OUTSIDE CLICK
+  =============================*/
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
@@ -48,7 +56,7 @@ export default function NotificationBell() {
   return (
     <div className="relative" ref={dropdownRef}>
 
-      {/* 🔔 BOUTON */}
+      {/* 🔔 BUTTON */}
       <button
         onClick={() => setOpen(!open)}
         className="relative text-xl hover:scale-105 transition-transform"
@@ -76,7 +84,7 @@ export default function NotificationBell() {
             </div>
           )}
 
-          {/* 🔔 LISTE */}
+          {/* 🔔 LIST */}
           <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
             {notifications.slice(0, 5).map((notif) => (
               <div
@@ -98,9 +106,8 @@ export default function NotificationBell() {
             ))}
           </div>
 
-          {/* 🔽 BLOC BAS */}
+          {/* 🔽 FOOTER */}
           <div className="pt-3 border-t border-white/10 text-center">
-
             <Link
               href="/dashboard/notifications"
               className="text-xs text-indigo-400 hover:underline"
@@ -108,7 +115,6 @@ export default function NotificationBell() {
             >
               Voir toutes les notifications →
             </Link>
-
           </div>
 
         </div>
