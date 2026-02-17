@@ -71,6 +71,52 @@ export async function GET(req: NextRequest) {
       user_id: user.user_id,
     });
 
+// 📆 Résumé des tâches pour demain
+
+const tomorrow = new Date(now);
+tomorrow.setDate(now.getDate() + 1);
+
+const startTomorrow = new Date(tomorrow);
+startTomorrow.setHours(0, 0, 0, 0);
+
+const endTomorrow = new Date(tomorrow);
+endTomorrow.setHours(23, 59, 59, 999);
+
+const { data: tomorrowTasks } = await supabase
+  .from("tasks")
+  .select("*")
+  .eq("user_id", user.user_id)
+  .gte("deadline", startTomorrow.toISOString())
+  .lte("deadline", endTomorrow.toISOString())
+  .eq("archived", false);
+
+if (tomorrowTasks && tomorrowTasks.length > 0) {
+
+  const message = `${tomorrowTasks.length} tâche(s) prévue(s) demain`;
+
+  await supabase.from("notifications").insert({
+    user_id: user.user_id,
+    type: "tomorrow",
+    title: "📅 À faire demain",
+    message,
+    read: false,
+  });
+
+  // 🔔 Envoi push réel
+  await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/push/trigger`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId: user.user_id,
+      title: "📅 À faire demain",
+      message,
+    }),
+  });
+}
+
+
+
+
     // 🔔 Gestion intelligente des deadlines (1 seule par tâche)
     for (const task of overdueTasks) {
 
