@@ -44,15 +44,25 @@ export default function DashboardPage() {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
 
   /* ============================
-     INIT DATA + REALTIME
+     INIT SAFE (ANTI DOUBLE MOUNT)
   =============================*/
   useEffect(() => {
     if (!user) return;
 
-    fetchTasks();
-    subscribeRealtime();
+    let isActive = true;
+
+    const init = async () => {
+      await fetchTasks();
+
+      if (isActive) {
+        subscribeRealtime();
+      }
+    };
+
+    init();
 
     return () => {
+      isActive = false;
       unsubscribeRealtime();
     };
 
@@ -62,9 +72,6 @@ export default function DashboardPage() {
     setActiveType("pro");
   }, []);
 
-  /* ============================
-     DEADLINE CHECK
-  =============================*/
   const isDeadlinePassed = (deadline: string | null) => {
     if (!deadline) return false;
     return new Date(deadline) < new Date();
@@ -76,41 +83,31 @@ export default function DashboardPage() {
       task.archived === showArchived
   );
 
-  /* ============================
-     COUNTERS
-  =============================*/
   const proActiveCount = useMemo(
-    () =>
-      tasks.filter(
-        (t) => t.type === "pro" && !t.archived
-      ).length,
+    () => tasks.filter(t => t.type === "pro" && !t.archived).length,
     [tasks]
   );
 
   const persoActiveCount = useMemo(
-    () =>
-      tasks.filter(
-        (t) => t.type === "perso" && !t.archived
-      ).length,
+    () => tasks.filter(t => t.type === "perso" && !t.archived).length,
     [tasks]
   );
 
   return (
     <div className="min-h-screen bg-black text-white px-6 py-10">
 
-      {/* HEADER */}
       <div className="flex justify-between items-center mb-2">
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <NotificationBell />
 
           {["pro", "perso"].map((type) => (
             <button
               key={type}
               onClick={() => setActiveType(type as "pro" | "perso")}
-              className={`px-4 py-1.5 rounded-full text-xs font-light tracking-wide transition ${
+              className={`px-4 py-1.5 rounded-full text-xs transition ${
                 activeType === type
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30"
+                  ? "bg-indigo-600 text-white"
                   : "bg-white/5 text-gray-400 hover:bg-white/10"
               }`}
             >
@@ -120,7 +117,7 @@ export default function DashboardPage() {
 
           <Link
             href="/dashboard/memoire"
-            className="px-4 py-1.5 rounded-full text-xs font-light tracking-wide bg-white/5 text-gray-400 hover:bg-white/10 transition"
+            className="px-4 py-1.5 rounded-full text-xs bg-white/5 text-gray-400 hover:bg-white/10 transition"
           >
             MÉMOIRE
           </Link>
@@ -128,22 +125,20 @@ export default function DashboardPage() {
 
         <button
           onClick={() => setShowModal(true)}
-          className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-light shadow-xl shadow-indigo-500/30 hover:scale-105 transition-transform"
+          className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl"
         >
           +
         </button>
       </div>
 
-      {/* SYNTHÈSE */}
       <div className="text-xs text-gray-500 mb-6">
         {proActiveCount} PRO actives • {persoActiveCount} PERSO actives
       </div>
 
-      {/* ARCHIVE TOGGLE */}
       <div className="mb-8">
         <button
           onClick={toggleArchivedView}
-          className="text-xs text-gray-500 hover:text-gray-300 transition underline"
+          className="text-xs text-gray-500 hover:text-gray-300 underline"
         >
           {showArchived
             ? "Voir les tâches actives"
@@ -151,7 +146,6 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* TASK LIST */}
       <div className="space-y-5">
         {filteredTasks.map((task) => {
 
@@ -160,7 +154,7 @@ export default function DashboardPage() {
           return (
             <div
               key={task.id}
-              className={`relative bg-white/5 p-5 rounded-2xl transition hover:bg-white/10 cursor-pointer ${
+              className={`relative bg-white/5 p-5 rounded-2xl hover:bg-white/10 cursor-pointer ${
                 deadlinePassed ? "border-l-4 border-red-500" : ""
               }`}
               onClick={() =>
@@ -170,7 +164,7 @@ export default function DashboardPage() {
               }
             >
               <div className="flex justify-between items-start">
-                <div className="text-sm font-light tracking-wide text-gray-200">
+                <div className="text-sm text-gray-200">
                   {task.title}
                 </div>
 
@@ -179,7 +173,7 @@ export default function DashboardPage() {
                     e.stopPropagation();
                     deleteTask(task.id);
                   }}
-                  className="text-red-400 hover:text-red-300 transition"
+                  className="text-red-400"
                 >
                   🗑
                 </button>
@@ -188,7 +182,7 @@ export default function DashboardPage() {
               <div className="flex justify-between items-center mt-3">
 
                 <div
-                  className={`px-3 py-1 rounded-full text-[10px] uppercase tracking-wide ${statusColors[task.status]}`}
+                  className={`px-3 py-1 rounded-full text-[10px] uppercase ${statusColors[task.status]}`}
                 >
                   {statusLabels[task.status]}
                 </div>
@@ -201,8 +195,7 @@ export default function DashboardPage() {
                         : "text-gray-400"
                     }`}
                   >
-                    📅{" "}
-                    {new Date(task.deadline).toLocaleDateString("fr-FR")}
+                    📅 {new Date(task.deadline).toLocaleDateString("fr-FR")}
                   </div>
                 )}
               </div>
@@ -217,7 +210,7 @@ export default function DashboardPage() {
                         updateStatus(task.id, status);
                         setExpandedTaskId(null);
                       }}
-                      className={`px-3 py-1 rounded-lg text-[10px] uppercase tracking-wide transition ${statusColors[status]}`}
+                      className={`px-3 py-1 rounded-lg text-[10px] uppercase ${statusColors[status]}`}
                     >
                       {statusLabels[status]}
                     </button>

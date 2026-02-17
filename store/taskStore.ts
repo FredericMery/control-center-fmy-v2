@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { supabase } from "@/lib/supabase/client";
 import { useAuthStore } from "./authStore";
 
-type Task = {
+export type Task = {
   id: string;
   user_id: string;
   title: string;
@@ -10,6 +10,7 @@ type Task = {
   status: string;
   deadline: string | null;
   archived: boolean;
+  created_at?: string;
 };
 
 type TaskState = {
@@ -37,7 +38,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   showArchived: false,
 
   /* ============================
-     FETCH
+     FETCH (REMPLACE TOUJOURS)
   =============================*/
   fetchTasks: async () => {
     const user = useAuthStore.getState().user;
@@ -49,6 +50,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
+    // 🔥 Toujours remplacer complètement le state
     set({ tasks: data || [] });
   },
 
@@ -60,12 +62,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       .from("tasks")
       .update({ status })
       .eq("id", id);
-
-    set((state) => ({
-      tasks: state.tasks.map((t) =>
-        t.id === id ? { ...t, status } : t
-      ),
-    }));
   },
 
   /* ============================
@@ -76,10 +72,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       .from("tasks")
       .delete()
       .eq("id", id);
-
-    set((state) => ({
-      tasks: state.tasks.filter((t) => t.id !== id),
-    }));
   },
 
   /* ============================
@@ -98,7 +90,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const user = useAuthStore.getState().user;
     if (!user) return;
 
-    if (channel) return; // 🔥 anti multi subscribe
+    // 🔥 Supprime ancien channel si existant
+    if (channel) {
+      supabase.removeChannel(channel);
+      channel = null;
+    }
 
     channel = supabase
       .channel(`tasks-${user.id}`)
