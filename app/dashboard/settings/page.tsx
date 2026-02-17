@@ -309,27 +309,40 @@ export default function SettingsPage() {
         </h2>
 
         <div className="flex gap-4 flex-wrap">
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
-          >
-            Tableau de bord
-          </button>
 
-          <button
-            onClick={() => router.push("/dashboard/tasks")}
-            className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
-          >
-            Tâches
-          </button>
+                  <button
+                    onClick={() => router.push("/dashboard")}
+                    className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+                  >
+                    Tableau de bord
+                  </button>
 
-          <button
-            onClick={() => router.push("/dashboard/memoire")}
-            className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
-          >
-            Mémoire
-          </button>
+                  <button
+                    onClick={() => router.push("/dashboard/tasks")}
+                    className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+                  >
+                    Tâches
+                  </button>
+
+                  <button
+                    onClick={() => router.push("/dashboard/memoire")}
+                    className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+                  >
+                    Mémoire
+                  </button>
+
+                  {/* 🔔 NOUVEAU */}
+                  <button
+                    onClick={() =>
+                      router.push("/dashboard/settings/notifications")
+                    }
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm hover:bg-indigo-700 transition"
+                  >
+                    🔔 Notifications
+                  </button>
+
         </div>
+
       </div>
 
       {/* DONNÉES */}
