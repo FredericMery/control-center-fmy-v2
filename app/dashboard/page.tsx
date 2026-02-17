@@ -5,6 +5,9 @@ import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import TaskModal from "@/components/TaskModal";
 import Link from "next/link";
+import NotificationBell from "@/components/NotificationBell";
+import { useNotificationStore } from "@/store/notificationStore";
+
 
 const statuses = ["todo", "in_progress", "waiting", "done"] as const;
 
@@ -39,6 +42,8 @@ export default function DashboardPage() {
 
   const [showModal, setShowModal] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const { createNotification } = useNotificationStore();
+
 
   useEffect(() => {
     if (!user) return;
@@ -49,6 +54,25 @@ export default function DashboardPage() {
   useEffect(() => {
     setActiveType("pro");
   }, []);
+
+  useEffect(() => {
+  tasks.forEach((task) => {
+    if (
+      task.deadline &&
+      new Date(task.deadline) < new Date() &&
+      !task.archived
+    ) {
+      createNotification(
+        "Deadline dépassée",
+        `La tâche "${task.title}" est en retard.`,
+        "/dashboard"
+      );
+    }
+  });
+}, [tasks]);
+
+
+
 
   const isDeadlinePassed = (deadline: string | null) => {
     if (!deadline) return false;
@@ -84,7 +108,9 @@ export default function DashboardPage() {
       {/* HEADER */}
       <div className="flex justify-between items-center mb-2">
 
+
         <div className="flex gap-2">
+          <NotificationBell />
 
           {["pro", "perso"].map((type) => (
             <button
@@ -196,6 +222,11 @@ export default function DashboardPage() {
                       onClick={(e) => {
                         e.stopPropagation();
                         updateStatus(task.id, status);
+                            createNotification(
+                              "Statut modifié",
+                              `La tâche "${task.title}" est maintenant "${statusLabels[status]}"`,
+                              "/dashboard"
+                            );
                         setExpandedTaskId(null);
                       }}
                       className={`px-3 py-1 rounded-lg text-[10px] uppercase tracking-wide transition ${statusColors[status]}`}
