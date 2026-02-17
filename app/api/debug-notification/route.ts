@@ -12,6 +12,7 @@ export async function GET() {
 
   const { error } = await supabase.from("notifications").insert({
     user_id: userId,
+    type: "debug",
     title: "🔥 Test direct",
     message: "Insertion directe OK",
     read: false,

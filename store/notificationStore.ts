@@ -67,18 +67,15 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   createNotification: async (title, message, link) => {
 
   const { data: sessionData } = await supabase.auth.getSession();
-
   const user = sessionData?.session?.user;
 
-  if (!user) {
-    console.log("NO USER FOUND FOR NOTIF");
-    return;
-  }
+  if (!user) return;
 
   const { error } = await supabase
     .from("notifications")
     .insert({
       user_id: user.id,
+      type: "info", // 🔥 AJOUT IMPORTANT
       title,
       message,
       link: link || null,
@@ -89,5 +86,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     console.error("INSERT ERROR:", error);
   }
 },
+
 
 }));
