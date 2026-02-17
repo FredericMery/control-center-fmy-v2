@@ -3,14 +3,10 @@ import { createClient } from "@supabase/supabase-js";
 
 export async function GET(req: NextRequest) {
 
-  const authHeader = req.headers.get("authorization");
+  // 🔐 Autoriser uniquement les vrais crons Vercel
   const cronHeader = req.headers.get("x-vercel-cron");
 
-  // 🔐 Double vérification
-  if (
-    authHeader !== `Bearer ${process.env.CRON_SECRET}` ||
-    cronHeader !== "1"
-  ) {
+  if (cronHeader !== "1") {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 

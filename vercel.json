@@ -2,10 +2,7 @@
   "crons": [
     {
       "path": "/api/notifications/daily-summary",
-      "schedule": "0 7 * * *",
-      "headers": {
-        "Authorization": "Bearer 223b33959315a9ba26e6316bd3b495d55421d47fe1479ffba471dfec94a5fa5d"
-      }
+      "schedule": "0 7 * * *"
     }
   ]
 }
