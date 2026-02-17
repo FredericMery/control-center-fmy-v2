@@ -31,7 +31,7 @@ type TaskState = {
 
 let channel: ReturnType<typeof supabase.channel> | null = null;
 
-export const useTaskStore = create<TaskState>((set, get) => ({
+export const useTaskStore = create<TaskState>((set) => ({
 
   tasks: [],
   activeType: "pro",
@@ -50,7 +50,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
-    // 🔥 Toujours remplacer complètement le state
     set({ tasks: data || [] });
   },
 
@@ -83,14 +82,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set((state) => ({ showArchived: !state.showArchived })),
 
   /* ============================
-     REALTIME SAFE
+     REALTIME (SANS INSERT)
   =============================*/
   subscribeRealtime: () => {
 
     const user = useAuthStore.getState().user;
     if (!user) return;
 
-    // 🔥 Supprime ancien channel si existant
+    // 🔥 Nettoyage ancien channel
     if (channel) {
       supabase.removeChannel(channel);
       channel = null;
@@ -98,50 +97,43 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     channel = supabase
       .channel(`tasks-${user.id}`)
+
+      // 🔄 UPDATE uniquement
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "UPDATE",
           schema: "public",
           table: "tasks",
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-
-          set((state) => {
-
-            const newTask = payload.new as Task;
-            const oldTask = payload.old as Task;
-
-            switch (payload.eventType) {
-
-              case "INSERT":
-                if (state.tasks.some(t => t.id === newTask.id)) {
-                  return state;
-                }
-                return { tasks: [newTask, ...state.tasks] };
-
-              case "UPDATE":
-                return {
-                  tasks: state.tasks.map(t =>
-                    t.id === newTask.id ? newTask : t
-                  ),
-                };
-
-              case "DELETE":
-                return {
-                  tasks: state.tasks.filter(t =>
-                    t.id !== oldTask.id
-                  ),
-                };
-
-              default:
-                return state;
-            }
-          });
-
+          set((state) => ({
+            tasks: state.tasks.map(t =>
+              t.id === payload.new.id ? payload.new as Task : t
+            ),
+          }));
         }
       )
+
+      // ❌ DELETE uniquement
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "tasks",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          set((state) => ({
+            tasks: state.tasks.filter(t =>
+              t.id !== payload.old.id
+            ),
+          }));
+        }
+      )
+
       .subscribe();
   },
 
