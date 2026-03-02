@@ -13,6 +13,70 @@ type Section = {
   user_id: string;
 };
 
+type FieldType =
+  | "text"
+  | "textarea"
+  | "number"
+  | "email"
+  | "tel"
+  | "url"
+  | "date"
+  | "time"
+  | "datetime-local"
+  | "password"
+  | "color"
+  | "range"
+  | "select"
+  | "radio"
+  | "checkbox"
+  | "switch";
+
+type FieldDraft = {
+  id: string;
+  label: string;
+  key: string;
+  type: FieldType;
+  placeholder: string;
+  required: boolean;
+  options: string;
+};
+
+const FIELD_TYPES: { value: FieldType; label: string }[] = [
+  { value: "text", label: "Texte" },
+  { value: "textarea", label: "Texte long" },
+  { value: "number", label: "Nombre" },
+  { value: "email", label: "Email" },
+  { value: "tel", label: "Téléphone" },
+  { value: "url", label: "URL" },
+  { value: "date", label: "Date" },
+  { value: "time", label: "Heure" },
+  { value: "datetime-local", label: "Date + heure" },
+  { value: "password", label: "Mot de passe" },
+  { value: "color", label: "Couleur" },
+  { value: "range", label: "Curseur" },
+  { value: "select", label: "Liste déroulante" },
+  { value: "radio", label: "Choix unique" },
+  { value: "checkbox", label: "Case à cocher" },
+  { value: "switch", label: "Interrupteur" },
+];
+
+const buildFieldKey = (key: string, field: Omit<FieldDraft, "id" | "label" | "key">) => {
+  const encodedPlaceholder = encodeURIComponent(field.placeholder || "");
+  const encodedOptions = encodeURIComponent(field.options || "");
+
+  return `${key}::${field.type}::${field.required ? "1" : "0"}::${encodedPlaceholder}::${encodedOptions}`;
+};
+
+const createEmptyFieldDraft = (): FieldDraft => ({
+  id: crypto.randomUUID(),
+  label: "",
+  key: "",
+  type: "text",
+  placeholder: "",
+  required: false,
+  options: "",
+});
+
 export default function MemoirePage() {
   const user = useAuthStore((s) => s.user);
 
@@ -20,7 +84,10 @@ export default function MemoirePage() {
   const [showForm, setShowForm] = useState(false);
 
   const [sectionName, setSectionName] = useState("");
-  const [fields, setFields] = useState(["", "", "", ""]);
+  const [fields, setFields] = useState<FieldDraft[]>([
+    createEmptyFieldDraft(),
+    createEmptyFieldDraft(),
+  ]);
   const [allowImage, setAllowImage] = useState(true);
   const [templateParts, setTemplateParts] = useState<string[]>([]);
 
@@ -101,14 +168,37 @@ export default function MemoirePage() {
 
     if (!sectionData) return;
 
-    const validFields = fields.filter((f) => f.trim() !== "");
+    const validFields = fields
+      .map((field) => {
+        const label = field.label.trim();
+        if (!label) return null;
+
+        const keyFromInput = field.key.trim();
+        const key = (keyFromInput || label)
+          .toLowerCase()
+          .replace(/[^\w\s-]/g, "")
+          .replace(/\s+/g, "_");
+
+        if (!key) return null;
+
+        return {
+          label,
+          field_key: buildFieldKey(key, {
+            type: field.type,
+            required: field.required,
+            placeholder: field.placeholder.trim(),
+            options: field.options.trim(),
+          }),
+        };
+      })
+      .filter((field): field is { label: string; field_key: string } => Boolean(field));
 
     if (validFields.length > 0) {
       await supabase.from("memory_section_fields").insert(
         validFields.map((field) => ({
           section_id: sectionData.id,
-          label: field,
-          field_key: field.toLowerCase().replace(/\s+/g, "_"),
+          label: field.label,
+          field_key: field.field_key,
         }))
       );
     }
@@ -126,10 +216,31 @@ export default function MemoirePage() {
 
   const resetForm = () => {
     setSectionName("");
-    setFields(["", "", "", ""]);
+    setFields([createEmptyFieldDraft(), createEmptyFieldDraft()]);
     setTemplateParts([]);
     setAllowImage(true);
     setShowForm(false);
+  };
+
+  const updateField = <K extends keyof FieldDraft>(
+    id: string,
+    key: K,
+    value: FieldDraft[K]
+  ) => {
+    setFields((prev) =>
+      prev.map((field) =>
+        field.id === id
+          ? {
+              ...field,
+              [key]: value,
+            }
+          : field
+      )
+    );
+  };
+
+  const removeField = (id: string) => {
+    setFields((prev) => prev.filter((field) => field.id !== id));
   };
 
   return (
@@ -221,6 +332,112 @@ export default function MemoirePage() {
               placeholder="Nom de la section"
               className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black"
             />
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Champs de section</p>
+                <button
+                  onClick={() => setFields((prev) => [...prev, createEmptyFieldDraft()])}
+                  className="px-3 py-1.5 text-xs rounded-lg bg-gray-100 hover:bg-gray-200"
+                >
+                  + Ajouter un champ
+                </button>
+              </div>
+
+              <div className="max-h-[360px] overflow-y-auto space-y-3 pr-1">
+                {fields.map((field, index) => {
+                  const showOptions = field.type === "select" || field.type === "radio";
+
+                  return (
+                    <div
+                      key={field.id}
+                      className="p-4 rounded-2xl border border-gray-200 bg-gray-50 space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-gray-500">Champ {index + 1}</p>
+                        <button
+                          onClick={() => removeField(field.id)}
+                          disabled={fields.length <= 1}
+                          className="text-xs text-gray-500 hover:text-red-500 disabled:opacity-40"
+                        >
+                          Supprimer
+                        </button>
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <input
+                          value={field.label}
+                          onChange={(e) => updateField(field.id, "label", e.target.value)}
+                          placeholder="Label (ex: Auteur)"
+                          className="w-full p-3 bg-white border border-gray-200 rounded-xl"
+                        />
+
+                        <input
+                          value={field.key}
+                          onChange={(e) => updateField(field.id, "key", e.target.value)}
+                          placeholder="Clé (optionnel: auteur)"
+                          className="w-full p-3 bg-white border border-gray-200 rounded-xl"
+                        />
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <select
+                          value={field.type}
+                          onChange={(e) =>
+                            updateField(field.id, "type", e.target.value as FieldType)
+                          }
+                          className="w-full p-3 bg-white border border-gray-200 rounded-xl"
+                        >
+                          {FIELD_TYPES.map((type) => (
+                            <option key={type.value} value={type.value}>
+                              {type.label}
+                            </option>
+                          ))}
+                        </select>
+
+                        <input
+                          value={field.placeholder}
+                          onChange={(e) =>
+                            updateField(field.id, "placeholder", e.target.value)
+                          }
+                          placeholder="Placeholder (optionnel)"
+                          className="w-full p-3 bg-white border border-gray-200 rounded-xl"
+                        />
+                      </div>
+
+                      {showOptions && (
+                        <input
+                          value={field.options}
+                          onChange={(e) => updateField(field.id, "options", e.target.value)}
+                          placeholder="Options séparées par des virgules"
+                          className="w-full p-3 bg-white border border-gray-200 rounded-xl"
+                        />
+                      )}
+
+                      <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={field.required}
+                          onChange={(e) =>
+                            updateField(field.id, "required", e.target.checked)
+                          }
+                        />
+                        Champ requis
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={allowImage}
+                onChange={(e) => setAllowImage(e.target.checked)}
+              />
+              Autoriser les images dans cette section
+            </label>
 
             <div className="flex justify-end gap-4 pt-4">
               <button

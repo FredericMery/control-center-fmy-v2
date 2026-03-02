@@ -18,14 +18,84 @@ type Field = {
   field_key: string;
 };
 
+type FieldType =
+  | "text"
+  | "textarea"
+  | "number"
+  | "email"
+  | "tel"
+  | "url"
+  | "date"
+  | "time"
+  | "datetime-local"
+  | "password"
+  | "color"
+  | "range"
+  | "select"
+  | "radio"
+  | "checkbox"
+  | "switch";
+
+type FieldMeta = {
+  baseKey: string;
+  type: FieldType;
+  required: boolean;
+  placeholder: string;
+  options: string[];
+};
+
 type Item = {
   id: string;
   title: string;
   image_url: string | null;
   rating: number | null;
-  extra_data: Record<string, string> | null;
+  extra_data: Record<string, string | boolean> | null;
   section_id: string;
   user_id: string;
+};
+
+const parseFieldMeta = (fieldKey: string): FieldMeta => {
+  const [baseKey, typeRaw, requiredRaw, placeholderRaw, optionsRaw] =
+    fieldKey.split("::");
+
+  const knownTypes: FieldType[] = [
+    "text",
+    "textarea",
+    "number",
+    "email",
+    "tel",
+    "url",
+    "date",
+    "time",
+    "datetime-local",
+    "password",
+    "color",
+    "range",
+    "select",
+    "radio",
+    "checkbox",
+    "switch",
+  ];
+
+  const type = knownTypes.includes(typeRaw as FieldType)
+    ? (typeRaw as FieldType)
+    : "text";
+
+  const placeholder = placeholderRaw ? decodeURIComponent(placeholderRaw) : "";
+  const options = optionsRaw
+    ? decodeURIComponent(optionsRaw)
+        .split(",")
+        .map((opt) => opt.trim())
+        .filter(Boolean)
+    : [];
+
+  return {
+    baseKey: baseKey || fieldKey,
+    type,
+    required: requiredRaw === "1",
+    placeholder,
+    options,
+  };
 };
 
 export default function SectionPage() {
@@ -40,7 +110,7 @@ export default function SectionPage() {
 
   const [title, setTitle] = useState("");
   const [rating, setRating] = useState(0);
-  const [extraData, setExtraData] = useState<Record<string, string>>({});
+  const [extraData, setExtraData] = useState<Record<string, string | boolean>>({});
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -140,7 +210,7 @@ export default function SectionPage() {
     let uploadedImageUrl: string | null = null;
 
     if (imageFile && section.allow_image) {
-      const filePath = `${user.id}/${Date.now()}`;
+      const filePath = `${user.id}/${crypto.randomUUID()}`;
 
       const { error } = await supabase.storage
         .from("memory-images")
@@ -204,6 +274,109 @@ export default function SectionPage() {
     setExtraData({});
     setImageFile(null);
     setShowForm(false);
+  };
+
+  const renderDynamicField = (field: Field) => {
+    const meta = parseFieldMeta(field.field_key);
+    const value = extraData[field.field_key];
+
+    if (meta.type === "textarea") {
+      return (
+        <textarea
+          value={String(value || "")}
+          onChange={(e) =>
+            setExtraData({
+              ...extraData,
+              [field.field_key]: e.target.value,
+            })
+          }
+          required={meta.required}
+          placeholder={meta.placeholder || field.label}
+          rows={4}
+          className="w-full p-3 bg-white border border-gray-300 rounded-xl"
+        />
+      );
+    }
+
+    if (meta.type === "select") {
+      return (
+        <select
+          value={String(value || "")}
+          onChange={(e) =>
+            setExtraData({
+              ...extraData,
+              [field.field_key]: e.target.value,
+            })
+          }
+          required={meta.required}
+          className="w-full p-3 bg-white border border-gray-300 rounded-xl"
+        >
+          <option value="">Sélectionner...</option>
+          {meta.options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (meta.type === "radio") {
+      return (
+        <div className="space-y-2">
+          {meta.options.map((option) => (
+            <label key={option} className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name={field.field_key}
+                checked={String(value || "") === option}
+                onChange={() =>
+                  setExtraData({
+                    ...extraData,
+                    [field.field_key]: option,
+                  })
+                }
+              />
+              {option}
+            </label>
+          ))}
+        </div>
+      );
+    }
+
+    if (meta.type === "checkbox" || meta.type === "switch") {
+      return (
+        <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={Boolean(value)}
+            onChange={(e) =>
+              setExtraData({
+                ...extraData,
+                [field.field_key]: e.target.checked,
+              })
+            }
+          />
+          {meta.type === "switch" ? "Activer" : "Cocher"}
+        </label>
+      );
+    }
+
+    return (
+      <input
+        type={meta.type}
+        value={String(value || "")}
+        onChange={(e) =>
+          setExtraData({
+            ...extraData,
+            [field.field_key]: e.target.value,
+          })
+        }
+        required={meta.required}
+        placeholder={meta.placeholder || field.label}
+        className="w-full p-3 bg-white border border-gray-300 rounded-xl"
+      />
+    );
   };
 
   if (!section) return <div>Loading...</div>;
@@ -300,16 +473,7 @@ export default function SectionPage() {
                 <label className="text-sm font-medium">
                   {field.label}
                 </label>
-                <input
-                  value={extraData[field.field_key] || ""}
-                  onChange={(e) =>
-                    setExtraData({
-                      ...extraData,
-                      [field.field_key]: e.target.value,
-                    })
-                  }
-                  className="w-full p-3 bg-white border border-gray-300 rounded-xl"
-                />
+                {renderDynamicField(field)}
               </div>
             ))}
 
@@ -377,9 +541,13 @@ export default function SectionPage() {
 
                 {Object.entries(item.extra_data || {}).map(([key, value]) => {
                   const field = fields.find((f) => f.field_key === key);
+                  const meta = parseFieldMeta(key);
+                  const valueLabel =
+                    typeof value === "boolean" ? (value ? "Oui" : "Non") : value;
+
                   return (
                     <p key={key} className="text-sm text-gray-600">
-                      <strong>{field?.label || key}:</strong> {value}
+                      <strong>{field?.label || meta.baseKey}:</strong> {String(valueLabel)}
                     </p>
                   );
                 })}
