@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import type { Database } from '../../types/database';
+import { useAuthStore } from '@/store/authStore';
+import { isPhotoLikeField, uploadMemoryPhoto } from '@/lib/memoryPhotos';
 
 type MemoryField = Database['public']['Tables']['memory_fields']['Row'];
 
@@ -16,9 +18,12 @@ export default function MemoryItemForm({
   onAdd,
   onCancel,
 }: MemoryItemFormProps) {
+  const { user } = useAuthStore();
   const [title, setTitle] = useState('');
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [uploadingFieldId, setUploadingFieldId] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,6 +41,26 @@ export default function MemoryItemForm({
 
   const renderField = (field: MemoryField) => {
     const value = fieldValues[field.id] || '';
+
+    const handlePhotoFile = async (file?: File) => {
+      if (!file || !user) return;
+      setUploadError(null);
+      setUploadingFieldId(field.id);
+      try {
+        const publicUrl = await uploadMemoryPhoto({
+          file,
+          userId: user.id,
+          sectionId,
+          fieldId: field.id,
+        });
+        setFieldValues((prev) => ({ ...prev, [field.id]: publicUrl }));
+      } catch (error) {
+        console.error('Photo upload failed:', error);
+        setUploadError('Upload photo impossible. Vérifie le bucket Supabase "memory-photos" et ses policies.');
+      } finally {
+        setUploadingFieldId(null);
+      }
+    };
     
     switch (field.field_type) {
       case 'textarea':
@@ -89,6 +114,66 @@ export default function MemoryItemForm({
             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-400 focus:outline-none focus:border-white transition-colors"
           />
         );
+
+      case 'url':
+        if (isPhotoLikeField(field.field_label)) {
+          return (
+            <div className="space-y-2">
+              <input
+                type="url"
+                value={value}
+                onChange={(e) => setFieldValues({ ...fieldValues, [field.id]: e.target.value })}
+                placeholder="https://..."
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-400 focus:outline-none focus:border-white transition-colors"
+              />
+
+              {value && (
+                <img
+                  src={value}
+                  alt={field.field_label}
+                  className="w-full h-36 object-cover rounded border border-gray-700"
+                />
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <label className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded cursor-pointer transition-colors">
+                  📁 Bibliothèque
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handlePhotoFile(e.target.files?.[0])}
+                  />
+                </label>
+
+                <label className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded cursor-pointer transition-colors">
+                  📷 Prendre une photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(e) => handlePhotoFile(e.target.files?.[0])}
+                  />
+                </label>
+
+                {uploadingFieldId === field.id && (
+                  <span className="text-xs text-gray-400 self-center">Upload...</span>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <input
+            type="url"
+            value={value}
+            onChange={(e) => setFieldValues({ ...fieldValues, [field.id]: e.target.value })}
+            placeholder="https://..."
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-400 focus:outline-none focus:border-white transition-colors"
+          />
+        );
       
       default:
         return (
@@ -132,6 +217,10 @@ export default function MemoryItemForm({
             {renderField(field)}
           </div>
         ))}
+
+        {uploadError && (
+          <p className="text-sm text-red-400">{uploadError}</p>
+        )}
 
         <div className="flex gap-3 pt-2">
           <button

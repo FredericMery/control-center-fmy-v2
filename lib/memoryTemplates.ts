@@ -53,6 +53,7 @@ export const MEMORY_TEMPLATES: Record<string, SectionTemplate> = {
       { label: 'Type', field_type: 'select', options: ['Rouge', 'Blanc', 'Rosé', 'Champagne'] },
       { label: 'Note personnelle', field_type: 'rating' },
       { label: 'Occasion idéale', field_type: 'text' },
+      { label: 'Photo', field_type: 'url' },
     ],
   },
 
@@ -72,6 +73,7 @@ export const MEMORY_TEMPLATES: Record<string, SectionTemplate> = {
       { label: 'Degré d’alcool', field_type: 'number' },
       { label: 'Notes aromatiques', field_type: 'textarea' },
       { label: 'Moment idéal', field_type: 'text' },
+      { label: 'Photo', field_type: 'url' },
     ],
   },
 
@@ -91,6 +93,7 @@ export const MEMORY_TEMPLATES: Record<string, SectionTemplate> = {
       { label: 'Plat signature', field_type: 'text' },
       { label: 'Note personnelle', field_type: 'rating' },
       { label: 'Avec qui y aller', field_type: 'text' },
+      { label: 'Photo', field_type: 'url' },
     ],
   },
 
@@ -128,6 +131,7 @@ export const MEMORY_TEMPLATES: Record<string, SectionTemplate> = {
       { label: 'Citation favorite', field_type: 'textarea' },
       { label: 'Note personnelle', field_type: 'rating' },
       { label: 'Pourquoi le lire', field_type: 'textarea' },
+      { label: 'Photo', field_type: 'url' },
     ],
   },
 
@@ -147,6 +151,7 @@ export const MEMORY_TEMPLATES: Record<string, SectionTemplate> = {
       { label: 'Année', field_type: 'number' },
       { label: 'Note personnelle', field_type: 'rating' },
       { label: 'Émotion ressentie', field_type: 'textarea' },
+      { label: 'Affiche / Photo', field_type: 'url' },
     ],
   },
 
@@ -185,6 +190,7 @@ export const MEMORY_TEMPLATES: Record<string, SectionTemplate> = {
       { label: 'Téléphone', field_type: 'phone' },
       { label: 'Contexte de rencontre', field_type: 'textarea' },
       { label: 'Notes personnelles', field_type: 'textarea' },
+      { label: 'Photo', field_type: 'url' },
     ],
   },
 
@@ -203,6 +209,7 @@ export const MEMORY_TEMPLATES: Record<string, SectionTemplate> = {
       { label: 'Potentiel business', field_type: 'rating' },
       { label: 'Prochaine action', field_type: 'text' },
       { label: 'Niveau priorité', field_type: 'select', options: ['Basse', 'Moyenne', 'Haute', 'Critique'] },
+      { label: 'Photo', field_type: 'url' },
     ],
   },
 
@@ -221,6 +228,7 @@ export const MEMORY_TEMPLATES: Record<string, SectionTemplate> = {
       { label: 'Résumé', field_type: 'textarea' },
       { label: 'Application concrète', field_type: 'textarea' },
       { label: 'Impact', field_type: 'rating' },
+      { label: 'Photo', field_type: 'url' },
     ],
   },
 };

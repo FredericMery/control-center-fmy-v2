@@ -23,7 +23,6 @@ export default function MemorySectionPage() {
     fetchItemsBySectionId,
     createItem,
     deleteItem,
-    getFieldsBySectionId,
   } = useMemoryStore();
 
   const [showForm, setShowForm] = useState(false);
@@ -50,15 +49,9 @@ export default function MemorySectionPage() {
 
   useEffect(() => {
     if (sectionId && user) {
-      console.log(`[MemorySectionPage] Loading section ${sectionId}`);
       fetchItemsBySectionId(sectionId);
     }
   }, [sectionId, user, fetchItemsBySectionId]);
-  
-  // Debug: log fields count
-  useEffect(() => {
-    console.log(`[MemorySectionPage] Section fields count: ${sectionFields.length}`, sectionFields);
-  }, [sectionFields]);
 
   const handleAddItem = async (title: string, fieldValues: Record<string, string>) => {
     setCreateError(null);

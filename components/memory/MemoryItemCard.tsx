@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useMemoryStore } from '@/store/memoryStore';
 import type { Database } from '../../types/database';
+import { isPhotoLikeField } from '@/lib/memoryPhotos';
 
 type MemoryItem = Database['public']['Tables']['memory_items']['Row'];
 type MemoryField = Database['public']['Tables']['memory_fields']['Row'];
@@ -143,7 +144,17 @@ export default function MemoryItemCard({
                   )
                 ) : (
                   <div className="text-sm text-gray-300">
-                    {values[field.id] || (
+                    {values[field.id] ? (
+                      field.field_type === 'url' && isPhotoLikeField(field.field_label) ? (
+                        <img
+                          src={values[field.id] || ''}
+                          alt={field.field_label}
+                          className="w-full h-40 object-cover rounded border border-gray-700"
+                        />
+                      ) : (
+                        values[field.id]
+                      )
+                    ) : (
                       <span className="text-gray-600 italic">—</span>
                     )}
                   </div>
