@@ -104,6 +104,11 @@ export const useTaskStore = create<TaskState>((set) => ({
      DELETE
   =============================*/
   deleteTask: async (id) => {
+    // ⚡ Optimistic update (immédiat)
+    set((state) => ({
+      tasks: state.tasks.filter(t => t.id !== id),
+    }));
+    
     await supabase
       .from("tasks")
       .delete()
