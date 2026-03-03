@@ -214,7 +214,7 @@ export default function DashboardPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-3">
                         <span className="text-2xl">{statusEmojis[task.status]}</span>
-                        <h3 className="text-lg font-semibold text-white line-clamp-2">
+                        <h3 className="text-lg font-light text-white line-clamp-2">
                           {task.title}
                         </h3>
                       </div>
