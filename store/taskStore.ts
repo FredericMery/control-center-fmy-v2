@@ -110,7 +110,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     set((state) => ({ showArchived: !state.showArchived })),
 
   /* ============================
-     REALTIME (SANS INSERT)
+     REALTIME (INSERT + UPDATE + DELETE)
   =============================*/
   subscribeRealtime: () => {
 
@@ -125,6 +125,23 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     channel = supabase
       .channel(`tasks-${user.id}`)
+
+      // ➕ INSERT
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "tasks",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          set((state) => {
+            if (state.tasks.find(t => t.id === payload.new.id)) return state;
+            return { tasks: [payload.new as Task, ...state.tasks] };
+          });
+        }
+      )
 
       // 🔄 UPDATE uniquement
       .on(
