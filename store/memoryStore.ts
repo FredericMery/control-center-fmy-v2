@@ -241,6 +241,8 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
   fetchItemsBySectionId: async (sectionId: string) => {
     set({ loadingItems: true });
     try {
+      console.log(`[fetchItemsBySectionId] Loading items for section: ${sectionId}`);
+      
       // Fetch items
       const { data: items, error: itemsError } = await supabase
         .from('memory_items')
@@ -250,6 +252,8 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
 
       if (itemsError) throw itemsError;
 
+      console.log(`[fetchItemsBySectionId] Found ${items?.length || 0} items`);
+
       // Fetch fields for this section
       const { data: fields, error: fieldsError } = await supabase
         .from('memory_fields')
@@ -258,6 +262,8 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
         .order('field_order', { ascending: true });
 
       if (fieldsError) throw fieldsError;
+
+      console.log(`[fetchItemsBySectionId] Found ${fields?.length || 0} fields`);
 
       // Fetch all values for these items
       if (items && items.length > 0) {
@@ -275,7 +281,9 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
           fields: [...state.fields.filter((f) => f.section_id !== sectionId), ...(fields || [])],
         }));
       } else {
+        // No items yet, but still update fields
         set((state) => ({
+          items: state.items.filter((i) => i.section_id !== sectionId),
           fields: [...state.fields.filter((f) => f.section_id !== sectionId), ...(fields || [])],
         }));
       }
@@ -287,6 +295,8 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
   },
 
   createItem: async (sectionId: string, title: string) => {
+    console.log(`[createItem] Creating item: ${title} for section: ${sectionId}`);
+    
     try {
       const { data, error } = await supabase
         .from('memory_items')
@@ -294,7 +304,12 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[createItem] Error:', error);
+        throw error;
+      }
+
+      console.log('[createItem] Item created successfully:', data);
 
       set((state) => ({
         items: [...state.items, data],
@@ -302,7 +317,7 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
 
       return data;
     } catch (error) {
-      console.error('Failed to create item:', error);
+      console.error('[createItem] Failed to create item:', error);
       return null;
     }
   },

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS public.memory_sections (
   -- Template reference
   template_id TEXT, -- ID from MEMORY_TEMPLATES
   section_name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
   description TEXT,
   
   -- Configuration
