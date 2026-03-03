@@ -85,9 +85,11 @@ export const useTaskStore = create<TaskState>((set) => ({
      UPDATE STATUS
   =============================*/
   updateStatus: async (id, status) => {
+    const archived = status === "completed" ? true : false;
+    
     await supabase
       .from("tasks")
-      .update({ status })
+      .update({ status, archived })
       .eq("id", id);
   },
 
