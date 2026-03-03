@@ -96,10 +96,19 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
 
       console.log(`Creating section with template: ${templateId}, name: ${name || template.name}`);
 
+      // Generate a unique slug from name
+      const sectionName = name || template.name || templateId;
+      const slug = sectionName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        + '-' + Date.now().toString(36);
+
       const section = {
         user_id: user.id,
         template_id: templateId,
-        section_name: name || template.name || templateId,
+        section_name: sectionName,
+        slug: slug,
         description: template.description || '',
       };
 
