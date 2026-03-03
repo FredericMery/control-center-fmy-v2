@@ -45,42 +45,57 @@ export default function MemoryItemCard({
   };
 
   const previewValues = itemValues.slice(0, 2);
+  
+  // Count filled vs total fields
+  const filledCount = itemValues.filter(v => v.field_value && v.field_value.trim()).length;
+  const totalCount = fields.length;
 
   return (
-    <div className="p-4 bg-gray-800 border border-gray-700 rounded-lg hover:border-gray-600 transition-all">
+    <div 
+      className="p-4 bg-gray-800 border border-gray-700 rounded-lg hover:border-gray-600 transition-all cursor-pointer"
+      onClick={() => setExpanded(!expanded)}
+    >
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="text-lg font-light text-white hover:text-gray-200 transition-colors text-left"
-          >
-            {item.item_title || 'Untitled'}
-          </button>
+          <div className="flex items-center gap-3">
+            <h3 className="text-lg font-light text-white hover:text-gray-200 transition-colors">
+              {item.item_title || 'Sans titre'}
+            </h3>
+            <span className="text-xs text-gray-500">
+              {filledCount}/{totalCount} remplis
+            </span>
+            <span className="text-xs text-gray-600">
+              {expanded ? '▼' : '▶'}
+            </span>
+          </div>
           {!expanded && previewValues.length > 0 && (
             <div className="mt-2 space-y-1">
               {previewValues.map((val) => {
                 const field = fields.find((f) => f.id === val.field_id);
+                if (!val.field_value) return null;
                 return (
-                  <div key={val.id} className="text-xs text-gray-500">
-                    <span className="text-gray-600">{field?.field_label}: </span>
-                    {val.field_value}
+                  <div key={val.id} className="text-xs text-gray-400">
+                    <span className="text-gray-500">{field?.field_label}: </span>
+                    <span className="text-gray-300">{val.field_value}</span>
                   </div>
                 );
               })}
             </div>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setEditing(!editing)}
             className="text-xs px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+            title={editing ? 'Terminer l\'édition' : 'Modifier'}
           >
             {editing ? '✓' : '✎'}
           </button>
           <button
             onClick={onDelete}
             className="text-xs px-2 py-1 text-gray-400 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
+            title="Supprimer"
           >
             ✕
           </button>

@@ -14,8 +14,15 @@ WHERE slug IS NULL;
 ALTER TABLE public.memory_sections 
 ALTER COLUMN slug SET NOT NULL;
 
-ALTER TABLE public.memory_sections 
-ADD CONSTRAINT memory_sections_slug_unique UNIQUE (slug);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'memory_sections_slug_unique'
+  ) THEN
+    ALTER TABLE public.memory_sections 
+    ADD CONSTRAINT memory_sections_slug_unique UNIQUE (slug);
+  END IF;
+END $$;
 
 -- 4. Add index for performance
 CREATE INDEX IF NOT EXISTS idx_memory_sections_slug ON public.memory_sections(slug);
