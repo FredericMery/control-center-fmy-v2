@@ -60,7 +60,7 @@ export default function MemorySectionPage() {
     console.log(`[MemorySectionPage] Section fields count: ${sectionFields.length}`, sectionFields);
   }, [sectionFields]);
 
-  const handleAddItem = async (title: string) => {
+  const handleAddItem = async (title: string, fieldValues: Record<string, string>) => {
     setCreateError(null);
     
     if (sectionFields.length === 0) {
@@ -69,12 +69,25 @@ export default function MemorySectionPage() {
       return;
     }
     
+    // Create the item
     const created = await createItem(sectionId, title);
     if (!created) {
       setCreateError('Impossible de créer la carte. Vérifie les droits RLS / section.');
       return;
     }
+
+    // Save all field values
+    const { setItemValue } = useMemoryStore.getState();
+    for (const [fieldId, value] of Object.entries(fieldValues)) {
+      if (value && value.trim()) {
+        await setItemValue(created.id, fieldId, value);
+      }
+    }
+    
     setShowForm(false);
+    
+    // Refresh the items to show the new one with values
+    await fetchItemsBySectionId(sectionId);
   };
 
   if (loadingSections && !section) {
