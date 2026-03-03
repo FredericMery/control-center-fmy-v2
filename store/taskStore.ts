@@ -98,6 +98,14 @@ export const useTaskStore = create<TaskState>((set) => ({
       .from("tasks")
       .update({ status, archived })
       .eq("id", id);
+
+    // 🔥 Si la tâche est "done", supprimer les notifications liées
+    if (status === "done") {
+      await supabase
+        .from("notifications")
+        .delete()
+        .eq("ref_key", `deadline-${id}`);
+    }
   },
 
   /* ============================

@@ -36,13 +36,13 @@ export async function GET(req: NextRequest) {
 
     if (!tasks) continue;
 
-    // Filter: only non-completed tasks
-    const activeTasks = tasks.filter(t => t.status !== "completed");
+    // Filter: only non-completed tasks (status != "done")
+    const activeTasks = tasks.filter(t => t.status !== "done");
 
     const pro = activeTasks.filter(t => t.type === "pro").length;
     const perso = activeTasks.filter(t => t.type === "perso").length;
 
-    // Filter: deadline is today or in the past + not completed
+    // Filter: deadline is today or in the past + not done
     const todayDate = new Date(todayStr);
     todayDate.setHours(0, 0, 0, 0);
 
@@ -128,7 +128,8 @@ export async function GET(req: NextRequest) {
       .eq("user_id", user.user_id)
       .gte("deadline", startTomorrow.toISOString())
       .lte("deadline", endTomorrow.toISOString())
-      .eq("archived", false);
+      .eq("archived", false)
+      .neq("status", "done");  // Exclude done tasks
 
     const { data: existingTomorrow } = await supabase
       .from("notifications")
