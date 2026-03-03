@@ -258,45 +258,52 @@ export default function DashboardPage() {
                       </div>
 
                       {/* Contact Actions */}
-                      {task.description && (() => {
-                        const contacts = extractContacts(task.description);
+                      {(() => {
+                        const desc = task.description || "";
+                        const contacts = extractContacts(desc);
+                        const hasContacts = contacts.phone || contacts.email || contacts.teams;
+                        
                         return (
-                          contacts.phone || contacts.email || contacts.teams ? (
-                            <div className="flex gap-2 mt-2">
-                              {contacts.phone && (
-                                <a
-                                  href={generateTelUri(contacts.phone)}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="text-lg hover:scale-125 transition-transform cursor-pointer"
-                                  title={`Call: ${contacts.phone}`}
-                                >
-                                  📱
-                                </a>
-                              )}
-                              {contacts.email && (
-                                <a
-                                  href={generateMailtoUri(contacts.email)}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="text-lg hover:scale-125 transition-transform cursor-pointer"
-                                  title={`Email: ${contacts.email}`}
-                                >
-                                  📧
-                                </a>
-                              )}
-                              {contacts.teams && (
-                                <a
-                                  href={generateTeamsAppUri(contacts.teams)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="text-lg hover:scale-125 transition-transform cursor-pointer"
-                                  title={`Teams: ${contacts.teams}`}
-                                >
-                                  💬
-                                </a>
-                              )}
-                            </div>
-                          ) : null
+                          <div className="flex gap-2 mt-2">
+                            {contacts.phone ? (
+                              <a
+                                href={generateTelUri(contacts.phone)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-lg hover:scale-125 transition-transform cursor-pointer"
+                                title={`Call: ${contacts.phone}`}
+                              >
+                                📱
+                              </a>
+                            ) : (
+                              <span className="text-lg opacity-20 cursor-not-allowed" title="No phone found">📱</span>
+                            )}
+                            {contacts.email ? (
+                              <a
+                                href={generateMailtoUri(contacts.email)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-lg hover:scale-125 transition-transform cursor-pointer"
+                                title={`Email: ${contacts.email}`}
+                              >
+                                📧
+                              </a>
+                            ) : (
+                              <span className="text-lg opacity-20 cursor-not-allowed" title="No email found">📧</span>
+                            )}
+                            {contacts.teams ? (
+                              <a
+                                href={generateTeamsAppUri(contacts.teams)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-lg hover:scale-125 transition-transform cursor-pointer"
+                                title={`Teams: ${contacts.teams}`}
+                              >
+                                💬
+                              </a>
+                            ) : (
+                              <span className="text-lg opacity-20 cursor-not-allowed" title="No contact found">💬</span>
+                            )}
+                          </div>
                         );
                       })()}
                     </div>
