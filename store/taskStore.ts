@@ -85,7 +85,7 @@ export const useTaskStore = create<TaskState>((set) => ({
      UPDATE STATUS
   =============================*/
   updateStatus: async (id, status) => {
-    const archived = status === "completed" ? true : false;
+    const archived = status === "done" ? true : false;
     
     // ⚡ Optimistic update (immédiat)
     set((state) => ({
