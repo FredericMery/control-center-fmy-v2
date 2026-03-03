@@ -13,6 +13,7 @@ export default function MemorePage() {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [customName, setCustomName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -24,10 +25,19 @@ export default function MemorePage() {
     if (!user) return;
 
     setCreating(true);
+    setCreateError(null);
     const { createSection } = useMemoryStore.getState();
     const name = customName || MEMORY_TEMPLATES[templateId]?.name;
 
-    await createSection(templateId, name);
+    const newSection = await createSection(templateId, name);
+    if (!newSection) {
+      setCreateError('Failed to create collection. Check console for details.');
+      setCreating(false);
+      return;
+    }
+
+    // Refresh sections to show the new collection
+    await fetchSections();
     setShowNewSection(false);
     setSelectedTemplate(null);
     setCustomName('');
@@ -90,6 +100,9 @@ export default function MemorePage() {
                   placeholder={MEMORY_TEMPLATES[selectedTemplate]?.name}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-500 focus:outline-none focus:border-white transition-colors"
                 />
+                {createError && (
+                  <p className="text-sm text-red-400 mt-3">{createError}</p>
+                )}
                 <div className="flex gap-2 mt-4">
                   <button
                     onClick={() => handleCreateSection(selectedTemplate)}
@@ -102,6 +115,7 @@ export default function MemorePage() {
                     onClick={() => {
                       setSelectedTemplate(null);
                       setCustomName('');
+                      setCreateError(null);
                     }}
                     className="px-4 py-2 bg-gray-700 text-white rounded text-sm font-light hover:bg-gray-600 transition-colors"
                   >

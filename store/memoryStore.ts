@@ -82,16 +82,25 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
 
   createSection: async (templateId: string, name?: string) => {
     const user = useAuthStore.getState().user;
-    if (!user) return null;
+    if (!user) {
+      console.error('createSection: No user logged in');
+      return null;
+    }
 
     try {
       const template = MEMORY_TEMPLATES[templateId];
+      if (!template) {
+        console.error(`createSection: Template not found for templateId: ${templateId}`);
+        return null;
+      }
+
+      console.log(`Creating section with template: ${templateId}, name: ${name || template.name}`);
 
       const section = {
         user_id: user.id,
         template_id: templateId,
-        section_name: name || template?.name || templateId,
-        description: template?.description || '',
+        section_name: name || template.name || templateId,
+        description: template.description || '',
       };
 
       const { data, error } = await supabase
@@ -100,7 +109,12 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Failed to insert memory_sections:', error);
+        throw error;
+      }
+
+      console.log('Section created:', data);
 
       // Create fields from local template definition
       if (template?.fields?.length) {
@@ -114,9 +128,13 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
           options: field.options ?? null,
         }));
 
+        console.log(`Creating ${fieldsToCreate.length} fields for section ${data.id}`);
+
         const { error: fieldsError } = await supabase.from('memory_fields').insert(fieldsToCreate);
         if (fieldsError) {
           console.error('Failed to create template fields:', fieldsError);
+        } else {
+          console.log('Fields created successfully');
         }
       }
 
