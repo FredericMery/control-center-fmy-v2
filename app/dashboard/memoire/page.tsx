@@ -8,12 +8,13 @@ import Link from 'next/link';
 
 export default function MemorePage() {
   const { user } = useAuthStore();
-  const { sections, loadingSections, fetchSections } = useMemoryStore();
+  const { sections, loadingSections, fetchSections, deleteSection } = useMemoryStore();
   const [showNewSection, setShowNewSection] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [customName, setCustomName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -24,6 +25,25 @@ export default function MemorePage() {
   const handleCreateSection = async (templateId: string) => {
     if (!user) return;
 
+  const handleDeleteSection = async (e: React.MouseEvent, sectionId: string, sectionName: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!confirm(`Supprimer "${sectionName}" et toutes ses fiches ?`)) {
+      return;
+    }
+    
+    setDeletingId(sectionId);
+    try {
+      await deleteSection(sectionId);
+      await fetchSections();
+    } catch (err) {
+      console.error('Failed to delete section:', err);
+      alert('Erreur lors de la suppression');
+    } finally {
+      setDeletingId(null);
+    }
+  };
     setCreating(true);
     setCreateError(null);
     
@@ -163,13 +183,61 @@ export default function MemorePage() {
                       : null;
 
                     return (
-                      <Link
+                      <div
                         key={section.id}
-                        href={`/dashboard/memoire/${section.id}`}
-                        className="group p-5 bg-gray-800 hover:bg-gray-750 border border-gray-700 rounded-lg transition-all hover:border-gray-600 cursor-pointer"
+                        className="group relative p-5 bg-gray-800 hover:bg-gray-750 border border-gray-700 rounded-lg transition-all hover:border-gray-600"
                       >
+                        <Link href={`/dashboard/memoire/${section.id}`} className="block">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="text-3xl">{template?.icon || '📝'}</div>
+                            <div className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded">
+                              {section.items_count || 0} items
+                            </div>
+                          </div>
+                          <h3 className="text-lg font-light text-white mb-1 group-hover:text-gray-100 transition-colors">
+                            {section.section_name}
+                          </h3>
+                          {section.description && (
+                            <p className="text-xs text-gray-500 line-clamp-2">
+                              {section.description}
+                            </p>
+                          )}
+                        </Link>
+                        
+                        <button
+                          onClick={(e) => handleDeleteSection(e, section.id, section.section_name)}
+                          disabled={deletingId === section.id}
+                          className="absolute top-3 right-3 p-2 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
+                          title="Supprimer cette mémoire"
+                        >
+                          {deletingId === section.id ? (
+                            <span className="text-sm">⌛</span>
+                          ) : (
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Custom Collections */}
+            {customSections.length > 0 && (
+              <div className="mt-8">
+                <h2 className="text-lg font-light text-white mb-4">Custom Collections</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {customSections.map((section) => (
+                    <div
+                      key={section.id}
+                      className="group relative p-5 bg-gray-800 hover:bg-gray-750 border border-gray-700 rounded-lg transition-all hover:border-gray-600"
+                    >
+                      <Link href={`/dashboard/memoire/${section.id}`} className="block">
                         <div className="flex items-start justify-between mb-3">
-                          <div className="text-3xl">{template?.icon || '📝'}</div>
+                          <div className="text-3xl">📝</div>
                           <div className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded">
                             {section.items_count || 0} items
                           </div>
@@ -183,38 +251,22 @@ export default function MemorePage() {
                           </p>
                         )}
                       </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Custom Collections */}
-            {customSections.length > 0 && (
-              <div className="mt-8">
-                <h2 className="text-lg font-light text-white mb-4">Custom Collections</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {customSections.map((section) => (
-                    <Link
-                      key={section.id}
-                      href={`/dashboard/memoire/${section.id}`}
-                      className="group p-5 bg-gray-800 hover:bg-gray-750 border border-gray-700 rounded-lg transition-all hover:border-gray-600 cursor-pointer"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="text-3xl">📝</div>
-                        <div className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded">
-                          {section.items_count || 0} items
-                        </div>
-                      </div>
-                      <h3 className="text-lg font-light text-white mb-1 group-hover:text-gray-100 transition-colors">
-                        {section.section_name}
-                      </h3>
-                      {section.description && (
-                        <p className="text-xs text-gray-500 line-clamp-2">
-                          {section.description}
-                        </p>
-                      )}
-                    </Link>
+                      
+                      <button
+                        onClick={(e) => handleDeleteSection(e, section.id, section.section_name)}
+                        disabled={deletingId === section.id}
+                        className="absolute top-3 right-3 p-2 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
+                        title="Supprimer cette mémoire"
+                      >
+                        {deletingId === section.id ? (
+                          <span className="text-sm">⌛</span>
+                        ) : (
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
