@@ -49,12 +49,25 @@ export default function MemorySectionPage() {
 
   useEffect(() => {
     if (sectionId && user) {
+      console.log(`[MemorySectionPage] Loading section ${sectionId}`);
       fetchItemsBySectionId(sectionId);
     }
   }, [sectionId, user, fetchItemsBySectionId]);
+  
+  // Debug: log fields count
+  useEffect(() => {
+    console.log(`[MemorySectionPage] Section fields count: ${sectionFields.length}`, sectionFields);
+  }, [sectionFields]);
 
   const handleAddItem = async (title: string) => {
     setCreateError(null);
+    
+    if (sectionFields.length === 0) {
+      setCreateError('⚠️ Aucun champ défini pour cette section. Contacte le support.');
+      console.error('Cannot create item: no fields defined for section', sectionId);
+      return;
+    }
+    
     const created = await createItem(sectionId, title);
     if (!created) {
       setCreateError('Impossible de créer la carte. Vérifie les droits RLS / section.');
