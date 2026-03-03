@@ -215,6 +215,11 @@ export default function DashboardPage() {
             {filteredTasks.map((task) => {
 
               const deadlinePassed = isDeadlinePassed(task.deadline);
+              const contactSource = `${task.title} ${task.description || ""}`;
+              const contacts = extractContacts(contactSource);
+              const phoneHref = contacts.phone ? generateTelUri(contacts.phone) : undefined;
+              const emailHref = contacts.email ? generateMailtoUri(contacts.email) : undefined;
+              const teamsHref = contacts.teams ? generateTeamsAppUri(contacts.teams) : undefined;
 
               return (
                 <div
@@ -258,54 +263,63 @@ export default function DashboardPage() {
                       </div>
 
                       {/* Contact Actions */}
-                      {(() => {
-                        const desc = task.description || "";
-                        const contacts = extractContacts(desc);
-                        const hasContacts = contacts.phone || contacts.email || contacts.teams;
-                        
-                        return (
-                          <div className="flex gap-2 mt-2">
-                            {contacts.phone ? (
-                              <a
-                                href={generateTelUri(contacts.phone)}
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-lg hover:scale-125 transition-transform cursor-pointer"
-                                title={`Call: ${contacts.phone}`}
-                              >
-                                📱
-                              </a>
-                            ) : (
-                              <span className="text-lg opacity-20 cursor-not-allowed" title="No phone found">📱</span>
-                            )}
-                            {contacts.email ? (
-                              <a
-                                href={generateMailtoUri(contacts.email)}
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-lg hover:scale-125 transition-transform cursor-pointer"
-                                title={`Email: ${contacts.email}`}
-                              >
-                                📧
-                              </a>
-                            ) : (
-                              <span className="text-lg opacity-20 cursor-not-allowed" title="No email found">📧</span>
-                            )}
-                            {contacts.teams ? (
-                              <a
-                                href={generateTeamsAppUri(contacts.teams)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-lg hover:scale-125 transition-transform cursor-pointer"
-                                title={`Teams: ${contacts.teams}`}
-                              >
-                                💬
-                              </a>
-                            ) : (
-                              <span className="text-lg opacity-20 cursor-not-allowed" title="No contact found">💬</span>
-                            )}
-                          </div>
-                        );
-                      })()}
+                      <div className="flex gap-2 mt-2">
+                        {phoneHref ? (
+                          <a
+                            href={phoneHref}
+                            onClick={(e) => e.stopPropagation()}
+                            className="px-2 py-1 rounded-md bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs hover:bg-emerald-500/30 transition-colors"
+                            title={`Appeler: ${contacts.phone}`}
+                          >
+                            📱 Tél
+                          </a>
+                        ) : (
+                          <span
+                            className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-gray-500 text-xs"
+                            title="Ajoute un numéro (ex: +33 6 12 34 56 78)"
+                          >
+                            📱 Tél
+                          </span>
+                        )}
+
+                        {emailHref ? (
+                          <a
+                            href={emailHref}
+                            onClick={(e) => e.stopPropagation()}
+                            className="px-2 py-1 rounded-md bg-sky-500/20 border border-sky-400/40 text-sky-300 text-xs hover:bg-sky-500/30 transition-colors"
+                            title={`Email: ${contacts.email}`}
+                          >
+                            📧 Mail
+                          </a>
+                        ) : (
+                          <span
+                            className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-gray-500 text-xs"
+                            title="Ajoute un email (ex: nom@domaine.com)"
+                          >
+                            📧 Mail
+                          </span>
+                        )}
+
+                        {teamsHref ? (
+                          <a
+                            href={teamsHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="px-2 py-1 rounded-md bg-indigo-500/20 border border-indigo-400/40 text-indigo-300 text-xs hover:bg-indigo-500/30 transition-colors"
+                            title={`Teams: ${contacts.teams}`}
+                          >
+                            💬 Teams
+                          </a>
+                        ) : (
+                          <span
+                            className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-gray-500 text-xs"
+                            title="Ajoute un contact (ex: @Prénom Nom)"
+                          >
+                            💬 Teams
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <button
