@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useMemoryStore } from '@/store/memoryStore';
-import type { Database } from '@/types/database';
+import type { Database } from '../../types/database';
 
 type MemoryItem = Database['public']['Tables']['memory_items']['Row'];
 type MemoryField = Database['public']['Tables']['memory_fields']['Row'];

@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { useMemoryStore } from '@/store/memoryStore';
 import { MEMORY_TEMPLATES } from '@/lib/memoryTemplates';
-import MemoryItemForm from '@/components/memory/MemoryItemForm';
-import MemoryItemCard from '@/components/memory/MemoryItemCard';
+import MemoryItemForm from '../../../../components/memory/MemoryItemForm';
+import MemoryItemCard from '../../../../components/memory/MemoryItemCard';
 
 export default function MemorySectionPage() {
   const router = useRouter();

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Database } from '@/types/database';
+import type { Database } from '../../types/database';
 
 type MemoryField = Database['public']['Tables']['memory_fields']['Row'];
 

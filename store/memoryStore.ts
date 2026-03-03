@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase/client';
 import { useAuthStore } from './authStore';
-import type { Database } from '@/types/database';
+import type { Database } from '../types/database';
 
 type MemorySection = Database['public']['Tables']['memory_sections']['Row'];
 type MemoryField = Database['public']['Tables']['memory_fields']['Row'];
