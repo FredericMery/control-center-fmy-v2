@@ -16,8 +16,9 @@ export default function MemorySectionPage() {
   const {
     items,
     sections,
-    fields,
     loadingItems,
+    loadingSections,
+    fetchSections,
     fetchItemsBySectionId,
     createItem,
     deleteItem,
@@ -26,6 +27,7 @@ export default function MemorySectionPage() {
 
   const [showForm, setShowForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const section = sections.find((s) => s.id === sectionId);
   const template = section?.template_id ? MEMORY_TEMPLATES[section.template_id] : null;
@@ -40,15 +42,36 @@ export default function MemorySectionPage() {
     : sectionItems;
 
   useEffect(() => {
+    if (user) {
+      fetchSections();
+    }
+  }, [user, fetchSections]);
+
+  useEffect(() => {
     if (sectionId && user) {
       fetchItemsBySectionId(sectionId);
     }
   }, [sectionId, user, fetchItemsBySectionId]);
 
   const handleAddItem = async (title: string) => {
-    await createItem(sectionId, title);
+    setCreateError(null);
+    const created = await createItem(sectionId, title);
+    if (!created) {
+      setCreateError('Impossible de créer la carte. Vérifie les droits RLS / section.');
+      return;
+    }
     setShowForm(false);
   };
+
+  if (loadingSections && !section) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-black to-gray-900 p-4">
+        <div className="max-w-4xl mx-auto">
+          <p className="text-gray-400">Loading section...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!section) {
     return (
@@ -105,12 +128,17 @@ export default function MemorySectionPage() {
 
         {/* Add Item Form */}
         {showForm && (
-          <MemoryItemForm
-            sectionId={sectionId}
-            fields={sectionFields}
-            onAdd={handleAddItem}
-            onCancel={() => setShowForm(false)}
-          />
+          <>
+            <MemoryItemForm
+              sectionId={sectionId}
+              fields={sectionFields}
+              onAdd={handleAddItem}
+              onCancel={() => setShowForm(false)}
+            />
+            {createError && (
+              <p className="-mt-4 mb-4 text-sm text-red-400">{createError}</p>
+            )}
+          </>
         )}
 
         {/* Items List */}

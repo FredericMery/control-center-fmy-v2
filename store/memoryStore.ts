@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '@/lib/supabase/client';
 import { useAuthStore } from './authStore';
 import type { Database } from '../types/database';
+import { MEMORY_TEMPLATES } from '@/lib/memoryTemplates';
 
 type MemorySection = Database['public']['Tables']['memory_sections']['Row'];
 type MemoryField = Database['public']['Tables']['memory_fields']['Row'];
@@ -84,18 +85,12 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
     if (!user) return null;
 
     try {
-      // Get template to copy its fields
-      const { data: template } = await supabase
-        .from('memory_sections')
-        .select('*')
-        .eq('template_id', templateId)
-        .eq('user_id', 'system') // Predefined template
-        .single();
+      const template = MEMORY_TEMPLATES[templateId];
 
       const section = {
         user_id: user.id,
         template_id: templateId,
-        section_name: name || templateId,
+        section_name: name || template?.name || templateId,
         description: template?.description || '',
       };
 
@@ -107,25 +102,21 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
 
       if (error) throw error;
 
-      // Copy fields from template
-      if (template) {
-        const { data: templateFields } = await supabase
-          .from('memory_fields')
-          .select('*')
-          .eq('section_id', template.id);
+      // Create fields from local template definition
+      if (template?.fields?.length) {
+        const fieldsToCreate = template.fields.map((field, index) => ({
+          section_id: data.id,
+          field_label: field.label,
+          field_type: field.field_type,
+          field_order: index,
+          is_required: field.is_required ?? false,
+          is_searchable: field.is_searchable ?? false,
+          options: field.options ?? null,
+        }));
 
-        if (templateFields && templateFields.length > 0) {
-          const fieldsToCreate = templateFields.map((field: any) => ({
-            section_id: data.id,
-            field_label: field.field_label,
-            field_type: field.field_type,
-            field_order: field.field_order,
-            is_required: field.is_required,
-            is_searchable: field.is_searchable,
-            options: field.options,
-          }));
-
-          await supabase.from('memory_fields').insert(fieldsToCreate);
+        const { error: fieldsError } = await supabase.from('memory_fields').insert(fieldsToCreate);
+        if (fieldsError) {
+          console.error('Failed to create template fields:', fieldsError);
         }
       }
 
