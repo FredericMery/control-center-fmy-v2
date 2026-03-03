@@ -100,6 +100,11 @@ export default function DashboardPage() {
     [tasks]
   );
 
+  const todoCount = useMemo(
+    () => filteredTasks.filter(t => t.status === "todo").length,
+    [filteredTasks]
+  );
+
   const doneCount = useMemo(
     () => filteredTasks.filter(t => t.status === "done").length,
     [filteredTasks]
@@ -110,7 +115,7 @@ export default function DashboardPage() {
 
       {/* HEADER SECTION */}
       <div className="sticky top-0 z-20 backdrop-blur-xl bg-slate-900/80 border-b border-white/10">
-        <div className="max-w-5xl mx-auto px-6 py-6">
+        <div className="max-w-5xl mx-auto px-6 py-4">
           
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -125,23 +130,35 @@ export default function DashboardPage() {
           </div>
 
           {/* STATS */}
-          <div className="mt-6 grid grid-cols-3 gap-4">
-            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <div className="bg-white/5 rounded-lg p-3 border border-white/10">
               <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">PRO</p>
-              <p className="text-3xl font-bold">{proActiveCount}</p>
+              <p className="text-2xl font-bold">{proActiveCount}</p>
             </div>
-            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+            <div className="bg-white/5 rounded-lg p-3 border border-white/10">
               <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">PERSO</p>
-              <p className="text-3xl font-bold">{persoActiveCount}</p>
+              <p className="text-2xl font-bold">{persoActiveCount}</p>
             </div>
-            <div className="bg-emerald-500/10 rounded-2xl p-4 border border-emerald-500/20">
-              <p className="text-xs text-emerald-400 uppercase tracking-wide mb-1">Complétées</p>
-              <p className="text-3xl font-bold text-emerald-400">{doneCount}</p>
+            <div className={`rounded-lg p-3 border ${
+              showArchived
+                ? "bg-emerald-500/10 border-emerald-500/20"
+                : "bg-amber-500/10 border-amber-500/20"
+            }`}>
+              <p className={`text-xs uppercase tracking-wide mb-1 ${
+                showArchived ? "text-emerald-400" : "text-amber-400"
+              }`}>
+                {showArchived ? "Complétées" : "À lancer"}
+              </p>
+              <p className={`text-2xl font-bold ${
+                showArchived ? "text-emerald-400" : "text-amber-400"
+              }`}>
+                {showArchived ? doneCount : todoCount}
+              </p>
             </div>
           </div>
 
           {/* TABS */}
-          <div className="mt-6 flex items-center gap-3 flex-wrap">
+          <div className="mt-4 flex items-center gap-3 flex-wrap">
             {["pro", "perso"].map((type) => (
               <button
                 key={type}
