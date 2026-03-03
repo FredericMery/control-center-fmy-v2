@@ -87,6 +87,13 @@ export const useTaskStore = create<TaskState>((set) => ({
   updateStatus: async (id, status) => {
     const archived = status === "completed" ? true : false;
     
+    // ⚡ Optimistic update (immédiat)
+    set((state) => ({
+      tasks: state.tasks.map(t =>
+        t.id === id ? { ...t, status, archived } : t
+      ),
+    }));
+    
     await supabase
       .from("tasks")
       .update({ status, archived })
