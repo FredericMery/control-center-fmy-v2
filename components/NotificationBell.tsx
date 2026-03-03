@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useAuthStore } from "@/store/authStore";
 import Link from "next/link";
@@ -20,16 +20,26 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const memoFetch = useCallback(() => {
+    if (!user) return;
+    fetchNotifications();
+  }, [user, fetchNotifications]);
+
+  const memoSubscribe = useCallback(() => {
+    if (!user) return;
+    subscribeRealtime();
+  }, [user, subscribeRealtime]);
+
   /* ============================
      LOAD + REALTIME
   =============================*/
   useEffect(() => {
     if (!user) return;
 
-    fetchNotifications();
-    subscribeRealtime(); // 🔥 un seul subscribe (protégé côté store)
+    memoFetch();
+    memoSubscribe();
 
-  }, [user]);
+  }, [user, memoFetch, memoSubscribe]);
 
   /* ============================
      CLOSE ON OUTSIDE CLICK
@@ -74,8 +84,15 @@ export default function NotificationBell() {
       {open && (
         <div className="absolute right-0 mt-3 w-80 bg-zinc-900 border border-white/10 rounded-2xl p-3 space-y-3 shadow-2xl backdrop-blur-xl z-50">
 
-          <div className="text-xs text-gray-400 px-1">
-            Notifications
+          <div className="flex justify-between items-center px-1">
+            <span className="text-xs text-gray-400">Notifications</span>
+            <button
+              onClick={() => fetchNotifications()}
+              className="text-xs text-gray-500 hover:text-white transition"
+              title="Rafraîchir"
+            >
+              🔄
+            </button>
           </div>
 
           {notifications.length === 0 && (
