@@ -6,6 +6,7 @@ export type Task = {
   id: string;
   user_id: string;
   title: string;
+  description?: string;
   type: "pro" | "perso";
   status: string;
   deadline: string | null;

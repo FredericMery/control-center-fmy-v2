@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
+import { extractContacts, generateTelUri, generateMailtoUri, generateTeamsAppUri } from "@/lib/contactExtractor";
 import TaskModal from "@/components/TaskModal";
 import Link from "next/link";
 import NotificationBell from "@/components/NotificationBell";
@@ -255,6 +256,49 @@ export default function DashboardPage() {
                           </div>
                         )}
                       </div>
+
+                      {/* Contact Actions */}
+                      {task.description && (() => {
+                        const contacts = extractContacts(task.description);
+                        return (
+                          contacts.phone || contacts.email || contacts.teams ? (
+                            <div className="flex gap-2 mt-2">
+                              {contacts.phone && (
+                                <a
+                                  href={generateTelUri(contacts.phone)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-lg hover:scale-125 transition-transform cursor-pointer"
+                                  title={`Call: ${contacts.phone}`}
+                                >
+                                  📱
+                                </a>
+                              )}
+                              {contacts.email && (
+                                <a
+                                  href={generateMailtoUri(contacts.email)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-lg hover:scale-125 transition-transform cursor-pointer"
+                                  title={`Email: ${contacts.email}`}
+                                >
+                                  📧
+                                </a>
+                              )}
+                              {contacts.teams && (
+                                <a
+                                  href={generateTeamsAppUri(contacts.teams)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-lg hover:scale-125 transition-transform cursor-pointer"
+                                  title={`Teams: ${contacts.teams}`}
+                                >
+                                  💬
+                                </a>
+                              )}
+                            </div>
+                          ) : null
+                        );
+                      })()}
                     </div>
 
                     <button
