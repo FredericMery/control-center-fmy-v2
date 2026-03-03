@@ -78,6 +78,10 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     if (newTask) {
       set((state) => ({ tasks: [newTask, ...state.tasks] }));
+
+      // 🔔 Check for overdue tasks after adding a new task
+      fetch("/api/notifications/check-overdue")
+        .catch((err) => console.error("Failed to check overdue tasks:", err));
     }
   },
 
@@ -106,6 +110,10 @@ export const useTaskStore = create<TaskState>((set) => ({
         .delete()
         .eq("ref_key", `deadline-${id}`);
     }
+
+    // 🔔 Check for overdue tasks after status update
+    fetch("/api/notifications/check-overdue")
+      .catch((err) => console.error("Failed to check overdue tasks:", err));
   },
 
   /* ============================

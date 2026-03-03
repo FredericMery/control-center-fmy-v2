@@ -22,6 +22,16 @@ export default function DashboardLayout({
     }
   }, [user, loading, router]);
 
+  // 🔔 Check for overdue tasks on app launch
+  useEffect(() => {
+    if (!loading && user) {
+      // Call the check-overdue API when app loads
+      fetch("/api/notifications/check-overdue")
+        .then((res) => res.json())
+        .catch((err) => console.error("Failed to check overdue tasks:", err));
+    }
+  }, [user, loading]);
+
   // 🔥 IMPORTANT : PAS D’OVERLAY FIXED
   if (loading) {
     return (
