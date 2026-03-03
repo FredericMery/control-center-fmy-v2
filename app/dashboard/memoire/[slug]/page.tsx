@@ -32,7 +32,7 @@ export default function MemorySectionPage() {
 
   const section = sections.find((s) => s.id === sectionId);
   const template = section?.template_id ? MEMORY_TEMPLATES[section.template_id] : null;
-  const sectionFields = getFieldsBySectionId(sectionId);
+  const sectionFields = fields.filter((f) => f.section_id === sectionId);
   const sectionItems = items.filter((i) => i.section_id === sectionId);
 
   // Filter items by search query
