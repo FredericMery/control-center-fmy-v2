@@ -16,6 +16,7 @@ export default function MemorySectionPage() {
   const {
     items,
     sections,
+    fields,
     loadingItems,
     loadingSections,
     fetchSections,
