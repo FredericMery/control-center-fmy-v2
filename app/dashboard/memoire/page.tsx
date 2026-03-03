@@ -242,8 +242,8 @@ export default function MemoirePage() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-50">
-          <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl p-10 space-y-6 text-blue-950">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-50 overflow-hidden">
+          <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl p-10 space-y-6 text-blue-950 max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-semibold">
               Créer une nouvelle section mémoire
             </h2>

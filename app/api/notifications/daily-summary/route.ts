@@ -36,13 +36,22 @@ export async function GET(req: NextRequest) {
 
     if (!tasks) continue;
 
-    const pro = tasks.filter(t => t.type === "pro").length;
-    const perso = tasks.filter(t => t.type === "perso").length;
+    // Filter: only non-completed tasks
+    const activeTasks = tasks.filter(t => t.status !== "completed");
 
-    const overdueTasks =
-      tasks.filter(
-        t => t.deadline && new Date(t.deadline) < now
-      );
+    const pro = activeTasks.filter(t => t.type === "pro").length;
+    const perso = activeTasks.filter(t => t.type === "perso").length;
+
+    // Filter: deadline is today or in the past + not completed
+    const todayDate = new Date(todayStr);
+    todayDate.setHours(0, 0, 0, 0);
+
+    const overdueTasks = activeTasks.filter(t => {
+      if (!t.deadline) return false;
+      const taskDeadline = new Date(t.deadline);
+      taskDeadline.setHours(0, 0, 0, 0);
+      return taskDeadline <= todayDate;
+    });
 
     const overdueCount = overdueTasks.length;
 
