@@ -22,17 +22,14 @@ export default function MemorePage() {
     }
   }, [user, fetchSections]);
 
-  const handleCreateSection = async (templateId: string) => {
-    if (!user) return;
-
   const handleDeleteSection = async (e: React.MouseEvent, sectionId: string, sectionName: string) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (!confirm(`Supprimer "${sectionName}" et toutes ses fiches ?`)) {
       return;
     }
-    
+
     setDeletingId(sectionId);
     try {
       await deleteSection(sectionId);
@@ -44,6 +41,10 @@ export default function MemorePage() {
       setDeletingId(null);
     }
   };
+
+  const handleCreateSection = async (templateId: string) => {
+    if (!user) return;
+
     setCreating(true);
     setCreateError(null);
     
