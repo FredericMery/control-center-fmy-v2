@@ -13,7 +13,7 @@ interface AuthState {
   signOut: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>(
+export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
@@ -55,8 +55,8 @@ export const useAuthStore = create<AuthState>(
       },
     }),
     {
-      name: "auth-storage", // localStorage key
-      partialize: (state) => ({ user: state.user }), // Only persist user
+      name: "auth-storage",
+      partialize: (state) => ({ user: state.user }),
     }
   )
 );
