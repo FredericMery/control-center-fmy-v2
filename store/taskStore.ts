@@ -19,6 +19,7 @@ type TaskState = {
   showArchived: boolean;
 
   fetchTasks: () => Promise<void>;
+  addTask: (title: string, type: "pro" | "perso", deadline: Date | null) => Promise<void>;
   updateStatus: (id: string, status: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
 
@@ -51,6 +52,33 @@ export const useTaskStore = create<TaskState>((set) => ({
       .order("created_at", { ascending: false });
 
     set({ tasks: data || [] });
+  },
+
+  /* ============================
+     ADD TASK
+  =============================*/
+  addTask: async (title, type, deadline) => {
+    const user = useAuthStore.getState().user;
+    if (!user) return;
+
+    const { data: newTask } = await supabase
+      .from("tasks")
+      .insert([
+        {
+          user_id: user.id,
+          title,
+          type,
+          status: "pending",
+          deadline: deadline ? deadline.toISOString().split("T")[0] : null,
+          archived: false,
+        },
+      ])
+      .select()
+      .single();
+
+    if (newTask) {
+      set((state) => ({ tasks: [newTask, ...state.tasks] }));
+    }
   },
 
   /* ============================

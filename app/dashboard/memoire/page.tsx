@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useAuthStore } from "@/store/authStore";
 import Link from "next/link";
+import {
+  buildFieldKey,
+  MEMORY_ITEM_CATALOG,
+  type MemoryItemType,
+} from "@/lib/memoryFieldCatalog";
 
 type Section = {
   id: string;
@@ -13,70 +18,6 @@ type Section = {
   user_id: string;
 };
 
-type FieldType =
-  | "text"
-  | "textarea"
-  | "number"
-  | "email"
-  | "tel"
-  | "url"
-  | "date"
-  | "time"
-  | "datetime-local"
-  | "password"
-  | "color"
-  | "range"
-  | "select"
-  | "radio"
-  | "checkbox"
-  | "switch";
-
-type FieldDraft = {
-  id: string;
-  label: string;
-  key: string;
-  type: FieldType;
-  placeholder: string;
-  required: boolean;
-  options: string;
-};
-
-const FIELD_TYPES: { value: FieldType; label: string }[] = [
-  { value: "text", label: "Texte" },
-  { value: "textarea", label: "Texte long" },
-  { value: "number", label: "Nombre" },
-  { value: "email", label: "Email" },
-  { value: "tel", label: "Téléphone" },
-  { value: "url", label: "URL" },
-  { value: "date", label: "Date" },
-  { value: "time", label: "Heure" },
-  { value: "datetime-local", label: "Date + heure" },
-  { value: "password", label: "Mot de passe" },
-  { value: "color", label: "Couleur" },
-  { value: "range", label: "Curseur" },
-  { value: "select", label: "Liste déroulante" },
-  { value: "radio", label: "Choix unique" },
-  { value: "checkbox", label: "Case à cocher" },
-  { value: "switch", label: "Interrupteur" },
-];
-
-const buildFieldKey = (key: string, field: Omit<FieldDraft, "id" | "label" | "key">) => {
-  const encodedPlaceholder = encodeURIComponent(field.placeholder || "");
-  const encodedOptions = encodeURIComponent(field.options || "");
-
-  return `${key}::${field.type}::${field.required ? "1" : "0"}::${encodedPlaceholder}::${encodedOptions}`;
-};
-
-const createEmptyFieldDraft = (): FieldDraft => ({
-  id: crypto.randomUUID(),
-  label: "",
-  key: "",
-  type: "text",
-  placeholder: "",
-  required: false,
-  options: "",
-});
-
 export default function MemoirePage() {
   const user = useAuthStore((s) => s.user);
 
@@ -84,12 +25,10 @@ export default function MemoirePage() {
   const [showForm, setShowForm] = useState(false);
 
   const [sectionName, setSectionName] = useState("");
-  const [fields, setFields] = useState<FieldDraft[]>([
-    createEmptyFieldDraft(),
-    createEmptyFieldDraft(),
-  ]);
-  const [allowImage, setAllowImage] = useState(true);
-  const [templateParts, setTemplateParts] = useState<string[]>([]);
+  const [selectedItems, setSelectedItems] = useState<
+    { type: MemoryItemType; label: string }[]
+  >([]);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -142,15 +81,18 @@ export default function MemoirePage() {
   }, [user]);
 
   const createSection = async () => {
-    if (!sectionName || !user) return;
+    if (!sectionName.trim() || !user || selectedItems.length !== 5 || isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
 
     const slug = sectionName
       .toLowerCase()
       .trim()
       .replace(/[^\w\s-]/g, "")
       .replace(/\s+/g, "-");
-
-    const template = templateParts.join(" ");
+    const hasPhoto = selectedItems.some((item) => item.type === "photo");
 
     const { data: sectionData } = await supabase
       .from("memory_sections")
@@ -158,52 +100,54 @@ export default function MemoirePage() {
         {
           name: sectionName,
           slug,
-          search_template: template || "${title}",
-          allow_image: allowImage,
+          search_template: "${title}",
+          allow_image: hasPhoto,
           user_id: user.id,
         },
       ])
       .select()
       .single();
 
-    if (!sectionData) return;
+    if (!sectionData) {
+      setIsSaving(false);
+      return;
+    }
 
-    const validFields = fields
-      .map((field) => {
-        const label = field.label.trim();
-        if (!label) return null;
-
-        const keyFromInput = field.key.trim();
-        const key = (keyFromInput || label)
-          .toLowerCase()
-          .replace(/[^\w\s-]/g, "")
-          .replace(/\s+/g, "_");
-
-        if (!key) return null;
-
-        return {
-          label,
-          field_key: buildFieldKey(key, {
-            type: field.type,
-            required: field.required,
-            placeholder: field.placeholder.trim(),
-            options: field.options.trim(),
-          }),
-        };
-      })
-      .filter((field): field is { label: string; field_key: string } => Boolean(field));
-
-    if (validFields.length > 0) {
+    if (selectedItems.length > 0) {
       await supabase.from("memory_section_fields").insert(
-        validFields.map((field) => ({
+        selectedItems.map((item, index) => ({
           section_id: sectionData.id,
-          label: field.label,
-          field_key: field.field_key,
+          label: item.label.trim() || item.type,
+          field_key: buildFieldKey(item.type, item.label || item.type, index),
         }))
       );
     }
 
     resetForm();
+    setIsSaving(false);
+  };
+
+  const toggleItem = (type: MemoryItemType) => {
+    const itemDef = MEMORY_ITEM_CATALOG.find((item) => item.type === type);
+    if (!itemDef) return;
+
+    setSelectedItems((prev) => {
+      const already = prev.some((item) => item.type === type);
+
+      if (already) {
+        return prev.filter((item) => item.type !== type);
+      }
+
+      if (prev.length >= 5) return prev;
+
+      return [...prev, { type, label: itemDef.defaultLabel }];
+    });
+  };
+
+  const updateLabel = (type: MemoryItemType, label: string) => {
+    setSelectedItems((prev) =>
+      prev.map((item) => (item.type === type ? { ...item, label } : item))
+    );
   };
 
   const deleteSection = async (id: string) => {
@@ -216,31 +160,9 @@ export default function MemoirePage() {
 
   const resetForm = () => {
     setSectionName("");
-    setFields([createEmptyFieldDraft(), createEmptyFieldDraft()]);
-    setTemplateParts([]);
-    setAllowImage(true);
+    setSelectedItems([]);
+    setIsSaving(false);
     setShowForm(false);
-  };
-
-  const updateField = <K extends keyof FieldDraft>(
-    id: string,
-    key: K,
-    value: FieldDraft[K]
-  ) => {
-    setFields((prev) =>
-      prev.map((field) =>
-        field.id === id
-          ? {
-              ...field,
-              [key]: value,
-            }
-          : field
-      )
-    );
-  };
-
-  const removeField = (id: string) => {
-    setFields((prev) => prev.filter((field) => field.id !== id));
   };
 
   return (
@@ -333,111 +255,70 @@ export default function MemoirePage() {
               className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black"
             />
 
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Champs de section</p>
-                <button
-                  onClick={() => setFields((prev) => [...prev, createEmptyFieldDraft()])}
-                  className="px-3 py-1.5 text-xs rounded-lg bg-gray-100 hover:bg-gray-200"
-                >
-                  + Ajouter un champ
-                </button>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm text-gray-600">
+                <p>Choisis 5 composants pour la fiche</p>
+                <p className="font-medium">{selectedItems.length} / 5</p>
               </div>
 
-              <div className="max-h-[360px] overflow-y-auto space-y-3 pr-1">
-                {fields.map((field, index) => {
-                  const showOptions = field.type === "select" || field.type === "radio";
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-64 overflow-auto pr-1">
+                {MEMORY_ITEM_CATALOG.map((item) => {
+                  const isSelected = selectedItems.some(
+                    (selected) => selected.type === item.type
+                  );
 
                   return (
-                    <div
-                      key={field.id}
-                      className="p-4 rounded-2xl border border-gray-200 bg-gray-50 space-y-3"
+                    <button
+                      key={item.type}
+                      type="button"
+                      onClick={() => toggleItem(item.type)}
+                      className={`text-left border rounded-xl px-4 py-3 transition ${
+                        isSelected
+                          ? "border-black bg-black text-white"
+                          : "border-gray-200 bg-white hover:border-gray-400"
+                      }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs text-gray-500">Champ {index + 1}</p>
-                        <button
-                          onClick={() => removeField(field.id)}
-                          disabled={fields.length <= 1}
-                          className="text-xs text-gray-500 hover:text-red-500 disabled:opacity-40"
-                        >
-                          Supprimer
-                        </button>
-                      </div>
-
-                      <div className="grid md:grid-cols-2 gap-3">
-                        <input
-                          value={field.label}
-                          onChange={(e) => updateField(field.id, "label", e.target.value)}
-                          placeholder="Label (ex: Auteur)"
-                          className="w-full p-3 bg-white border border-gray-200 rounded-xl"
-                        />
-
-                        <input
-                          value={field.key}
-                          onChange={(e) => updateField(field.id, "key", e.target.value)}
-                          placeholder="Clé (optionnel: auteur)"
-                          className="w-full p-3 bg-white border border-gray-200 rounded-xl"
-                        />
-                      </div>
-
-                      <div className="grid md:grid-cols-2 gap-3">
-                        <select
-                          value={field.type}
-                          onChange={(e) =>
-                            updateField(field.id, "type", e.target.value as FieldType)
-                          }
-                          className="w-full p-3 bg-white border border-gray-200 rounded-xl"
-                        >
-                          {FIELD_TYPES.map((type) => (
-                            <option key={type.value} value={type.value}>
-                              {type.label}
-                            </option>
-                          ))}
-                        </select>
-
-                        <input
-                          value={field.placeholder}
-                          onChange={(e) =>
-                            updateField(field.id, "placeholder", e.target.value)
-                          }
-                          placeholder="Placeholder (optionnel)"
-                          className="w-full p-3 bg-white border border-gray-200 rounded-xl"
-                        />
-                      </div>
-
-                      {showOptions && (
-                        <input
-                          value={field.options}
-                          onChange={(e) => updateField(field.id, "options", e.target.value)}
-                          placeholder="Options séparées par des virgules"
-                          className="w-full p-3 bg-white border border-gray-200 rounded-xl"
-                        />
-                      )}
-
-                      <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={field.required}
-                          onChange={(e) =>
-                            updateField(field.id, "required", e.target.checked)
-                          }
-                        />
-                        Champ requis
-                      </label>
-                    </div>
+                      <p className="font-medium text-sm">{item.name}</p>
+                      <p
+                        className={`text-xs mt-1 ${
+                          isSelected ? "text-gray-200" : "text-gray-500"
+                        }`}
+                      >
+                        {item.description}
+                      </p>
+                    </button>
                   );
                 })}
               </div>
             </div>
 
-            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={allowImage}
-                onChange={(e) => setAllowImage(e.target.checked)}
-              />
-              Autoriser les images dans cette section
-            </label>
+            {selectedItems.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Nom personnalisé des composants</p>
+
+                <div className="space-y-2 max-h-52 overflow-auto pr-1">
+                  {selectedItems.map((item) => (
+                    <div key={item.type} className="grid grid-cols-12 gap-3 items-center">
+                      <p className="col-span-4 text-xs text-gray-500 uppercase tracking-wide">
+                        {item.type.replace("_", " ")}
+                      </p>
+                      <input
+                        value={item.label}
+                        onChange={(e) => updateLabel(item.type, e.target.value)}
+                        placeholder="Nom du champ"
+                        className="col-span-8 p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedItems.length !== 5 && (
+              <p className="text-sm text-amber-600">
+                Sélectionne exactement 5 composants pour continuer.
+              </p>
+            )}
 
             <div className="flex justify-end gap-4 pt-4">
               <button
@@ -449,9 +330,10 @@ export default function MemoirePage() {
 
               <button
                 onClick={createSection}
-                className="px-6 py-2 bg-black text-white rounded-xl hover:opacity-90 transition"
+                disabled={!sectionName.trim() || selectedItems.length !== 5 || isSaving}
+                className="px-6 py-2 bg-black text-white rounded-xl hover:opacity-90 transition disabled:opacity-50"
               >
-                Créer
+                {isSaving ? "Création..." : "Créer"}
               </button>
             </div>
           </div>

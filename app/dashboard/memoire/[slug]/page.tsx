@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useAuthStore } from "@/store/authStore";
 import { useParams } from "next/navigation";
+import { parseFieldType } from "@/lib/memoryFieldCatalog";
 
 type Section = {
   id: string;
@@ -16,32 +17,7 @@ type Field = {
   id: string;
   label: string;
   field_key: string;
-};
-
-type FieldType =
-  | "text"
-  | "textarea"
-  | "number"
-  | "email"
-  | "tel"
-  | "url"
-  | "date"
-  | "time"
-  | "datetime-local"
-  | "password"
-  | "color"
-  | "range"
-  | "select"
-  | "radio"
-  | "checkbox"
-  | "switch";
-
-type FieldMeta = {
-  baseKey: string;
-  type: FieldType;
-  required: boolean;
-  placeholder: string;
-  options: string[];
+  type: ReturnType<typeof parseFieldType>;
 };
 
 type Item = {
@@ -49,53 +25,9 @@ type Item = {
   title: string;
   image_url: string | null;
   rating: number | null;
-  extra_data: Record<string, string | boolean> | null;
+  extra_data: Record<string, string> | null;
   section_id: string;
   user_id: string;
-};
-
-const parseFieldMeta = (fieldKey: string): FieldMeta => {
-  const [baseKey, typeRaw, requiredRaw, placeholderRaw, optionsRaw] =
-    fieldKey.split("::");
-
-  const knownTypes: FieldType[] = [
-    "text",
-    "textarea",
-    "number",
-    "email",
-    "tel",
-    "url",
-    "date",
-    "time",
-    "datetime-local",
-    "password",
-    "color",
-    "range",
-    "select",
-    "radio",
-    "checkbox",
-    "switch",
-  ];
-
-  const type = knownTypes.includes(typeRaw as FieldType)
-    ? (typeRaw as FieldType)
-    : "text";
-
-  const placeholder = placeholderRaw ? decodeURIComponent(placeholderRaw) : "";
-  const options = optionsRaw
-    ? decodeURIComponent(optionsRaw)
-        .split(",")
-        .map((opt) => opt.trim())
-        .filter(Boolean)
-    : [];
-
-  return {
-    baseKey: baseKey || fieldKey,
-    type,
-    required: requiredRaw === "1",
-    placeholder,
-    options,
-  };
 };
 
 export default function SectionPage() {
@@ -107,10 +39,11 @@ export default function SectionPage() {
   const [fields, setFields] = useState<Field[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [imagePopup, setImagePopup] = useState<string | null>(null);
+  const [locatingField, setLocatingField] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [rating, setRating] = useState(0);
-  const [extraData, setExtraData] = useState<Record<string, string | boolean>>({});
+  const [extraData, setExtraData] = useState<Record<string, string>>({});
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -138,7 +71,12 @@ export default function SectionPage() {
         .select("*")
         .eq("section_id", sectionData.id);
 
-      setFields(fieldData || []);
+      setFields(
+        (fieldData || []).map((field) => ({
+          ...field,
+          type: parseFieldType(field.field_key),
+        }))
+      );
 
       const { data: itemData } = await supabase
         .from("memory_items")
@@ -203,14 +141,17 @@ export default function SectionPage() {
      CREATE ITEM
   ==============================*/
   const addItem = async () => {
-    if (!user || !section || !title || isSaving) return;
+    if (!user || !section || isSaving) return;
 
     setIsSaving(true);
+
+    const generatedTitle =
+      title.trim() || `Fiche du ${new Date().toLocaleDateString("fr-FR")}`;
 
     let uploadedImageUrl: string | null = null;
 
     if (imageFile && section.allow_image) {
-      const filePath = `${user.id}/${crypto.randomUUID()}`;
+      const filePath = `${user.id}/${Date.now()}`;
 
       const { error } = await supabase.storage
         .from("memory-images")
@@ -225,14 +166,31 @@ export default function SectionPage() {
       }
     }
 
+    const finalExtraData = fields.reduce<Record<string, string>>((acc, field) => {
+      if (["title", "photo", "rating"].includes(field.type)) return acc;
+
+      const value = extraData[field.field_key] || "";
+
+      if (field.type === "checkbox") {
+        acc[field.field_key] = value === "true" ? "true" : "false";
+        return acc;
+      }
+
+      if (value.trim() !== "") {
+        acc[field.field_key] = value;
+      }
+
+      return acc;
+    }, {});
+
     const { data, error } = await supabase
       .from("memory_items")
       .insert([
         {
-          title,
+          title: generatedTitle,
           image_url: uploadedImageUrl,
           rating,
-          extra_data: extraData,
+          extra_data: finalExtraData,
           section_id: section.id,
           user_id: user.id,
         },
@@ -273,109 +231,186 @@ export default function SectionPage() {
     setRating(0);
     setExtraData({});
     setImageFile(null);
+    setLocatingField(null);
     setShowForm(false);
   };
 
+  const updateExtraValue = (fieldKey: string, value: string) => {
+    setExtraData((prev) => ({
+      ...prev,
+      [fieldKey]: value,
+    }));
+  };
+
+  const fillCurrentLocation = (fieldKey: string) => {
+    if (!navigator.geolocation) return;
+
+    setLocatingField(fieldKey);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const value = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+        updateExtraValue(fieldKey, value);
+        setLocatingField(null);
+      },
+      () => {
+        setLocatingField(null);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
   const renderDynamicField = (field: Field) => {
-    const meta = parseFieldMeta(field.field_key);
-    const value = extraData[field.field_key];
-
-    if (meta.type === "textarea") {
+    if (field.type === "title") {
       return (
-        <textarea
-          value={String(value || "")}
-          onChange={(e) =>
-            setExtraData({
-              ...extraData,
-              [field.field_key]: e.target.value,
-            })
-          }
-          required={meta.required}
-          placeholder={meta.placeholder || field.label}
-          rows={4}
-          className="w-full p-3 bg-white border border-gray-300 rounded-xl"
-        />
-      );
-    }
-
-    if (meta.type === "select") {
-      return (
-        <select
-          value={String(value || "")}
-          onChange={(e) =>
-            setExtraData({
-              ...extraData,
-              [field.field_key]: e.target.value,
-            })
-          }
-          required={meta.required}
-          className="w-full p-3 bg-white border border-gray-300 rounded-xl"
-        >
-          <option value="">Sélectionner...</option>
-          {meta.options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      );
-    }
-
-    if (meta.type === "radio") {
-      return (
-        <div className="space-y-2">
-          {meta.options.map((option) => (
-            <label key={option} className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name={field.field_key}
-                checked={String(value || "") === option}
-                onChange={() =>
-                  setExtraData({
-                    ...extraData,
-                    [field.field_key]: option,
-                  })
-                }
-              />
-              {option}
-            </label>
-          ))}
+        <div key={field.id} className="space-y-2">
+          <label className="text-sm font-medium">{field.label}</label>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full p-3 bg-white border border-gray-300 rounded-xl"
+          />
         </div>
       );
     }
 
-    if (meta.type === "checkbox" || meta.type === "switch") {
+    if (field.type === "photo") {
       return (
-        <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+        <div key={field.id} className="space-y-2">
+          <label className="text-sm font-medium">{field.label}</label>
           <input
-            type="checkbox"
-            checked={Boolean(value)}
-            onChange={(e) =>
-              setExtraData({
-                ...extraData,
-                [field.field_key]: e.target.checked,
-              })
-            }
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => {
+              if (e.target.files?.[0]) {
+                setImageFile(e.target.files[0]);
+              }
+            }}
           />
-          {meta.type === "switch" ? "Activer" : "Cocher"}
-        </label>
+        </div>
       );
     }
 
+    if (field.type === "rating") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <label className="text-sm font-medium">{field.label}</label>
+          <div className="flex gap-2">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                type="button"
+                key={star}
+                onClick={() => setRating(star)}
+                className={`text-2xl ${rating >= star ? "text-yellow-500" : "text-gray-300"}`}
+              >
+                ★
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (field.type === "long_text") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <label className="text-sm font-medium">{field.label}</label>
+          <textarea
+            value={extraData[field.field_key] || ""}
+            onChange={(e) => updateExtraValue(field.field_key, e.target.value)}
+            rows={4}
+            className="w-full p-3 bg-white border border-gray-300 rounded-xl"
+          />
+        </div>
+      );
+    }
+
+    if (field.type === "location") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <label className="text-sm font-medium">{field.label}</label>
+          <div className="flex gap-2">
+            <input
+              value={extraData[field.field_key] || ""}
+              onChange={(e) => updateExtraValue(field.field_key, e.target.value)}
+              placeholder="Latitude, Longitude"
+              className="w-full p-3 bg-white border border-gray-300 rounded-xl"
+            />
+            <button
+              type="button"
+              onClick={() => fillCurrentLocation(field.field_key)}
+              className="px-3 py-2 text-xs rounded-xl border border-gray-300 bg-white whitespace-nowrap"
+            >
+              {locatingField === field.field_key ? "Localisation..." : "Ma position"}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (field.type === "checkbox") {
+      const checked = extraData[field.field_key] === "true";
+      return (
+        <div key={field.id} className="space-y-2">
+          <label className="text-sm font-medium">{field.label}</label>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={(e) =>
+                updateExtraValue(field.field_key, e.target.checked ? "true" : "false")
+              }
+            />
+            <span>{checked ? "Oui" : "Non"}</span>
+          </label>
+        </div>
+      );
+    }
+
+    if (field.type === "mood") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <label className="text-sm font-medium">{field.label}</label>
+          <select
+            value={extraData[field.field_key] || ""}
+            onChange={(e) => updateExtraValue(field.field_key, e.target.value)}
+            className="w-full p-3 bg-white border border-gray-300 rounded-xl"
+          >
+            <option value="">Sélectionner</option>
+            <option value="😀 Heureux">😀 Heureux</option>
+            <option value="🙂 Bien">🙂 Bien</option>
+            <option value="😐 Neutre">😐 Neutre</option>
+            <option value="😕 Fatigué">😕 Fatigué</option>
+            <option value="😢 Triste">😢 Triste</option>
+          </select>
+        </div>
+      );
+    }
+
+    const inputTypeByField: Partial<Record<Field["type"], string>> = {
+      date: "date",
+      time: "time",
+      number: "number",
+      url: "url",
+      phone: "tel",
+      email: "email",
+      short_text: "text",
+      tags: "text",
+      legacy_text: "text",
+    };
+
     return (
-      <input
-        type={meta.type}
-        value={String(value || "")}
-        onChange={(e) =>
-          setExtraData({
-            ...extraData,
-            [field.field_key]: e.target.value,
-          })
-        }
-        required={meta.required}
-        placeholder={meta.placeholder || field.label}
-        className="w-full p-3 bg-white border border-gray-300 rounded-xl"
-      />
+      <div key={field.id} className="space-y-2">
+        <label className="text-sm font-medium">{field.label}</label>
+        <input
+          type={inputTypeByField[field.type] || "text"}
+          value={extraData[field.field_key] || ""}
+          placeholder={field.type === "tags" ? "tag1, tag2, tag3" : ""}
+          onChange={(e) => updateExtraValue(field.field_key, e.target.value)}
+          className="w-full p-3 bg-white border border-gray-300 rounded-xl"
+        />
+      </div>
     );
   };
 
@@ -414,68 +449,24 @@ export default function SectionPage() {
       {/* FORMULAIRE COMPLET */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-50 w-full max-w-xl rounded-3xl shadow-xl p-8 space-y-6">
+          <div className="bg-gray-50 w-full max-w-xl rounded-3xl shadow-xl p-8 space-y-6 max-h-[90vh] overflow-auto">
 
             <h2 className="text-xl font-semibold">
               Nouvelle fiche mémoire
             </h2>
 
-            {/* TITRE */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Titre</label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full p-3 bg-white border border-gray-300 rounded-xl"
-              />
-            </div>
+            {fields.map((field) => renderDynamicField(field))}
 
-            {/* PHOTO */}
-            {section.allow_image && (
+            {!fields.some((field) => field.type === "title") && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">Photo</label>
+                <label className="text-sm font-medium">Titre (optionnel)</label>
                 <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(e) => {
-                    if (e.target.files?.[0]) {
-                      setImageFile(e.target.files[0]);
-                    }
-                  }}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full p-3 bg-white border border-gray-300 rounded-xl"
                 />
               </div>
             )}
-
-            {/* NOTE */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Note</label>
-              <div className="flex gap-2">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    onClick={() => setRating(star)}
-                    className={`text-2xl ${
-                      rating >= star
-                        ? "text-yellow-500"
-                        : "text-gray-300"
-                    }`}
-                  >
-                    ★
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* CHAMPS DYNAMIQUES */}
-            {fields.map((field) => (
-              <div key={field.id} className="space-y-2">
-                <label className="text-sm font-medium">
-                  {field.label}
-                </label>
-                {renderDynamicField(field)}
-              </div>
-            ))}
 
             <div className="flex justify-end gap-4 pt-4">
               <button
@@ -504,10 +495,7 @@ export default function SectionPage() {
           const searchUrl = buildSearchUrl(item);
 
           return (
-            <div
-              key={item.id}
-              className="bg-white rounded-2xl shadow-sm p-6 flex gap-6"
-            >
+            <div key={item.id} className="bg-white rounded-2xl shadow-sm p-6 flex flex-col sm:flex-row gap-6">
               <div className="flex-1 space-y-2">
                 <div className="flex justify-between items-start">
                   <h2 className="font-semibold text-lg">
@@ -533,24 +521,58 @@ export default function SectionPage() {
                   </div>
                 </div>
 
-                {item.rating && (
+                {fields.some((field) => field.type === "rating") && item.rating ? (
                   <div className="text-yellow-500 text-sm">
                     {"★".repeat(item.rating)}
                   </div>
-                )}
+                ) : null}
 
-                {Object.entries(item.extra_data || {}).map(([key, value]) => {
-                  const field = fields.find((f) => f.field_key === key);
-                  const meta = parseFieldMeta(key);
-                  const valueLabel =
-                    typeof value === "boolean" ? (value ? "Oui" : "Non") : value;
+                {fields
+                  .filter((field) => !["title", "photo", "rating"].includes(field.type))
+                  .map((field) => {
+                    const value = item.extra_data?.[field.field_key];
 
-                  return (
-                    <p key={key} className="text-sm text-gray-600">
-                      <strong>{field?.label || meta.baseKey}:</strong> {String(valueLabel)}
-                    </p>
-                  );
-                })}
+                    if (field.type !== "checkbox" && (!value || value.trim() === "")) {
+                      return null;
+                    }
+
+                    if (field.type === "url" && value) {
+                      return (
+                        <p key={field.id} className="text-sm text-gray-600">
+                          <strong>{field.label}:</strong>{" "}
+                          <a href={value} target="_blank" rel="noreferrer" className="text-blue-600 underline break-all">
+                            {value}
+                          </a>
+                        </p>
+                      );
+                    }
+
+                    if (field.type === "location" && value) {
+                      const mapsUrl = `https://maps.google.com/?q=${encodeURIComponent(value)}`;
+                      return (
+                        <p key={field.id} className="text-sm text-gray-600">
+                          <strong>{field.label}:</strong>{" "}
+                          <a href={mapsUrl} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+                            {value}
+                          </a>
+                        </p>
+                      );
+                    }
+
+                    if (field.type === "checkbox") {
+                      return (
+                        <p key={field.id} className="text-sm text-gray-600">
+                          <strong>{field.label}:</strong> {value === "true" ? "Oui" : "Non"}
+                        </p>
+                      );
+                    }
+
+                    return (
+                      <p key={field.id} className="text-sm text-gray-600">
+                        <strong>{field.label}:</strong> {value}
+                      </p>
+                    );
+                  })}
               </div>
 
               {item.image_url && (
