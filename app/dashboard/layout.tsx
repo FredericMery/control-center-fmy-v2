@@ -44,60 +44,61 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-black text-white">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
 
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-white/5 backdrop-blur-xl bg-black/70">
-        <div className="flex items-center justify-between max-w-5xl mx-auto px-6 py-4">
+      <header className="sticky top-0 z-30 border-b border-white/10 backdrop-blur-xl bg-slate-900/80">
+        <div className="flex items-center justify-between max-w-5xl mx-auto px-6 py-4 w-full">
           
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white shadow-lg">
-              +
+          <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-80 transition">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-white shadow-lg">
+              ✓
             </div>
-            <span className="font-semibold tracking-wide text-sm opacity-90">
-              H+ Control
-            </span>
-          </div>
+            <div>
+              <span className="font-bold text-lg">H+</span>
+              <p className="text-xs text-gray-400">Control</p>
+            </div>
+          </Link>
 
-          <nav className="flex gap-6 text-sm">
+          <nav className="flex gap-8 text-sm">
             <Link
               href="/dashboard"
-              className={`transition ${
+              className={`font-medium transition ${
                 pathname === "/dashboard"
                   ? "text-indigo-400"
                   : "text-gray-400 hover:text-white"
               }`}
             >
-              Tasks
+              📋 Tasks
             </Link>
 
             <Link
               href="/dashboard/memoire"
-              className={`transition ${
+              className={`font-medium transition ${
                 pathname.startsWith("/dashboard/memoire")
                   ? "text-indigo-400"
                   : "text-gray-400 hover:text-white"
               }`}
             >
-              Mémoire
+              📚 Mémoire
             </Link>
 
             <Link
               href="/dashboard/settings"
-              className={`transition ${
+              className={`font-medium transition ${
                 pathname.startsWith("/dashboard/settings")
                   ? "text-indigo-400"
                   : "text-gray-400 hover:text-white"
               }`}
             >
-              Settings
+              ⚙️ Settings
             </Link>
           </nav>
         </div>
       </header>
 
       {/* Page Content */}
-      <main className="flex-1 max-w-5xl mx-auto w-full px-4 md:px-6 pt-8 pb-24">
+      <main className="flex-1 w-full">
         {children}
       </main>
 

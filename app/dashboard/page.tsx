@@ -17,10 +17,17 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
-  todo: "bg-gray-600/30 text-gray-300",
-  in_progress: "bg-blue-600/30 text-blue-300",
-  waiting: "bg-yellow-500/30 text-yellow-300",
-  done: "bg-green-600/30 text-green-300",
+  todo: "bg-slate-600/30 text-slate-200",
+  in_progress: "bg-blue-600/30 text-blue-200",
+  waiting: "bg-amber-500/30 text-amber-200",
+  done: "bg-emerald-600/30 text-emerald-200",
+};
+
+const statusEmojis: Record<string, string> = {
+  todo: "📝",
+  in_progress: "⚡",
+  waiting: "⏸️",
+  done: "✅",
 };
 
 export default function DashboardPage() {
@@ -93,134 +100,192 @@ export default function DashboardPage() {
     [tasks]
   );
 
+  const doneCount = useMemo(
+    () => filteredTasks.filter(t => t.status === "done").length,
+    [filteredTasks]
+  );
+
   return (
-    <div className="min-h-screen bg-black text-white px-6 py-10">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
 
-      <div className="flex justify-between items-center mb-2">
+      {/* HEADER SECTION */}
+      <div className="sticky top-0 z-20 backdrop-blur-xl bg-slate-900/80 border-b border-white/10">
+        <div className="max-w-5xl mx-auto px-6 py-6">
+          
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="text-4xl">✓</div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">Tasks</h1>
+                <p className="text-sm text-gray-400">Gérez vos priorités</p>
+              </div>
+            </div>
 
-        <div className="flex gap-2 items-center">
-          <NotificationBell />
+            <NotificationBell />
+          </div>
 
-          {["pro", "perso"].map((type) => (
+          {/* STATS */}
+          <div className="mt-6 grid grid-cols-3 gap-4">
+            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+              <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">PRO</p>
+              <p className="text-3xl font-bold">{proActiveCount}</p>
+            </div>
+            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+              <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">PERSO</p>
+              <p className="text-3xl font-bold">{persoActiveCount}</p>
+            </div>
+            <div className="bg-emerald-500/10 rounded-2xl p-4 border border-emerald-500/20">
+              <p className="text-xs text-emerald-400 uppercase tracking-wide mb-1">Complétées</p>
+              <p className="text-3xl font-bold text-emerald-400">{doneCount}</p>
+            </div>
+          </div>
+
+          {/* TABS */}
+          <div className="mt-6 flex items-center gap-3 flex-wrap">
+            {["pro", "perso"].map((type) => (
+              <button
+                key={type}
+                onClick={() => setActiveType(type as "pro" | "perso")}
+                className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all ${
+                  activeType === type
+                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30"
+                    : "bg-white/5 text-gray-300 hover:bg-white/10"
+                }`}
+              >
+                {type.toUpperCase()}
+              </button>
+            ))}
+
+            <Link
+              href="/dashboard/memoire"
+              className="px-6 py-2.5 rounded-full text-sm font-medium bg-white/5 text-gray-300 hover:bg-white/10 transition-all"
+            >
+              📚 MÉMOIRE
+            </Link>
+
             <button
-              key={type}
-              onClick={() => setActiveType(type as "pro" | "perso")}
-              className={`px-4 py-1.5 rounded-full text-xs transition ${
-                activeType === type
-                  ? "bg-indigo-600 text-white"
-                  : "bg-white/5 text-gray-400 hover:bg-white/10"
-              }`}
+              onClick={toggleArchivedView}
+              className="ml-auto px-6 py-2.5 rounded-full text-sm font-medium bg-white/5 text-gray-300 hover:bg-white/10 transition-all"
             >
-              {type.toUpperCase()}
+              {showArchived ? "Actives" : "Archives"}
             </button>
-          ))}
+          </div>
 
-          <Link
-            href="/dashboard/memoire"
-            className="px-4 py-1.5 rounded-full text-xs bg-white/5 text-gray-400 hover:bg-white/10 transition"
-          >
-            MÉMOIRE
-          </Link>
         </div>
-
-        <button
-          onClick={() => setShowModal(true)}
-          className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl"
-        >
-          +
-        </button>
       </div>
 
-      <div className="text-xs text-gray-500 mb-6">
-        {proActiveCount} PRO actives • {persoActiveCount} PERSO actives
-      </div>
+      {/* MAIN CONTENT */}
+      <div className="max-w-5xl mx-auto px-6 py-8 pb-32">
 
-      <div className="mb-8">
-        <button
-          onClick={toggleArchivedView}
-          className="text-xs text-gray-500 hover:text-gray-300 underline"
-        >
-          {showArchived
-            ? "Voir les tâches actives"
-            : "Voir les tâches archivées"}
-        </button>
-      </div>
+        {filteredTasks.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="text-6xl mb-4">🎯</div>
+            <p className="text-gray-400 text-lg mb-6">
+              {showArchived ? "Aucune tâche archivée" : "Aucune tâche pour le moment"}
+            </p>
+            {!showArchived && (
+              <button
+                onClick={() => setShowModal(true)}
+                className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-full font-semibold transition-all hover:scale-105"
+              >
+                Créer une tâche +
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredTasks.map((task) => {
 
-      <div className="space-y-5">
-        {filteredTasks.map((task) => {
+              const deadlinePassed = isDeadlinePassed(task.deadline);
 
-          const deadlinePassed = isDeadlinePassed(task.deadline);
-
-          return (
-            <div
-              key={task.id}
-              className={`relative bg-white/5 p-5 rounded-2xl hover:bg-white/10 cursor-pointer ${
-                deadlinePassed ? "border-l-4 border-red-500" : ""
-              }`}
-              onClick={() =>
-                setExpandedTaskId(
-                  expandedTaskId === task.id ? null : task.id
-                )
-              }
-            >
-              <div className="flex justify-between items-start">
-                <div className="text-sm text-gray-200">
-                  {task.title}
-                </div>
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteTask(task.id);
-                  }}
-                  className="text-red-400"
-                >
-                  🗑
-                </button>
-              </div>
-
-              <div className="flex justify-between items-center mt-3">
-
+              return (
                 <div
-                  className={`px-3 py-1 rounded-full text-[10px] uppercase ${statusColors[task.status]}`}
+                  key={task.id}
+                  className={`group relative bg-white/5 backdrop-blur-sm p-5 rounded-2xl hover:bg-white/10 cursor-pointer border transition-all ${
+                    deadlinePassed ? "border-red-500/50 bg-red-500/5" : "border-white/10"
+                  }`}
+                  onClick={() =>
+                    setExpandedTaskId(
+                      expandedTaskId === task.id ? null : task.id
+                    )
+                  }
                 >
-                  {statusLabels[task.status]}
-                </div>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-3">
+                        <span className="text-2xl">{statusEmojis[task.status]}</span>
+                        <h3 className="text-lg font-semibold text-white line-clamp-2">
+                          {task.title}
+                        </h3>
+                      </div>
 
-                {task.deadline && (
-                  <div
-                    className={`text-[11px] ${
-                      deadlinePassed
-                        ? "text-red-400"
-                        : "text-gray-400"
-                    }`}
-                  >
-                    📅 {new Date(task.deadline).toLocaleDateString("fr-FR")}
-                  </div>
-                )}
-              </div>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div
+                          className={`px-3 py-1 rounded-full text-xs uppercase font-medium ${statusColors[task.status]}`}
+                        >
+                          {statusLabels[task.status]}
+                        </div>
 
-              {expandedTaskId === task.id && (
-                <div className="flex gap-2 mt-4 flex-wrap">
-                  {statuses.map((status) => (
+                        {task.deadline && (
+                          <div
+                            className={`text-xs font-medium ${
+                              deadlinePassed
+                                ? "text-red-400 bg-red-500/20 px-3 py-1 rounded-full"
+                                : "text-gray-400"
+                            }`}
+                          >
+                            📅 {new Date(task.deadline).toLocaleDateString("fr-FR")}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
                     <button
-                      key={status}
                       onClick={(e) => {
                         e.stopPropagation();
-                        updateStatus(task.id, status);
-                        setExpandedTaskId(null);
+                        deleteTask(task.id);
                       }}
-                      className={`px-3 py-1 rounded-lg text-[10px] uppercase ${statusColors[status]}`}
+                      className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition text-xl"
                     >
-                      {statusLabels[status]}
+                      🗑️
                     </button>
-                  ))}
+                  </div>
+
+                  {expandedTaskId === task.id && (
+                    <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+                      <p className="text-xs text-gray-400 uppercase tracking-wide">Changer le statut</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {statuses.map((status) => (
+                          <button
+                            key={status}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateStatus(task.id, status);
+                              setExpandedTaskId(null);
+                            }}
+                            className={`px-4 py-2 rounded-lg text-xs uppercase font-medium transition-all ${statusColors[status]} hover:brightness-110`}
+                          >
+                            {statusEmojis[status]} {statusLabels[status]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+              );
+            })}
+          </div>
+        )}
+
       </div>
+
+      {/* FLOATING ACTION BUTTON */}
+      <button
+        onClick={() => setShowModal(true)}
+        className="fixed bottom-8 right-8 w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-5xl font-bold shadow-2xl z-[1000] hover:scale-110 active:scale-95 transition-transform flex items-center justify-center border-4 border-white/20"
+      >
+        +
+      </button>
 
       <TaskModal open={showModal} onClose={() => setShowModal(false)} />
     </div>

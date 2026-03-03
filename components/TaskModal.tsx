@@ -14,58 +14,80 @@ export default function TaskModal({
 
   const [title, setTitle] = useState("");
   const [deadline, setDeadline] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
 
   if (!open) return null;
 
+  const handleSubmit = async () => {
+    if (!title.trim()) return;
+    
+    setIsLoading(true);
+    try {
+      const dateObject = deadline ? new Date(deadline) : null;
+      await addTask(title, activeType, dateObject);
+      setTitle("");
+      setDeadline("");
+      onClose();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70">
-      <div className="bg-[#111] p-6 rounded-2xl w-full max-w-md">
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-0">
+      <div className="bg-gradient-to-b from-slate-800 to-slate-900 p-8 rounded-3xl w-full sm:max-w-md border border-white/10 shadow-2xl animate-in slide-in-from-bottom-4 sm:zoom-in-95">
 
-        <h2 className="text-lg mb-4">
-          Nouvelle tâche ({activeType})
-        </h2>
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold mb-2">Nouvelle tâche</h2>
+          <p className="text-sm text-gray-400">
+            Catégorie: <span className="font-semibold text-indigo-400">{activeType.toUpperCase()}</span>
+          </p>
+        </div>
 
-        <input
-          type="text"
-          placeholder="Nom de la tâche"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="w-full mb-4 p-3 rounded-lg bg-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-600"
-        />
+        <div className="space-y-4 mb-6">
+          <div>
+            <label className="text-sm font-medium text-gray-300 block mb-2">
+              Titre de la tâche
+            </label>
+            <input
+              type="text"
+              placeholder="Ex: Finir le rapport..."
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && handleSubmit()}
+              autoFocus
+              className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-white placeholder-gray-500 transition"
+            />
+          </div>
 
-        {/* CALENDRIER */}
-        <input
-          type="date"
-          value={deadline}
-          onChange={(e) => setDeadline(e.target.value)}
-          className="w-full mb-4 p-3 rounded-lg bg-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-600"
-        />
+          <div>
+            <label className="text-sm font-medium text-gray-300 block mb-2">
+              Deadline (optionnel)
+            </label>
+            <input
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-white transition"
+            />
+          </div>
+        </div>
 
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-300 transition"
+            disabled={isLoading}
+            className="px-6 py-2.5 text-gray-400 hover:text-gray-300 font-medium transition disabled:opacity-50"
           >
             Annuler
           </button>
 
           <button
-            onClick={() => {
-              if (!title) return;
-
-              const dateObject = deadline
-                ? new Date(deadline)
-                : null;
-
-              addTask(title, activeType, dateObject);
-
-              setTitle("");
-              setDeadline("");
-              onClose();
-            }}
-            className="bg-indigo-600 px-4 py-2 rounded-lg hover:bg-indigo-500 transition"
+            onClick={handleSubmit}
+            disabled={!title.trim() || isLoading}
+            className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold rounded-xl transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/30"
           >
-            Ajouter
+            {isLoading ? "Création..." : "Créer"}
           </button>
         </div>
       </div>
