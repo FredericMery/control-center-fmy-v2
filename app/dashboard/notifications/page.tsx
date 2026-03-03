@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useNotificationStore } from "@/store/notificationStore";
+import { useAuthStore } from "@/store/authStore";
 
 export default function NotificationsPage() {
 
@@ -11,9 +12,14 @@ export default function NotificationsPage() {
     markAsRead
   } = useNotificationStore();
 
+  const { user, loading } = useAuthStore();
+
   useEffect(() => {
-    fetchNotifications();
-  }, []);
+    // Only fetch notifications when auth is ready and user exists
+    if (!loading && user) {
+      fetchNotifications();
+    }
+  }, [user, loading, fetchNotifications]);
 
   return (
     <div className="min-h-screen bg-black text-white px-6 py-10">
@@ -21,6 +27,14 @@ export default function NotificationsPage() {
       <h1 className="text-xl font-light mb-8">
         Centre de notifications
       </h1>
+
+      {loading && (
+        <div className="text-gray-400">Chargement...</div>
+      )}
+
+      {!loading && notifications.length === 0 && (
+        <div className="text-gray-400">Aucune notification</div>
+      )}
 
       <div className="space-y-4 max-w-2xl">
 

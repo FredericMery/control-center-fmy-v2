@@ -35,18 +35,30 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   =============================*/
   fetchNotifications: async () => {
     const user = useAuthStore.getState().user;
-    if (!user) return;
+    if (!user) {
+      console.warn("⚠️ fetchNotifications: No user authenticated");
+      return;
+    }
 
-    const { data } = await supabase
-      .from("notifications")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
 
-    set({
-      notifications: data || [],
-      unreadCount: data?.filter(n => !n.read).length || 0
-    });
+      if (error) {
+        console.error("❌ Error fetching notifications:", error);
+        return;
+      }
+
+      set({
+        notifications: data || [],
+        unreadCount: data?.filter(n => !n.read).length || 0
+      });
+    } catch (err) {
+      console.error("❌ Unexpected error fetching notifications:", err);
+    }
   },
 
   /* ============================
