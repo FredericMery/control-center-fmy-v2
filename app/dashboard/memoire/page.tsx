@@ -26,22 +26,35 @@ export default function MemorePage() {
 
     setCreating(true);
     setCreateError(null);
-    const { createSection } = useMemoryStore.getState();
-    const name = customName || MEMORY_TEMPLATES[templateId]?.name;
+    
+    try {
+      const { createSection } = useMemoryStore.getState();
+      const name = customName || MEMORY_TEMPLATES[templateId]?.name;
 
-    const newSection = await createSection(templateId, name);
-    if (!newSection) {
-      setCreateError('Failed to create collection. Check console for details.');
+      console.log('🚀 Starting section creation:', { templateId, name, userId: user.id });
+      
+      const newSection = await createSection(templateId, name);
+      
+      if (!newSection) {
+        console.error('❌ createSection returned null');
+        setCreateError('Failed to create collection. Check console for details.');
+        setCreating(false);
+        return;
+      }
+
+      console.log('✅ Section created:', newSection);
+
+      // Refresh sections to show the new collection
+      await fetchSections();
+      setShowNewSection(false);
+      setSelectedTemplate(null);
+      setCustomName('');
+    } catch (err) {
+      console.error('💥 Exception during section creation:', err);
+      setCreateError(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
       setCreating(false);
-      return;
     }
-
-    // Refresh sections to show the new collection
-    await fetchSections();
-    setShowNewSection(false);
-    setSelectedTemplate(null);
-    setCustomName('');
-    setCreating(false);
   };
 
   const templates = Object.values(MEMORY_TEMPLATES);
