@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Database } from '../../types/database';
 import { useAuthStore } from '@/store/authStore';
 import { isPhotoLikeField, uploadMemoryPhoto } from '@/lib/memoryPhotos';
+import { incrementOcrUsageCount } from '@/lib/ocrUsage';
 
 type MemoryField = Database['public']['Tables']['memory_fields']['Row'];
 
@@ -24,6 +25,83 @@ export default function MemoryItemForm({
   const [loading, setLoading] = useState(false);
   const [uploadingFieldId, setUploadingFieldId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanInfo, setScanInfo] = useState<string | null>(null);
+
+  const photoField = fields.find(
+    (f) => f.field_type === 'url' && isPhotoLikeField(f.field_label)
+  );
+
+  const handleScanPhoto = async (file?: File) => {
+    if (!file) return;
+
+    setScanError(null);
+    setScanInfo(null);
+    setScanning(true);
+
+    try {
+      const imageBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Impossible de lire le fichier'));
+        reader.readAsDataURL(file);
+      });
+
+      const response = await fetch('/api/memory/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64,
+          fields: fields.map((f) => ({
+            id: f.id,
+            field_label: f.field_label,
+            field_type: f.field_type,
+            options: f.options,
+          })),
+        }),
+      });
+
+      incrementOcrUsageCount();
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'Scan OCR impossible');
+      }
+
+      if (data?.suggestedTitle) {
+        setTitle((prev) => (prev.trim() ? prev : data.suggestedTitle));
+      }
+
+      if (data?.mappedValues) {
+        setFieldValues((prev) => ({ ...prev, ...data.mappedValues }));
+      }
+
+      if (photoField && user) {
+        setUploadingFieldId(photoField.id);
+        const publicUrl = await uploadMemoryPhoto({
+          file,
+          userId: user.id,
+          sectionId,
+          fieldId: photoField.id,
+        });
+        setFieldValues((prev) => ({ ...prev, [photoField.id]: publicUrl }));
+      }
+
+      setScanInfo(
+        `Scan terminé : ${data?.filledCount || 0} champ(s) pré-rempli(s). Vérifie les valeurs avant de créer la fiche.`
+      );
+    } catch (error) {
+      console.error('OCR scan failed:', error);
+      setScanError(
+        error instanceof Error ? error.message : 'Scan OCR impossible'
+      );
+    } finally {
+      setUploadingFieldId(null);
+      setScanning(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -192,6 +270,38 @@ export default function MemoryItemForm({
     <div className="p-6 mb-6 bg-gray-800 border border-gray-700 rounded-lg">
       <h3 className="text-lg font-light text-white mb-4">Nouvelle fiche</h3>
       <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-3">
+          <p className="text-xs text-gray-400 mb-2">
+            OCR: prends une photo et on essaie de pré-remplir automatiquement les champs.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <label className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded cursor-pointer transition-colors">
+              📁 Scanner depuis la bibliothèque
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => handleScanPhoto(e.target.files?.[0])}
+              />
+            </label>
+            <label className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded cursor-pointer transition-colors">
+              📷 Prendre et scanner
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => handleScanPhoto(e.target.files?.[0])}
+              />
+            </label>
+            {scanning && (
+              <span className="text-xs text-gray-400 self-center">Analyse OCR en cours...</span>
+            )}
+          </div>
+          {scanError && <p className="text-xs text-red-400 mt-2">{scanError}</p>}
+          {scanInfo && <p className="text-xs text-emerald-400 mt-2">{scanInfo}</p>}
+        </div>
+
         {/* Titre principal */}
         <div>
           <label className="block text-sm text-gray-400 mb-1">
@@ -225,7 +335,7 @@ export default function MemoryItemForm({
         <div className="flex gap-3 pt-2">
           <button
             type="submit"
-            disabled={loading || !title.trim()}
+            disabled={loading || scanning || !title.trim()}
             className="flex-1 px-4 py-2 bg-white text-black rounded-lg text-sm font-light hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Création...' : 'Créer la fiche'}

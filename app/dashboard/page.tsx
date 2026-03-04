@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import { extractContacts, generateTelUri, generateMailtoUri, generateTeamsAppUri } from "@/lib/contactExtractor";
+import { getOcrUsageCount, subscribeToOcrUsageCount } from "@/lib/ocrUsage";
 import TaskModal from "@/components/TaskModal";
 import Link from "next/link";
 import NotificationBell from "@/components/NotificationBell";
@@ -50,6 +51,7 @@ export default function DashboardPage() {
 
   const [showModal, setShowModal] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [ocrUsageCount, setOcrUsageCount] = useState(0);
 
   /* ============================
      INIT SAFE (ANTI DOUBLE MOUNT)
@@ -78,6 +80,17 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setActiveType("pro");
+  }, []);
+
+  useEffect(() => {
+    setOcrUsageCount(getOcrUsageCount());
+    const unsubscribe = subscribeToOcrUsageCount((count) => {
+      setOcrUsageCount(count);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const isDeadlinePassed = (deadline: string | null) => {
@@ -130,7 +143,7 @@ export default function DashboardPage() {
           </div>
 
           {/* STATS */}
-          <div className="mt-3 grid grid-cols-3 gap-3">
+          <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-white/5 rounded-lg p-3 border border-white/10">
               <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">PRO</p>
               <p className="text-2xl font-bold">{proActiveCount}</p>
@@ -154,6 +167,10 @@ export default function DashboardPage() {
               }`}>
                 {showArchived ? doneCount : todoCount}
               </p>
+            </div>
+            <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+              <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Kpi Compte OCR</p>
+              <p className="text-2xl font-bold text-indigo-300">{ocrUsageCount}</p>
             </div>
           </div>
 
