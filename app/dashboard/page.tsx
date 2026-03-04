@@ -85,11 +85,10 @@ export default function DashboardPage() {
     return new Date(deadline) < new Date();
   };
 
-  const filteredTasks = tasks.filter(
-    (task) =>
-      task.type === activeType &&
-      task.archived === showArchived
-  );
+  const filteredTasks = tasks.filter((task) => {
+    if (task.type !== activeType) return false;
+    return showArchived ? task.archived === true : task.archived !== true;
+  });
 
   const proActiveCount = useMemo(
     () => tasks.filter(t => t.type === "pro" && !t.archived).length,

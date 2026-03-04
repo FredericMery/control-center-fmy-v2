@@ -46,13 +46,23 @@ export const useTaskStore = create<TaskState>((set) => ({
     const user = useAuthStore.getState().user;
     if (!user) return;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("tasks")
       .select("*")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
-    set({ tasks: data || [] });
+    if (error) {
+      console.error("Failed to fetch tasks:", error);
+      return;
+    }
+
+    set({
+      tasks: (data || []).map((t) => ({
+        ...t,
+        archived: t.archived === true,
+      })),
+    });
   },
 
   /* ============================
@@ -62,7 +72,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     const user = useAuthStore.getState().user;
     if (!user) return;
 
-    const { data: newTask } = await supabase
+    const { data: newTask, error } = await supabase
       .from("tasks")
       .insert([
         {
@@ -78,8 +88,18 @@ export const useTaskStore = create<TaskState>((set) => ({
       .select()
       .single();
 
+    if (error) {
+      console.error("Failed to add task:", error);
+      return;
+    }
+
     if (newTask) {
-      set((state) => ({ tasks: [newTask, ...state.tasks] }));
+      const normalizedTask: Task = {
+        ...newTask,
+        archived: newTask.archived === true,
+      };
+
+      set((state) => ({ tasks: [normalizedTask, ...state.tasks] }));
 
       // 🔔 Check for overdue tasks after adding a new task
       fetch("/api/notifications/check-overdue")
