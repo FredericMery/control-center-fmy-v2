@@ -13,7 +13,6 @@ export default function TaskModal({
   const { addTask, activeType } = useTaskStore();
 
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const [deadline, setDeadline] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -25,9 +24,8 @@ export default function TaskModal({
     setIsLoading(true);
     try {
       const dateObject = deadline ? new Date(deadline) : null;
-      await addTask(title, activeType, dateObject, description);
+      await addTask(title, activeType, dateObject);
       setTitle("");
-      setDescription("");
       setDeadline("");
       onClose();
     } finally {
@@ -59,18 +57,6 @@ export default function TaskModal({
               onKeyPress={(e) => e.key === "Enter" && handleSubmit()}
               autoFocus
               className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-white placeholder-gray-500 transition"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-gray-300 block mb-2">
-              Description (optionnel)
-            </label>
-            <textarea
-              placeholder="Ex: Détails, contacts (+33 6 12 34 56 78), emails..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-white placeholder-gray-500 transition resize-none h-24"
             />
           </div>
 
