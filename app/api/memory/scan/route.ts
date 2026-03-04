@@ -124,8 +124,20 @@ function mapTextToFields(rawText: string, fields: ScanField[]) {
   };
 }
 
+const SCAN_AUTH_CODE = '050100';
+
 export async function POST(request: NextRequest) {
   try {
+    const body = await request.json();
+    const authCode = body?.authCode as string | undefined;
+
+    if (!authCode || authCode !== SCAN_AUTH_CODE) {
+      return NextResponse.json(
+        { error: 'Code d\'authentification incorrect' },
+        { status: 401 }
+      );
+    }
+
     const apiKey = process.env.GOOGLE_VISION_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_VISION_API_KEY;
 
     if (!apiKey) {
@@ -135,7 +147,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
     const imageBase64 = body?.imageBase64 as string | undefined;
     const fields = (body?.fields || []) as ScanField[];
 

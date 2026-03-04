@@ -28,14 +28,44 @@ export default function MemoryItemForm({
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanInfo, setScanInfo] = useState<string | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authCode, setAuthCode] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [pendingScanFile, setPendingScanFile] = useState<File | null>(null);
 
   const photoField = fields.find(
     (f) => f.field_type === 'url' && isPhotoLikeField(f.field_label)
   );
 
+  const handleAuthSubmit = async () => {
+    if (!authCode.trim()) {
+      setAuthError('Code requis');
+      return;
+    }
+
+    if (!pendingScanFile) {
+      setShowAuthModal(false);
+      return;
+    }
+
+    await performScan(pendingScanFile, authCode);
+    setShowAuthModal(false);
+    setAuthCode('');
+    setAuthError(null);
+    setPendingScanFile(null);
+  };
+
   const handleScanPhoto = async (file?: File) => {
     if (!file) return;
 
+    setScanError(null);
+    setPendingScanFile(file);
+    setShowAuthModal(true);
+    setAuthCode('');
+    setAuthError(null);
+  };
+
+  const performScan = async (file: File, code: string) => {
     setScanError(null);
     setScanInfo(null);
     setScanning(true);
@@ -53,6 +83,7 @@ export default function MemoryItemForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           imageBase64,
+          authCode: code,
           fields: fields.map((f) => ({
             id: f.id,
             field_label: f.field_label,
@@ -269,6 +300,55 @@ export default function MemoryItemForm({
   return (
     <div className="p-6 mb-6 bg-gray-800 border border-gray-700 rounded-lg">
       <h3 className="text-lg font-light text-white mb-4">Nouvelle fiche</h3>
+      
+      {/* Auth Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 w-96 max-w-full">
+            <h4 className="text-lg font-light text-white mb-4">Code d'authentification OCR</h4>
+            <p className="text-xs text-gray-400 mb-4">Entrez le code pour déverrouiller le scan OCR</p>
+            <input
+              type="password"
+              value={authCode}
+              onChange={(e) => {
+                setAuthCode(e.target.value);
+                setAuthError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleAuthSubmit();
+                }
+              }}
+              placeholder="Code..."
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all mb-3"
+              autoFocus
+            />
+            {authError && <p className="text-xs text-red-400 mb-3">{authError}</p>}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleAuthSubmit}
+                className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded transition-colors"
+              >
+                Confirmer
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAuthModal(false);
+                  setAuthCode('');
+                  setAuthError(null);
+                  setPendingScanFile(null);
+                }}
+                className="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded transition-colors"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-3">
           <p className="text-xs text-gray-400 mb-2">
