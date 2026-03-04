@@ -91,54 +91,80 @@ export default function MemoryItemCard({
       <div 
         className="bg-gray-800 border border-gray-700 rounded-lg hover:border-gray-600 transition-all overflow-hidden"
       >
-        {/* Photo preview en haut si non étendu */}
-        {!expanded && photoValue && (
-          <div 
-            className="w-full h-48 overflow-hidden cursor-pointer"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowPhotoModal(true);
-            }}
-          >
-            <img
-              src={photoValue}
-              alt={item.item_title || 'Photo'}
-              className="w-full h-full object-cover hover:scale-105 transition-transform"
-            />
-          </div>
-        )}
-        
-        {/* Header */}
-        <div className="p-4 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <div className="flex items-center gap-3">
+        {/* Vue réduite : Layout horizontal avec info à gauche et photo à droite */}
+        {!expanded && (
+          <div className="p-4 flex gap-4">
+            {/* Partie gauche : Informations */}
+            <div className="flex-1 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+              <div className="flex items-center gap-3 mb-2">
                 <h3 className="text-lg font-light text-white hover:text-gray-200 transition-colors">
                   {item.item_title || 'Sans titre'}
                 </h3>
                 <span className="text-xs text-gray-500">
                   {filledCount}/{totalCount} remplis
                 </span>
-                <span className="text-xs text-gray-600">
-                  {expanded ? '▼' : '▶'}
-                </span>
+                <span className="text-xs text-gray-600">▶</span>
               </div>
-              {!expanded && previewValues.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  {previewValues.map((val) => {
+              
+              {/* Affichage de toutes les valeurs saisies */}
+              {itemValues.length > 0 ? (
+                <div className="space-y-1.5">
+                  {itemValues.map((val) => {
                     const field = fields.find((f) => f.id === val.field_id);
-                    if (!val.field_value) return null;
+                    // Skip photo fields
+                    if (field && field.field_type === 'url' && isPhotoLikeField(field.field_label)) return null;
+                    if (!val.field_value || !field) return null;
                     return (
-                      <div key={val.id} className="text-xs text-gray-400">
-                        <span className="text-gray-500">{field?.field_label}: </span>
-                        <span className="text-gray-300">{val.field_value}</span>
+                      <div key={val.id} className="text-xs">
+                        <span className="text-gray-500 font-medium">{field.field_label}: </span>
+                        <span className="text-gray-300">
+                          {field.field_type === 'rating' ? (
+                            <span className="inline-flex gap-0.5 ml-1">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <span
+                                  key={star}
+                                  className={`text-sm ${
+                                    parseInt(val.field_value || '0') >= star 
+                                      ? 'text-yellow-400' 
+                                      : 'text-gray-600'
+                                  }`}
+                                >
+                                  ⭐
+                                </span>
+                              ))}
+                            </span>
+                          ) : (
+                            val.field_value
+                          )}
+                        </span>
                       </div>
                     );
                   })}
                 </div>
+              ) : (
+                <p className="text-xs text-gray-500 italic">Aucune information saisie</p>
               )}
             </div>
-            <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+
+            {/* Partie droite : Photo cliquable */}
+            {photoValue && (
+              <div 
+                className="w-48 h-48 flex-shrink-0 cursor-pointer rounded-lg overflow-hidden border border-gray-700 hover:border-indigo-500 transition-all bg-gray-900"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowPhotoModal(true);
+                }}
+              >
+                <img
+                  src={photoValue}
+                  alt={item.item_title || 'Photo'}
+                  className="w-full h-full object-contain hover:scale-105 transition-transform"
+                />
+              </div>
+            )}
+
+            {/* Boutons Edit/Delete */}
+            <div className="flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={() => setEditing(!editing)}
                 className="text-xs px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
@@ -155,7 +181,40 @@ export default function MemoryItemCard({
               </button>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* Vue étendue : Header avec titre */}
+        {expanded && (
+          <div className="p-4 pb-0">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+                <h3 className="text-lg font-light text-white hover:text-gray-200 transition-colors">
+                  {item.item_title || 'Sans titre'}
+                </h3>
+                <span className="text-xs text-gray-500">
+                  {filledCount}/{totalCount} remplis
+                </span>
+                <span className="text-xs text-gray-600">▼</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setEditing(!editing)}
+                  className="text-xs px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+                  title={editing ? 'Terminer l\'édition' : 'Modifier'}
+                >
+                  {editing ? '✓' : '✎'}
+                </button>
+                <button
+                  onClick={onDelete}
+                  className="text-xs px-2 py-1 text-gray-400 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
+                  title="Supprimer"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Expanded View - 2 colonnes */}
         {expanded && (
