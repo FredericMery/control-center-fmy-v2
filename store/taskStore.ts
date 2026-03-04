@@ -6,7 +6,6 @@ export type Task = {
   id: string;
   user_id: string;
   title: string;
-  description?: string;
   type: "pro" | "perso";
   status: string;
   deadline: string | null;
@@ -20,7 +19,7 @@ type TaskState = {
   showArchived: boolean;
 
   fetchTasks: () => Promise<void>;
-  addTask: (title: string, type: "pro" | "perso", deadline: Date | null, description?: string) => Promise<void>;
+  addTask: (title: string, type: "pro" | "perso", deadline: Date | null) => Promise<void>;
   updateStatus: (id: string, status: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
 
@@ -68,7 +67,7 @@ export const useTaskStore = create<TaskState>((set) => ({
   /* ============================
      ADD TASK
   =============================*/
-  addTask: async (title, type, deadline, description) => {
+  addTask: async (title, type, deadline) => {
     const user = useAuthStore.getState().user;
     if (!user) return;
 
@@ -78,10 +77,9 @@ export const useTaskStore = create<TaskState>((set) => ({
         {
           user_id: user.id,
           title,
-          description: description || null,
           type,
           status: "todo",
-          deadline: deadline ? deadline.toISOString().split("T")[0] : null,
+          deadline: deadline ? deadline.toISOString() : null,
           archived: false,
         },
       ])

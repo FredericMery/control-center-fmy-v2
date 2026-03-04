@@ -214,7 +214,7 @@ export default function DashboardPage() {
             {filteredTasks.map((task) => {
 
               const deadlinePassed = isDeadlinePassed(task.deadline);
-              const contactSource = `${task.title} ${task.description || ""}`;
+              const contactSource = `${task.title}`;
               const contacts = extractContacts(contactSource);
               const phoneHref = contacts.phone ? generateTelUri(contacts.phone) : undefined;
               const emailHref = contacts.email ? generateMailtoUri(contacts.email) : undefined;
