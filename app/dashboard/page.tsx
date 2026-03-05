@@ -74,10 +74,10 @@ export default function DashboardPage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return tasks.filter(t => {
-      if (t.status !== "done" || !t.updated_at) return false;
-      const updatedDate = new Date(t.updated_at);
-      updatedDate.setHours(0, 0, 0, 0);
-      return updatedDate.getTime() === today.getTime();
+      if (t.status !== "done" || !t.created_at) return false;
+      const createdDate = new Date(t.created_at);
+      createdDate.setHours(0, 0, 0, 0);
+      return createdDate.getTime() === today.getTime();
     }).length;
   }, [tasks]);
 
