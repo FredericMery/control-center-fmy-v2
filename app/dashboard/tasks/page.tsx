@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import { extractContacts, generateTelUri, generateMailtoUri, generateTeamsAppUri } from "@/lib/contactExtractor";
@@ -34,8 +34,8 @@ const statusEmojis: Record<string, string> = {
 
 export default function TasksPage() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const typeParam = searchParams.get("type") as "pro" | "perso" || "pro";
+  const openCreate = searchParams.get("new") === "1";
 
   const user = useAuthStore((state) => state.user);
 
@@ -76,6 +76,12 @@ export default function TasksPage() {
       unsubscribeRealtime();
     };
   }, [user]);
+
+  useEffect(() => {
+    if (openCreate) {
+      setShowModal(true);
+    }
+  }, [openCreate]);
 
   const isDeadlinePassed = (deadline: string | null) => {
     if (!deadline) return false;

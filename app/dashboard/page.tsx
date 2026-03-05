@@ -124,14 +124,39 @@ export default function DashboardPage() {
           {/* 4 Buttons */}
           <div className="grid grid-cols-2 gap-3">
             {cards.map((card) => (
-              <Link
+              <div
                 key={card.id}
-                href={card.link}
-                className={`${card.bgColor} border border-white/10 backdrop-blur-sm rounded-xl p-5 hover:scale-105 active:scale-95 transition-all flex flex-col items-center justify-center aspect-square group`}
+                className={`${card.bgColor} border border-white/10 backdrop-blur-sm rounded-xl p-4 transition-all flex flex-col justify-between aspect-square`}
               >
-                <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">{card.icon}</div>
-                <p className={`text-sm font-semibold ${card.textColor}`}>{card.title}</p>
-              </Link>
+                <Link
+                  href={card.link}
+                  className="flex-1 flex flex-col items-center justify-center group"
+                >
+                  <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">{card.icon}</div>
+                  <p className={`text-sm font-semibold ${card.textColor}`}>{card.title}</p>
+                </Link>
+
+                <div className="flex items-center justify-center mt-2 min-h-8">
+                  {(card.id === "pro" || card.id === "perso") && (
+                    <Link
+                      href={`/dashboard/tasks?type=${card.id}&new=1`}
+                      className="h-8 w-8 rounded-full bg-white/90 text-slate-900 shadow-lg shadow-black/20 hover:scale-110 active:scale-95 transition-all flex items-center justify-center text-xl font-semibold"
+                      aria-label={`Ajouter une tâche ${card.title}`}
+                    >
+                      +
+                    </Link>
+                  )}
+
+                  {card.id === "memoire" && (
+                    <Link
+                      href="/dashboard/memoire"
+                      className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-400/20 text-emerald-200 border border-emerald-300/40 hover:bg-emerald-400/30 transition-all"
+                    >
+                      Accès
+                    </Link>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
         </div>
