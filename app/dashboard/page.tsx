@@ -77,16 +77,16 @@ export default function DashboardPage() {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-6 py-16 pb-32">
+      <div className="max-w-6xl mx-auto px-4 py-8">
         {/* 4 Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
           {cards.map((card) => {
             const isFlipped = flipped[card.id] || false;
 
             return (
               <div
                 key={card.id}
-                className="h-64 cursor-pointer"
+                className="h-48 cursor-pointer"
                 onClick={() => toggleFlip(card.id)}
                 style={{
                   perspective: "1000px",
@@ -105,14 +105,14 @@ export default function DashboardPage() {
                     style={{
                       backfaceVisibility: "hidden",
                     }}
-                    className={`bg-gradient-to-br ${card.color} p-8 rounded-2xl shadow-2xl h-full flex flex-col justify-between`}
+                    className={`bg-gradient-to-br ${card.color} p-5 rounded-2xl shadow-2xl h-full flex flex-col justify-between`}
                   >
                     <div>
-                      <div className="text-5xl mb-4">{card.emoji}</div>
-                      <h2 className="text-3xl font-bold mb-2">{card.title}</h2>
-                      <p className="text-white/80 text-sm">{card.description}</p>
+                      <div className="text-4xl mb-2">{card.emoji}</div>
+                      <h2 className="text-2xl font-bold mb-1">{card.title}</h2>
+                      <p className="text-white/80 text-xs">{card.description}</p>
                     </div>
-                    <div className="text-xs text-white/60">Cliquez pour en savoir plus →</div>
+                    <div className="text-xs text-white/60">Cliquez →</div>
                   </div>
 
                   {/* Back Side */}
@@ -121,25 +121,25 @@ export default function DashboardPage() {
                       backfaceVisibility: "hidden",
                       transform: "rotateY(180deg)",
                     }}
-                    className={`bg-gradient-to-br ${card.color} p-8 rounded-2xl shadow-2xl h-full flex flex-col justify-between absolute inset-0`}
+                    className={`bg-gradient-to-br ${card.color} p-5 rounded-2xl shadow-2xl h-full flex flex-col justify-between absolute inset-0`}
                   >
                     <div className="flex-1 flex items-center">
-                      <p className="text-white/90 text-sm">
+                      <p className="text-white/90 text-xs leading-snug">
                         {card.title === "Pro"
-                          ? "Organisez et suivez vos projets professionnels"
+                          ? "Organisez vos projets"
                           : card.title === "Perso"
-                            ? "Planifiez vos objectifs personnels"
+                            ? "Vos objectifs"
                             : card.title === "Mémoire"
-                              ? "Sauvegardez vos moments précieux"
-                              : "Gérez vos préférences"}
+                              ? "Vos souvenirs"
+                              : "Paramètres"}
                       </p>
                     </div>
                     <Link
                       href={card.link}
                       onClick={(e) => e.stopPropagation()}
-                      className="bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/40 px-6 py-3 rounded-full text-sm font-semibold transition-all inline-block text-center"
+                      className="bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/40 px-4 py-2 rounded-full text-xs font-semibold transition-all inline-block text-center"
                     >
-                      {card.action} →
+                      Accéder →
                     </Link>
                   </div>
                 </div>
@@ -149,36 +149,36 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="border-t border-white/10 pt-12">
-          <h3 className="text-lg font-semibold mb-6">Accès rapide</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="border-t border-white/10 pt-6">
+          <h3 className="text-sm font-semibold mb-4">Accès rapide</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Link
               href="/dashboard/tasks?type=pro"
-              className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-4 transition-all hover:scale-105"
+              className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg p-3 transition-all hover:scale-105"
             >
-              <div className="text-2xl mb-2">💼</div>
-              <p className="text-sm font-medium">Tâches Pro</p>
+              <div className="text-xl mb-1">💼</div>
+              <p className="text-xs font-medium">Tâches Pro</p>
             </Link>
             <Link
               href="/dashboard/tasks?type=perso"
-              className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-4 transition-all hover:scale-105"
+              className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg p-3 transition-all hover:scale-105"
             >
-              <div className="text-2xl mb-2">🎯</div>
-              <p className="text-sm font-medium">Tâches Perso</p>
+              <div className="text-xl mb-1">🎯</div>
+              <p className="text-xs font-medium">Tâches Perso</p>
             </Link>
             <Link
               href="/dashboard/memoire"
-              className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-4 transition-all hover:scale-105"
+              className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg p-3 transition-all hover:scale-105"
             >
-              <div className="text-2xl mb-2">📚</div>
-              <p className="text-sm font-medium">Mémoire</p>
+              <div className="text-xl mb-1">📚</div>
+              <p className="text-xs font-medium">Mémoire</p>
             </Link>
             <Link
               href="/dashboard/notifications"
-              className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-4 transition-all hover:scale-105"
+              className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg p-3 transition-all hover:scale-105"
             >
-              <div className="text-2xl mb-2">🔔</div>
-              <p className="text-sm font-medium">Notifications</p>
+              <div className="text-xl mb-1">🔔</div>
+              <p className="text-xs font-medium">Notifications</p>
             </Link>
           </div>
         </div>
