@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import NotificationBell from "@/components/NotificationBell";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
+import { getOcrUsageCountThisMonth } from "@/lib/ocrUsage";
 
 interface Card {
   id: string;
@@ -53,12 +54,17 @@ const cards: Card[] = [
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
   const { tasks, fetchTasks } = useTaskStore();
+  const [ocrMonthCount, setOcrMonthCount] = useState(0);
 
   useEffect(() => {
     if (user) {
       fetchTasks();
     }
   }, [user]);
+
+  useEffect(() => {
+    setOcrMonthCount(getOcrUsageCountThisMonth());
+  }, []);
 
   const proTodoCount = useMemo(
     () => tasks.filter(t => t.type === "pro" && t.status === "todo" && !t.archived).length,
@@ -118,6 +124,10 @@ export default function DashboardPage() {
             <div className="bg-white/5 backdrop-blur-sm rounded-lg p-3 border border-white/10">
               <p className="text-[10px] text-gray-400 uppercase mb-1">Mémoires actives</p>
               <p className="text-xl font-bold text-amber-400">{memoireCount}</p>
+            </div>
+            <div className="bg-white/5 backdrop-blur-sm rounded-lg p-3 border border-white/10 col-span-2">
+              <p className="text-[10px] text-gray-400 uppercase mb-1">Appels API Vision (mois)</p>
+              <p className="text-xl font-bold text-indigo-400">{ocrMonthCount}</p>
             </div>
           </div>
 
