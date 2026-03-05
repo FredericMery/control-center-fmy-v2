@@ -124,59 +124,15 @@ export default function TasksPage() {
               </div>
             </div>
 
-            <NotificationBell />
-          </div>
-
-          {/* STATS */}
-          <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-              <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Total</p>
-              <p className="text-2xl font-bold">{activeCount}</p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={toggleArchivedView}
+                className="px-4 py-2 rounded-full text-xs font-medium bg-white/5 text-gray-300 hover:bg-white/10 transition-all"
+              >
+                {showArchived ? "Actives" : "Archives"}
+              </button>
+              <NotificationBell />
             </div>
-            <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-              <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">À faire</p>
-              <p className="text-2xl font-bold">{todoCount}</p>
-            </div>
-            <div className={`rounded-lg p-3 border ${
-              showArchived
-                ? "bg-emerald-500/10 border-emerald-500/20"
-                : "bg-amber-500/10 border-amber-500/20"
-            }`}>
-              <p className={`text-xs uppercase tracking-wide mb-1 ${
-                showArchived ? "text-emerald-400" : "text-amber-400"
-              }`}>
-                {showArchived ? "Complétées" : "Complétées"}
-              </p>
-              <p className={`text-2xl font-bold ${
-                showArchived ? "text-emerald-400" : "text-amber-400"
-              }`}>
-                {doneCount}
-              </p>
-            </div>
-            <button
-              onClick={toggleArchivedView}
-              className="bg-white/5 rounded-lg p-3 border border-white/10 hover:bg-white/10 transition-all text-left"
-            >
-              <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">{showArchived ? "Activer" : "Archiver"}</p>
-              <p className="text-2xl font-bold">{showArchived ? "Actives" : "Archives"}</p>
-            </button>
-          </div>
-
-          {/* ACTION BUTTONS */}
-          <div className="mt-4 flex items-center gap-3">
-            <button
-              onClick={() => setShowModal(true)}
-              className="px-6 py-2.5 rounded-full text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-500 transition-all"
-            >
-              + Créer une tâche
-            </button>
-
-            <Link
-              href="/dashboard"
-              className="px-6 py-2.5 rounded-full text-sm font-medium bg-white/5 text-gray-300 hover:bg-white/10 transition-all"
-            >
-              Retour
-            </Link>
           </div>
 
         </div>
@@ -350,14 +306,6 @@ export default function TasksPage() {
         )}
 
       </div>
-
-      {/* FLOATING ACTION BUTTON */}
-      <button
-        onClick={() => setShowModal(true)}
-        className="fixed bottom-8 right-8 w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-5xl font-bold shadow-2xl z-[1000] hover:scale-110 active:scale-95 transition-transform flex items-center justify-center border-4 border-white/20"
-      >
-        +
-      </button>
 
       <TaskModal open={showModal} onClose={() => setShowModal(false)} defaultType={typeParam} />
     </div>
