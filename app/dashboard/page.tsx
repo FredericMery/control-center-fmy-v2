@@ -104,11 +104,11 @@ export default function DashboardPage() {
       </div>
 
       {/* Main Content - Centered */}
-      <div className="flex-1 flex items-center justify-center px-4 py-4">
-        <div className="w-full max-w-md space-y-4">
+      <div className="flex-1 flex items-center justify-center px-4 py-2">
+        <div className="w-full max-w-md space-y-3">
           
           {/* Mini Dashboard */}
-          <div className="grid grid-cols-2 gap-2 mb-4">
+          <div className="grid grid-cols-2 gap-2 mb-2">
             <div className="bg-white/5 backdrop-blur-sm rounded-lg p-3 border border-white/10">
               <p className="text-[10px] text-gray-400 uppercase mb-1">Pro à lancer</p>
               <p className="text-xl font-bold text-blue-400">{proTodoCount}</p>
@@ -136,21 +136,21 @@ export default function DashboardPage() {
             {cards.map((card) => (
               <div
                 key={card.id}
-                className={`${card.bgColor} border border-white/10 backdrop-blur-sm rounded-xl p-4 transition-all flex flex-col justify-between aspect-square`}
+                className={`${card.bgColor} border border-white/10 backdrop-blur-sm rounded-xl p-3 transition-all flex flex-col justify-between aspect-square`}
               >
                 <Link
                   href={card.link}
                   className="flex-1 flex flex-col items-center justify-center group"
                 >
-                  <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">{card.icon}</div>
-                  <p className={`text-sm font-semibold ${card.textColor}`}>{card.title}</p>
+                  <div className="text-3xl mb-1 group-hover:scale-110 transition-transform">{card.icon}</div>
+                  <p className={`text-xs font-semibold ${card.textColor}`}>{card.title}</p>
                 </Link>
 
-                <div className="flex items-center justify-center mt-2 min-h-8">
+                <div className="flex items-center justify-center mt-2 min-h-7">
                   {(card.id === "pro" || card.id === "perso") && (
                     <Link
                       href={`/dashboard/tasks?type=${card.id}&new=1`}
-                      className="h-8 w-8 rounded-full bg-white/90 text-slate-900 shadow-lg shadow-black/20 hover:scale-110 active:scale-95 transition-all flex items-center justify-center text-xl font-semibold"
+                      className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 text-white shadow-lg shadow-indigo-500/30 active:scale-95 transition-all flex items-center justify-center text-sm font-semibold"
                       aria-label={`Ajouter une tâche ${card.title}`}
                     >
                       +
@@ -160,7 +160,7 @@ export default function DashboardPage() {
                   {card.id === "memoire" && (
                     <Link
                       href="/dashboard/memoire"
-                      className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-400/20 text-emerald-200 border border-emerald-300/40 hover:bg-emerald-400/30 transition-all"
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 transition-all"
                     >
                       Accès
                     </Link>
