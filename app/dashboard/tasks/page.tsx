@@ -279,7 +279,7 @@ export default function TasksPage() {
                         e.stopPropagation();
                         deleteTask(task.id);
                       }}
-                      className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition text-xl"
+                      className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-red-400 hover:text-red-300 transition text-xl"
                     >
                       🗑️
                     </button>

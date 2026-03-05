@@ -44,7 +44,7 @@ export default function TaskModal({
         <div className="mb-6">
           <h2 className="text-2xl font-bold mb-2">Nouvelle tâche</h2>
           <p className="text-sm text-gray-400">
-            Catégorie: <span className="font-semibold text-indigo-400">{activeType.toUpperCase()}</span>
+            Catégorie: <span className="font-semibold text-indigo-400">{taskType.toUpperCase()}</span>
           </p>
         </div>
 
