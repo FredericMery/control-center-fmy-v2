@@ -6,15 +6,19 @@ import { useTaskStore } from "@/store/taskStore";
 export default function TaskModal({
   open,
   onClose,
+  defaultType,
 }: {
   open: boolean;
   onClose: () => void;
+  defaultType?: "pro" | "perso";
 }) {
   const { addTask, activeType } = useTaskStore();
 
   const [title, setTitle] = useState("");
   const [deadline, setDeadline] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
+  
+  const taskType = defaultType || activeType;
 
   if (!open) return null;
 
@@ -24,7 +28,7 @@ export default function TaskModal({
     setIsLoading(true);
     try {
       const dateObject = deadline ? new Date(deadline) : null;
-      await addTask(title, activeType, dateObject);
+      await addTask(title, taskType, dateObject);
       setTitle("");
       setDeadline("");
       onClose();
