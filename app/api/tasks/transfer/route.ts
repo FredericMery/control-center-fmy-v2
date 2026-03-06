@@ -61,10 +61,8 @@ export async function POST(request: NextRequest) {
     const { data: userData } = await supabase.auth.admin.getUserById(userId);
     const userEmail = userData?.user?.email || 'no-reply';
     const senderName = userEmail.split('@')[0];
+    const senderDisplayName = senderName || 'Utilisateur';
     const senderEmail = `${senderName}@meetsync-ai.com`;
-    
-    // Nom d'affichage - juste le prénom ou nom d'utilisateur
-    const senderDisplayName = 'Control Center';
     
     console.log('✅ Expéditeur:', senderDisplayName, '-', senderEmail);
 
@@ -131,7 +129,8 @@ export async function POST(request: NextRequest) {
 
             <div style="background: #f0f4ff; border-left: 4px solid #667eea; padding: 16px; border-radius: 4px; margin-bottom: 24px;">
               <p style="margin: 0; color: #3730a3; font-size: 14px; line-height: 1.6;">
-                <strong>${senderDisplayName}</strong> vous confie cette action. Merci de la traiter dans les délais indiqués.<br>
+                Cette tâche vous a été attribuée par <strong>${senderDisplayName}</strong>.<br>
+                Merci de la traiter dans les délais indiqués.<br>
                 <br>
                 Belle journée! 🌟
               </p>
