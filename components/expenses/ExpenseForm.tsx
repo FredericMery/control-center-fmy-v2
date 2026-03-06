@@ -60,7 +60,7 @@ export default function ExpenseForm() {
 
   const handleScan = async (base64Image: string) => {
     if (!authToken) {
-      setError('Authentification requise');
+      setError('Authentification requise. Veuillez vous reconnecter.');
       return;
     }
 
@@ -68,6 +68,7 @@ export default function ExpenseForm() {
     setError(null);
 
     try {
+      console.log('🚀 Envoi de la facture à l\'API...');
       const response = await fetch('/api/expenses/create', {
         method: 'POST',
         headers: {
@@ -81,13 +82,18 @@ export default function ExpenseForm() {
       });
 
       const data = await response.json();
+      console.log('📦 Réponse API:', data);
 
       if (!response.ok) {
-        setError(data.error || 'Erreur lors du scan');
+        const errorMsg = data.error || 'Erreur lors du scan';
+        console.error('❌ Erreur API:', errorMsg);
+        setError(errorMsg);
+        setImage(null); // Reset l'image pour permettre un nouveau scan
         return;
       }
 
       // Succès
+      console.log('✅ Dépense créée avec succès');
       setStep('review');
       setFormData({
         vendor: data.expense.vendor || '',
@@ -100,9 +106,11 @@ export default function ExpenseForm() {
       setTimeout(() => {
         router.push('/dashboard/notifications');
       }, 2000);
-    } catch (err) {
-      setError('Erreur lors du traitement de la facture');
-      console.error(err);
+    } catch (err: any) {
+      const errorMsg = err?.message || 'Erreur lors du traitement de la facture';
+      setError(errorMsg);
+      setImage(null); // Reset l'image pour permettre un nouveau scan
+      console.error('❌ Erreur catch:', err);
     } finally {
       setIsLoading(false);
     }

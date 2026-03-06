@@ -30,7 +30,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. Extraire les données de la facture via Google Vision
+    console.log('📄 Extraction des données de la facture...');
     const invoiceData = await extractInvoiceData(image);
+    console.log('✅ Données extraites:', invoiceData);
 
     // 2. Générer un ID unique pour la dépense
     const expenseId = crypto.randomUUID();
@@ -39,6 +41,7 @@ export async function POST(request: NextRequest) {
     const base64Data = image.split(',')[1] || image;
     const buffer = Buffer.from(base64Data, 'base64');
     
+    console.log('📤 Upload de l\'image vers Supabase Storage...');
     const { error: uploadError } = await supabase.storage
       .from('expense-receipts')
       .upload(`${expenseId}.jpg`, buffer, {
@@ -47,12 +50,14 @@ export async function POST(request: NextRequest) {
       });
 
     if (uploadError) {
-      console.error('Erreur upload:', uploadError);
+      console.error('❌ Erreur upload:', uploadError);
       return NextResponse.json(
-        { error: 'Erreur lors de l\'upload de l\'image' },
+        { error: `Erreur upload: ${uploadError.message}` },
         { status: 500 }
       );
     }
+
+    console.log('✅ Image uploadée avec succès');
 
     // 4. Récupérer l'URL de l'image
     const {
@@ -63,6 +68,7 @@ export async function POST(request: NextRequest) {
     const status = paymentMethod === 'cb_perso' ? 'pending_ndf' : 'pending';
 
     // 6. Créer la dépense dans Supabase
+    console.log('💾 Création de la dépense en base...');
     const { data, error } = await supabase
       .from('expenses')
       .insert({
@@ -85,12 +91,14 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      console.error('Erreur création dépense:', error);
+      console.error('❌ Erreur création dépense:', error);
       return NextResponse.json(
-        { error: 'Erreur lors de la création de la dépense' },
+        { error: `Erreur création: ${error.message}` },
         { status: 500 }
       );
     }
+
+    console.log('✅ Dépense créée avec succès:', data.id);
 
     // 7. Si CB Pro → envoyer email automatiquement
     if (paymentMethod === 'cb_pro') {
@@ -126,10 +134,10 @@ export async function POST(request: NextRequest) {
         ? 'Dépense enregistrée pour la note de frais'
         : 'Facture envoyée à la comptabilité',
     });
-  } catch (error) {
-    console.error('Erreur API:', error);
+  } catch (error: any) {
+    console.error('❌ Erreur API complète:', error);
     return NextResponse.json(
-      { error: 'Erreur serveur' },
+      { error: error?.message || 'Erreur serveur' },
       { status: 500 }
     );
   }

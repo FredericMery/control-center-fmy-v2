@@ -48,24 +48,31 @@ export default function EmailSettingsForm() {
     const fetchSettings = async () => {
       try {
         setIsLoading(true);
+        console.log('🔍 Chargement des paramètres email...');
         const response = await fetch('/api/settings/emails', {
           headers: {
             'Authorization': `Bearer ${authToken}`,
           },
         });
 
-        if (!response.ok) throw new Error('Erreur chargement');
-
         const data = await response.json();
+        console.log('📦 Réponse API:', data);
+
+        if (!response.ok) {
+          console.error('❌ Erreur:', data.error);
+          throw new Error(data.error || 'Erreur chargement');
+        }
+
         setSettings(data.settings);
 
         // Pré-remplir le formulaire
         const factureEmail = data.settings.find((s: EmailSetting) => s.type === 'facture')?.email || '';
         const ndfEmail = data.settings.find((s: EmailSetting) => s.type === 'ndf')?.email || '';
         setFormData({ facture: factureEmail, ndf: ndfEmail });
-      } catch (err) {
-        console.error('Erreur:', err);
-        setError('Impossible de charger les paramètres');
+        console.log('✅ Paramètres chargés avec succès');
+      } catch (err: any) {
+        console.error('❌ Erreur fetch:', err);
+        setError(err?.message || 'Impossible de charger les paramètres');
       } finally {
         setIsLoading(false);
       }
@@ -87,11 +94,17 @@ export default function EmailSettingsForm() {
       return;
     }
 
+    if (!authToken) {
+      setError('Non authentifié. Veuillez vous reconnecter.');
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
     setSuccess(null);
 
     try {
+      console.log('💾 Sauvegarde de l\'email', type, ':', email);
       const response = await fetch('/api/settings/emails', {
         method: 'PUT',
         headers: {
@@ -102,17 +115,21 @@ export default function EmailSettingsForm() {
       });
 
       const data = await response.json();
+      console.log('📦 Réponse:', data);
 
       if (!response.ok) {
-        setError(data.error || 'Erreur sauvegarde');
+        const errorMsg = data.error || 'Erreur sauvegarde';
+        console.error('❌ Erreur:', errorMsg);
+        setError(errorMsg);
         return;
       }
 
+      console.log('✅ Sauvegardé avec succès');
       setSuccess(data.message);
       setTimeout(() => setSuccess(null), 3000);
-    } catch (err) {
-      setError('Erreur lors de la sauvegarde');
-      console.error(err);
+    } catch (err: any) {
+      console.error('❌ Erreur catch:', err);
+      setError(err?.message || 'Erreur lors de la sauvegarde');
     } finally {
       setIsSaving(false);
     }

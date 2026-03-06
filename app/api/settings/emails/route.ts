@@ -9,13 +9,17 @@ const supabase = createClient(
 
 export async function GET(request: NextRequest) {
   try {
+    console.log('🔍 GET /api/settings/emails - Récupération paramètres...');
     const userId = await getUserIdFromRequest(request);
     if (!userId) {
+      console.log('❌ Non authentifié');
       return NextResponse.json(
         { error: 'Non authentifié' },
         { status: 401 }
       );
     }
+
+    console.log('✅ User authentifié:', userId);
 
     // Récupérer les email_settings de l'utilisateur
     const { data, error } = await supabase
@@ -24,20 +28,22 @@ export async function GET(request: NextRequest) {
       .eq('user_id', userId);
 
     if (error) {
+      console.error('❌ Erreur Supabase:', error);
       return NextResponse.json(
         { error: 'Erreur récupération paramètres' },
         { status: 500 }
       );
     }
 
+    console.log('✅ Paramètres récupérés:', data?.length || 0);
     return NextResponse.json({
       success: true,
       settings: data || [],
     });
-  } catch (error) {
-    console.error('Erreur API:', error);
+  } catch (error: any) {
+    console.error('❌ Erreur API GET:', error);
     return NextResponse.json(
-      { error: 'Erreur serveur' },
+      { error: error?.message || 'Erreur serveur' },
       { status: 500 }
     );
   }
@@ -45,15 +51,20 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
+    console.log('🔍 PUT /api/settings/emails - Sauvegarde paramètres...');
     const userId = await getUserIdFromRequest(request);
     if (!userId) {
+      console.log('❌ Non authentifié');
       return NextResponse.json(
         { error: 'Non authentifié' },
         { status: 401 }
       );
     }
 
+    console.log('✅ User authentifié:', userId);
+
     const { type, email } = await request.json();
+    console.log('📧 Données reçues:', { type, email });
 
     if (!type || !email) {
       return NextResponse.json(
@@ -77,6 +88,8 @@ export async function PUT(request: NextRequest) {
       .eq('user_id', userId)
       .eq('type', type)
       .single();
+
+    console.log('🔍 Setting existant?', existing ? 'Oui' : 'Non');
 
     let result;
     if (existing) {
@@ -102,21 +115,23 @@ export async function PUT(request: NextRequest) {
     }
 
     if (result.error) {
+      console.error('❌ Erreur Supabase:', result.error);
       return NextResponse.json(
         { error: 'Erreur sauvegarde' },
         { status: 500 }
       );
     }
 
+    console.log('✅ Setting sauvegardé avec succès');
     return NextResponse.json({
       success: true,
       setting: result.data,
       message: `Email ${type} mis à jour`,
     });
-  } catch (error) {
-    console.error('Erreur API:', error);
+  } catch (error: any) {
+    console.error('❌ Erreur API PUT:', error);
     return NextResponse.json(
-      { error: 'Erreur serveur' },
+      { error: error?.message || 'Erreur serveur' },
       { status: 500 }
     );
   }

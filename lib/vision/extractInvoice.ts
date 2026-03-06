@@ -17,15 +17,18 @@ export async function extractInvoiceData(base64Image: string): Promise<Extracted
   try {
     const apiKey = process.env.GOOGLE_VISION_API_KEY;
     if (!apiKey) {
-      console.warn('GOOGLE_VISION_API_KEY non configurée');
+      console.error('❌ GOOGLE_VISION_API_KEY non configurée');
       return getEmptyResult();
     }
+
+    // Nettoyer le base64 si nécessaire
+    const cleanBase64 = base64Image.split(',')[1] || base64Image;
 
     const request = {
       requests: [
         {
           image: {
-            content: base64Image.split(',')[1] || base64Image,
+            content: cleanBase64,
           },
           features: [
             { type: 'DOCUMENT_TEXT_DETECTION' },
@@ -34,6 +37,7 @@ export async function extractInvoiceData(base64Image: string): Promise<Extracted
       ],
     };
 
+    console.log('🔍 Appel Google Vision API...');
     const response = await fetch(
       `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
       {
@@ -44,9 +48,12 @@ export async function extractInvoiceData(base64Image: string): Promise<Extracted
     );
 
     if (!response.ok) {
-      console.error('Google Vision API error:', await response.text());
+      const errorText = await response.text();
+      console.error('❌ Google Vision API error:', errorText);
       return getEmptyResult();
     }
+
+    console.log('✅ Réponse Google Vision reçue');
 
     const result = await response.json();
     const fullTextAnnotation = result.responses?.[0]?.fullTextAnnotation;

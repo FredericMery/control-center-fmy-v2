@@ -1,29 +1,46 @@
 import { NextRequest } from 'next/server';
-import { jwtVerify } from 'jose';
-
-const secret = new TextEncoder().encode(
-  process.env.SUPABASE_JWT_SECRET || 'your-secret-key'
-);
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 /**
- * Extrait le user_id depuis le JWT Bearer token
- * Format: "Bearer {jwt_token}"
+ * Extrait le user_id depuis le token Supabase
+ * Utilise directement Supabase pour vérifier l'auth
  */
 export async function getUserIdFromRequest(request: NextRequest): Promise<string | null> {
   try {
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('❌ Pas de header Authorization ou format invalide');
       return null;
     }
 
     const token = authHeader.substring(7); // Enlever "Bearer "
 
-    const verified = await jwtVerify(token, secret);
-    const userId = verified.payload.sub as string;
+    // Créer un client Supabase côté serveur
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get() { return undefined; },
+          set() {},
+          remove() {},
+        },
+      }
+    );
 
-    return userId;
-  } catch (error) {
-    console.error('Erreur JWT:', error);
+    // Vérifier le token avec Supabase
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      console.error('❌ Erreur auth Supabase:', error?.message);
+      return null;
+    }
+
+    console.log('✅ User authentifié:', user.id);
+    return user.id;
+  } catch (error: any) {
+    console.error('❌ Erreur getUserIdFromRequest:', error?.message);
     return null;
   }
 }
