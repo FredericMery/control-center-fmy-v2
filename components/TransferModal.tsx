@@ -98,30 +98,16 @@ export default function TransferModal({
     // Valider l'email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      alertdiv className="flex gap-2">
-            <input
-              type="email"
-              placeholder="Ex: john@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onFocus={() => email && setShowSuggestions(true)}
-              onKeyPress={(e) => e.key === "Enter" && handleSubmit()}
-              autoFocus
-              className="flex-1 px-4 py-3 rounded-xl bg-white/10 border border-white/20 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-white placeholder-gray-500 transition"
-            />
+      return alert("Veuillez entrer une adresse email valide");
+    }
 
-            {/* Bouton Contact Picker */}
-            {contactsSupported && contactsEnabled && (
-              <button
-                onClick={handlePickContact}
-                disabled={isPickingContacts || isLoading}
-                title="Sélectionner un contact"
-                className="px-4 py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white transition disabled:opacity-50"
-              >
-                📱
-              </button>
-            )}
-          </div (error) {
+    try {
+      await onTransfer(email);
+      setEmail("");
+      setFiltered([]);
+      setShowSuggestions(false);
+      onClose();
+    } catch (error) {
       console.error("Erreur transfert:", error);
     }
   };
