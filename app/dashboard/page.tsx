@@ -5,7 +5,7 @@ import Link from "next/link";
 import NotificationBell from "@/components/NotificationBell";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
-import { getOcrUsageCountThisMonth } from "@/lib/ocrUsage";
+import { getMonthNameFr } from "@/lib/monthHelper";
 
 interface Card {
   id: string;
@@ -54,7 +54,8 @@ const cards: Card[] = [
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
   const { tasks, fetchTasks } = useTaskStore();
-  const [ocrMonthCount, setOcrMonthCount] = useState(0);
+  const [visionCountMonth, setVisionCountMonth] = useState(0);
+  const monthName = getMonthNameFr();
 
   useEffect(() => {
     if (user) {
@@ -63,8 +64,34 @@ export default function DashboardPage() {
   }, [user]);
 
   useEffect(() => {
-    setOcrMonthCount(getOcrUsageCountThisMonth());
-  }, []);
+    const fetchMonthlyStats = async () => {
+      try {
+        const { data: sessionData } = await fetch('/api/auth/session', {
+          method: 'GET',
+        }).then(r => r.json());
+
+        const token = sessionData?.session?.access_token;
+        if (!token) return;
+
+        const response = await fetch('/api/tracking/monthly-stats', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setVisionCountMonth(data.stats.google_vision || 0);
+        }
+      } catch (error) {
+        console.error('Erreur récupération stats mois:', error);
+      }
+    };
+
+    if (user) {
+      fetchMonthlyStats();
+    }
+  }, [user]);
 
   const proTodoCount = useMemo(
     () => tasks.filter(t => t.type === "pro" && t.status === "todo" && !t.archived).length,
@@ -99,8 +126,8 @@ export default function DashboardPage() {
             <h1 className="text-xl font-bold">Control Center</h1>
             <p className="text-xs text-gray-400">Vue d'ensemble</p>
           </div>
-          <NotificationBell />
-        </div>
+          <NotificationBell />{monthName})</p>
+              <p className="text-xl font-bold text-indigo-400">{visionCountMonth
       </div>
 
       {/* Main Content - Centered */}

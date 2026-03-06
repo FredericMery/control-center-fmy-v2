@@ -74,31 +74,12 @@ SELECT
 FROM public.app_usage
 GROUP BY user_id, date, event_type;
 
--- Vue : stats globales par utilisateur
-CREATE OR REPLACE VIEW v_user_stats AS
+-- Vue : stats API par user et date
+CREATE OR REPLACE VIEW v_api_calls_daily AS
 SELECT 
-  u.user_id,
-  DATE(u.created_at) as stat_date,
-  COALESCE(SUM(CASE WHEN api.api_type = 'google_vision' THEN api.count ELSE 0 END), 0) as google_vision_calls,
-  COALESCE(SUM(CASE WHEN api.api_type = 'resend' THEN api.count ELSE 0 END), 0) as resend_calls,
-  COALESCE(
-    (SELECT SUM(count) FROM app_usage au 
-     WHERE au.user_id = u.user_id 
-     AND au.date = DATE(u.created_at)
-     AND au.event_type = 'scan_invoice'),
-    0
-  ) as scans_today,
-  COALESCE(
-    (SELECT SUM(count) FROM app_usage au 
-     WHERE au.user_id = u.user_id 
-     AND au.date = DATE(u.created_at)
-     AND au.event_type = 'upload_expense'),
-    0
-  ) as expenses_today
-FROM (
-  SELECT DISTINCT user_id, created_at FROM api_calls
-  UNION
-  SELECT DISTINCT user_id, created_at FROM app_usage
-) u
-LEFT JOIN api_calls api ON u.user_id = api.user_id AND DATE(api.created_at) = DATE(u.created_at)
-GROUP BY u.user_id, DATE(u.created_at);
+  user_id,
+  date,
+  api_type,
+  SUM(count) as total_calls
+FROM public.api_calls
+GROUP BY user_id, date, api_type;
