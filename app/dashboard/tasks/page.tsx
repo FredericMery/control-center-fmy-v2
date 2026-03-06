@@ -6,6 +6,7 @@ import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import { extractContacts, generateTelUri, generateMailtoUri, generateTeamsAppUri } from "@/lib/contactExtractor";
 import TaskModal from "@/components/TaskModal";
+import TransferModal from "@/components/TransferModal";
 import Link from "next/link";
 import NotificationBell from "@/components/NotificationBell";
 
@@ -52,6 +53,14 @@ export default function TasksPage() {
 
   const [showModal, setShowModal] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [selectedTaskForTransfer, setSelectedTaskForTransfer] = useState<{
+    id: string;
+    title: string;
+    deadline: string | null;
+    created_at?: string;
+  } | null>(null);
+  const [isTransferring, setIsTransferring] = useState(false);
 
   /* ============================
      INIT SAFE (ANTI DOUBLE MOUNT)
@@ -303,6 +312,24 @@ export default function TasksPage() {
                           </button>
                         ))}
                       </div>
+
+                      <div className="pt-3 border-t border-white/10">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedTaskForTransfer({
+                              id: task.id,
+                              title: task.title,
+                              deadline: task.deadline,
+                              created_at: task.created_at,
+                            });
+                            setTransferModalOpen(true);
+                          }}
+                          className="w-full px-4 py-2 rounded-lg bg-purple-600/30 text-purple-300 hover:bg-purple-600/40 text-xs uppercase font-medium transition-all"
+                        >
+                          ✉️ Transférer
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -314,6 +341,58 @@ export default function TasksPage() {
       </div>
 
       <TaskModal open={showModal} onClose={() => setShowModal(false)} defaultType={typeParam} />
+      
+      <TransferModal
+        open={transferModalOpen}
+        taskTitle={selectedTaskForTransfer?.title || ""}
+        onClose={() => {
+          setTransferModalOpen(false);
+          setSelectedTaskForTransfer(null);
+        }}
+        onTransfer={async (email) => {
+          if (!selectedTaskForTransfer) return;
+
+          setIsTransferring(true);
+          try {
+            const token = (await fetch("/api/auth/session").then(r => r.json()))?.session?.access_token;
+
+            const response = await fetch("/api/tasks/transfer", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                taskId: selectedTaskForTransfer.id,
+                taskTitle: selectedTaskForTransfer.title,
+                taskDeadline: selectedTaskForTransfer.deadline,
+                createdAt: selectedTaskForTransfer.created_at,
+                recipientEmail: email,
+              }),
+            });
+
+            if (!response.ok) {
+              throw new Error("Erreur lors du transfert");
+            }
+
+            await response.json();
+            
+            // Rafraîchir les tâches
+            await fetchTasks();
+            
+            // Fermer le modal et montrer un message de succès
+            setTransferModalOpen(false);
+            setSelectedTaskForTransfer(null);
+            alert(`✅ Tâche transférée à ${email}`);
+          } catch (error) {
+            console.error("Erreur transfert:", error);
+            alert("❌ Erreur lors du transfert de la tâche");
+          } finally {
+            setIsTransferring(false);
+          }
+        }}
+        isLoading={isTransferring}
+      />
     </div>
   );
 }
