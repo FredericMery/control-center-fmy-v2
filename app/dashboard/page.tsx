@@ -42,12 +42,12 @@ const cards: Card[] = [
     link: "/dashboard/memoire",
   },
   {
-    id: "autre",
-    title: "Paramètres",
-    icon: "⚙️",
-    bgColor: "bg-slate-600/10",
-    textColor: "text-slate-400",
-    link: "/dashboard/settings",
+    id: "expenses",
+    title: "Dépenses",
+    icon: "💰",
+    bgColor: "bg-amber-600/10",
+    textColor: "text-amber-400",
+    link: "/expenses",
   },
 ];
 
@@ -163,6 +163,15 @@ export default function DashboardPage() {
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 transition-all"
                     >
                       Accès
+                    </Link>
+                  )}
+
+                  {card.id === "expenses" && (
+                    <Link
+                      href="/expenses"
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/30 transition-all"
+                    >
+                      Saisir
                     </Link>
                   )}
                 </div>
