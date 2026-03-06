@@ -59,9 +59,12 @@ export async function POST(request: NextRequest) {
 
     // Récupérer l'utilisateur qui envoie
     const { data: userData } = await supabase.auth.admin.getUserById(userId);
-    const senderName = userData?.user?.email?.split('@')[0] || 'no-reply';
+    const userEmail = userData?.user?.email || 'no-reply';
+    const senderName = userEmail.split('@')[0];
     const senderEmail = `${senderName}@meetsync-ai.com`;
-    const senderDisplayName = userData?.user?.email?.split('@')[0] || 'Control Center';
+    
+    // Nettoyer le nom pour l'affichage (première lettre en majuscule)
+    const senderDisplayName = senderName.charAt(0).toUpperCase() + senderName.slice(1);
     
     console.log('✅ Expéditeur:', senderDisplayName, '-', senderEmail);
 
