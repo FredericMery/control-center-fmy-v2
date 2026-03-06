@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import { trackApiCall, trackAppUsage } from '@/lib/tracking/analytics';
 
 type PaymentMethod = 'cb_perso' | 'cb_pro';
 
@@ -92,8 +93,13 @@ export default function ExpenseForm() {
         return;
       }
 
-      // Succès
+      // Succès - tracker les événements
       console.log('✅ Dépense créée avec succès');
+      
+      // Tracker le scan de facture et l'appel Google Vision
+      await trackAppUsage('scan_invoice', authToken);
+      await trackApiCall('google_vision', authToken);
+      
       setStep('review');
       setFormData({
         vendor: data.expense.vendor || '',
