@@ -59,7 +59,11 @@ export async function POST(request: NextRequest) {
 
     // Récupérer l'utilisateur qui envoie
     const { data: userData } = await supabase.auth.admin.getUserById(userId);
-    console.log('✅ Expéditeur:', senderName);
+    const senderName = userData?.user?.email?.split('@')[0] || 'no-reply';
+    const senderEmail = `${senderName}@meetsync-ai.com`;
+    const senderDisplayName = userData?.user?.email?.split('@')[0] || 'Control Center';
+    
+    console.log('✅ Expéditeur:', senderDisplayName, '-', senderEmail);
 
     // Formater la date
     const createdDate = new Date(body.createdAt);
@@ -80,20 +84,20 @@ export async function POST(request: NextRequest) {
       : 'Non définie';
 
     console.log('📧 Préparation envoi email via Resend...');
-    console.log('  - De: Control Center <noreply@controler.email>');
+    console.log('  - De:', `${senderDisplayName} <${senderEmail}>`);
     console.log('  - À:', body.recipientEmail);
     console.log('  - Sujet: Nouvelle demande d\'action:', body.taskTitle);
 
     // Envoyer l'email via Resend
     const emailResult = await resend.emails.send({
-      from: 'Control Center <noreply@controler.email>',
+      from: `${senderDisplayName} <${senderEmail}>`,
       to: body.recipientEmail,
       subject: `Nouvelle demande d'action: ${body.taskTitle}`,
       html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;">
           <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 8px 8px 0 0; color: white;">
             <h1 style="margin: 0; font-size: 24px; font-weight: 600;">Nouvelle demande d'actions</h1>
-            <p style="margin: 8px 0 0 0; opacity: 0.9;">${senderName} vous attribue une nouvelle tâche</p>
+            <p style="margin: 8px 0 0 0; opacity: 0.9;">${senderDisplayName} vous attribue une nouvelle tâche</p>
           </div>
 
           <div style="padding: 30px; background: #f9fafb; border: 1px solid #e5e7eb; border-top: none;">
@@ -124,14 +128,14 @@ export async function POST(request: NextRequest) {
 
             <div style="background: #f0f4ff; border-left: 4px solid #667eea; padding: 16px; border-radius: 4px; margin-bottom: 24px;">
               <p style="margin: 0; color: #3730a3; font-size: 14px; line-height: 1.6;">
-                <strong>${senderName}</strong> vous confie cette action. Merci de la traiter dans les délais indiqués.<br>
+                <strong>${senderDisplayName}</strong> vous confie cette action. Merci de la traiter dans les délais indiqués.<br>
                 <br>
                 Belle journée! 🌟
               </p>
             </div>
 
             <p style="margin: 0; color: #6b7280; font-size: 12px; line-height: 1.6;">
-              Cette demande a été générée par Control Center. Si vous avez des questions, veuillez contacter directement ${senderName}.
+              Cette demande a été générée par Control Center. Si vous avez des questions, veuillez contacter directement ${senderDisplayName}.
             </p>
           </div>
 
