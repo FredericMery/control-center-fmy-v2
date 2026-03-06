@@ -126,8 +126,8 @@ export default function DashboardPage() {
             <h1 className="text-xl font-bold">Control Center</h1>
             <p className="text-xs text-gray-400">Vue d'ensemble</p>
           </div>
-          <NotificationBell />{monthName})</p>
-              <p className="text-xl font-bold text-indigo-400">{visionCountMonth
+          <NotificationBell />
+        </div>
       </div>
 
       {/* Main Content - Centered */}
@@ -153,8 +153,8 @@ export default function DashboardPage() {
               <p className="text-xl font-bold text-amber-400">{memoireCount}</p>
             </div>
             <div className="bg-white/5 backdrop-blur-sm rounded-lg p-3 border border-white/10 col-span-2">
-              <p className="text-[10px] text-gray-400 uppercase mb-1">Appels API Vision (mois)</p>
-              <p className="text-xl font-bold text-indigo-400">{ocrMonthCount}</p>
+              <p className="text-[10px] text-gray-400 uppercase mb-1">Appels API Vision ({monthName})</p>
+              <p className="text-xl font-bold text-indigo-400">{visionCountMonth}</p>
             </div>
           </div>
 
