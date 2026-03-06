@@ -9,6 +9,8 @@ import TaskModal from "@/components/TaskModal";
 import TransferModal from "@/components/TransferModal";
 import Link from "next/link";
 import NotificationBell from "@/components/NotificationBell";
+import { supabase } from "@/lib/supabase/client";
+import { getValidAccessToken } from "@/lib/auth/clientToken";
 
 const statuses = ["todo", "in_progress", "waiting", "done"] as const;
 
@@ -354,7 +356,12 @@ export default function TasksPage() {
 
           setIsTransferring(true);
           try {
-            const token = (await fetch("/api/auth/session").then(r => r.json()))?.session?.access_token;
+            const token = await getValidAccessToken();
+            if (!token) {
+              await supabase.auth.signOut();
+              window.location.href = "/login";
+              throw new Error("Session expirée. Veuillez vous reconnecter.");
+            }
 
             const response = await fetch("/api/tasks/transfer", {
               method: "POST",
@@ -372,7 +379,16 @@ export default function TasksPage() {
             });
 
             if (!response.ok) {
-              const errorData = await response.json();
+              if (response.status === 401) {
+                await supabase.auth.signOut();
+                window.location.href = "/login";
+                throw new Error("Session expirée. Veuillez vous reconnecter.");
+              }
+
+              const contentType = response.headers.get("content-type") || "";
+              const errorData = contentType.includes("application/json")
+                ? await response.json()
+                : { error: await response.text() };
               console.error('❌ Erreur serveur:', errorData);
               throw new Error(errorData.details || errorData.error || "Erreur lors du transfert");
             }

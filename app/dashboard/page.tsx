@@ -6,6 +6,7 @@ import NotificationBell from "@/components/NotificationBell";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import { getMonthNameFr } from "@/lib/monthHelper";
+import { supabase } from "@/lib/supabase/client";
 
 interface Card {
   id: string;
@@ -66,11 +67,13 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchMonthlyStats = async () => {
       try {
-        const { data: sessionData } = await fetch('/api/auth/session', {
-          method: 'GET',
-        }).then(r => r.json());
+        const { data, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error("Erreur récupération session:", error);
+          return;
+        }
 
-        const token = sessionData?.session?.access_token;
+        const token = data.session?.access_token;
         if (!token) return;
 
         const response = await fetch('/api/tracking/monthly-stats', {

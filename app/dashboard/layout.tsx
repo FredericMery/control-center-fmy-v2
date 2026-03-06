@@ -4,6 +4,7 @@ import { ReactNode, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { supabase } from "@/lib/supabase/client";
 
 export default function DashboardLayout({
   children,
@@ -20,6 +21,20 @@ export default function DashboardLayout({
       router.replace("/login");
     }
   }, [user, loading, router]);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      if (loading || !user) return;
+
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+        await useAuthStore.getState().signOut();
+        router.replace("/login");
+      }
+    };
+
+    checkSession();
+  }, [loading, user, router]);
 
   // 🔔 Check for overdue tasks on app launch
   useEffect(() => {
