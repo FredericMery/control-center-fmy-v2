@@ -21,17 +21,24 @@ interface TransferRequest {
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('🔍 Début du transfert de tâche...');
+    
     const userId = await getUserIdFromRequest(request);
     if (!userId) {
+      console.log('❌ Utilisateur non authentifié');
       return NextResponse.json(
         { error: 'Non authentifié' },
         { status: 401 }
       );
     }
 
+    console.log('✅ Utilisateur authentifié:', userId);
+
     const body: TransferRequest = await request.json();
+    console.log('📝 Body reçu:', { ...body, recipientEmail: body.recipientEmail });
 
     if (!body.taskId || !body.taskTitle || !body.recipientEmail) {
+      console.log('❌ Paramètres manquants');
       return NextResponse.json(
         { error: 'Paramètres manquants' },
         { status: 400 }
@@ -41,15 +48,18 @@ export async function POST(request: NextRequest) {
     // Valider l'email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(body.recipientEmail)) {
+      console.log('❌ Email invalide:', body.recipientEmail);
       return NextResponse.json(
         { error: 'Email invalide' },
         { status: 400 }
       );
     }
 
+    console.log('✅ Email valide:', body.recipientEmail);
+
     // Récupérer l'utilisateur qui envoie
     const { data: userData } = await supabase.auth.admin.getUserById(userId);
-    const senderName = userData?.user?.email?.split('@')[0] || 'Un utilisateur';
+    console.log('✅ Expéditeur:', senderName);
 
     // Formater la date
     const createdDate = new Date(body.createdAt);
@@ -68,6 +78,11 @@ export async function POST(request: NextRequest) {
           day: 'numeric',
         })
       : 'Non définie';
+
+    console.log('📧 Préparation envoi email via Resend...');
+    console.log('  - De: Control Center <noreply@controler.email>');
+    console.log('  - À:', body.recipientEmail);
+    console.log('  - Sujet: Nouvelle demande d\'action:', body.taskTitle);
 
     // Envoyer l'email via Resend
     const emailResult = await resend.emails.send({
@@ -129,10 +144,15 @@ export async function POST(request: NextRequest) {
       `,
     });
 
+    console.log('✅ Email envoyé:', emailResult);
+
     if (emailResult.error) {
-      console.error('Erreur Resend:', emailResult.error);
+      console.error('❌ Erreur Resend:', emailResult.error);
       return NextResponse.json(
-        { error: 'Erreur lors de l\'envoi de l\'email' },
+        { 
+          error: 'Erreur lors de l\'envoi de l\'email',
+          details: emailResult.error.message || 'Erreur inconnue'
+        },
         { status: 500 }
       );
     }
@@ -159,10 +179,13 @@ export async function POST(request: NextRequest) {
       success: true,
       message: `Tâche transférée à ${body.recipientEmail} et marquée comme terminée`,
     });
-  } catch (error) {
-    console.error('Erreur endpoint transfer:', error);
+  } catch (error: any) {
+    console.error('❌ Erreur endpoint transfer:', error);
     return NextResponse.json(
-      { error: 'Erreur serveur' },
+      { 
+        error: 'Erreur serveur',
+        details: error?.message || 'Erreur inconnue'
+      },
       { status: 500 }
     );
   }

@@ -372,10 +372,13 @@ export default function TasksPage() {
             });
 
             if (!response.ok) {
-              throw new Error("Erreur lors du transfert");
+              const errorData = await response.json();
+              console.error('❌ Erreur serveur:', errorData);
+              throw new Error(errorData.details || errorData.error || "Erreur lors du transfert");
             }
 
-            await response.json();
+            const result = await response.json();
+            console.log('✅ Transfert réussi:', result);
             
             // Rafraîchir les tâches
             await fetchTasks();
@@ -384,9 +387,9 @@ export default function TasksPage() {
             setTransferModalOpen(false);
             setSelectedTaskForTransfer(null);
             alert(`✅ Tâche transférée à ${email}`);
-          } catch (error) {
-            console.error("Erreur transfert:", error);
-            alert("❌ Erreur lors du transfert de la tâche");
+          } catch (error: any) {
+            console.error("❌ Erreur transfert complète:", error);
+            alert(`❌ Erreur: ${error.message || 'Erreur inconnue'}`);
           } finally {
             setIsTransferring(false);
           }
