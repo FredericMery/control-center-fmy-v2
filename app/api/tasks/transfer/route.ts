@@ -63,8 +63,8 @@ export async function POST(request: NextRequest) {
     const senderName = userEmail.split('@')[0];
     const senderEmail = `${senderName}@meetsync-ai.com`;
     
-    // Nettoyer le nom pour l'affichage (première lettre en majuscule)
-    const senderDisplayName = senderName.charAt(0).toUpperCase() + senderName.slice(1);
+    // Nom d'affichage - juste le prénom ou nom d'utilisateur
+    const senderDisplayName = 'Control Center';
     
     console.log('✅ Expéditeur:', senderDisplayName, '-', senderEmail);
 
