@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { extractInvoiceData } from '@/lib/vision/extractInvoice';
+import { sendExpenseEmail } from '@/lib/email/resendService';
+import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,8 +21,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Récupérer l'utilisateur depuis la session
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
+    const userId = await getUserIdFromRequest(request);
+    if (!userId) {
       return NextResponse.json(
         { error: 'Non authentifié' },
         { status: 401 }
@@ -65,7 +67,7 @@ export async function POST(request: NextRequest) {
       .from('expenses')
       .insert({
         id: expenseId,
-        user_id: authHeader, // À adapter selon ta gestion d'auth
+        user_id: userId,
         payment_method: paymentMethod,
         invoice_number: invoiceData.invoice_number,
         invoice_date: invoiceData.invoice_date,
@@ -92,7 +94,29 @@ export async function POST(request: NextRequest) {
 
     // 7. Si CB Pro → envoyer email automatiquement
     if (paymentMethod === 'cb_pro') {
-      // À implémenter : envoi email via Resend
+      try {
+        // Récupérer l'email du destinataire depuis email_settings
+        const { data: settings } = await supabase
+          .from('email_settings')
+          .select('email')
+          .eq('type', 'facture')
+          .eq('user_id', userId)
+          .single();
+
+        if (settings?.email) {
+          await sendExpenseEmail({
+            to: settings.email,
+            vendor: invoiceData.vendor || 'Fournisseur',
+            amount: invoiceData.amount_ttc || 0,
+            invoiceNumber: invoiceData.invoice_number || undefined,
+            invoiceDate: invoiceData.invoice_date || undefined,
+            photoUrl: publicUrl,
+          });
+        }
+      } catch (emailError) {
+        console.error('Erreur envoi email:', emailError);
+        // Continuer même si email échoue
+      }
     }
 
     return NextResponse.json({

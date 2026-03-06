@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@supabase/supabase-js';
 
 type PaymentMethod = 'cb_perso' | 'cb_pro';
 
@@ -12,12 +13,32 @@ export default function ExpenseForm() {
   const [image, setImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     vendor: '',
     amount_ttc: '',
     invoice_number: '',
     invoice_date: '',
   });
+
+  // Récupérer le token Supabase au chargement
+  useEffect(() => {
+    const getAuthToken = async () => {
+      try {
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        );
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          setAuthToken(session.access_token);
+        }
+      } catch (err) {
+        console.error('Erreur récupération token:', err);
+      }
+    };
+    getAuthToken();
+  }, []);
 
   const handleMethodSelect = (method: PaymentMethod) => {
     setPaymentMethod(method);
@@ -38,6 +59,11 @@ export default function ExpenseForm() {
   };
 
   const handleScan = async (base64Image: string) => {
+    if (!authToken) {
+      setError('Authentification requise');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -46,7 +72,7 @@ export default function ExpenseForm() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+          'Authorization': `Bearer ${authToken}`,
         },
         body: JSON.stringify({
           image: base64Image,
@@ -72,7 +98,7 @@ export default function ExpenseForm() {
 
       // Rediriger après 2 secondes
       setTimeout(() => {
-        router.push('/expenses');
+        router.push('/dashboard/notifications');
       }, 2000);
     } catch (err) {
       setError('Erreur lors du traitement de la facture');

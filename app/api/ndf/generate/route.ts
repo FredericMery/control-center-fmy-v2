@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { generateNDFHTML } from '@/lib/email/generateNDFPDF';
+import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,8 +10,8 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
+    const userId = await getUserIdFromRequest(request);
+    if (!userId) {
       return NextResponse.json(
         { error: 'Non authentifié' },
         { status: 401 }
@@ -24,7 +26,7 @@ export async function POST(request: NextRequest) {
     const { data: expenses, error: fetchError } = await supabase
       .from('expenses')
       .select('*')
-      .eq('user_id', authHeader)
+      .eq('user_id', userId)
       .eq('payment_method', 'cb_perso')
       .eq('status', 'pending_ndf')
       .order('invoice_date', { ascending: true });
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
     const { data: ndf, error: ndfError } = await supabase
       .from('ndf_reports')
       .insert({
-        user_id: authHeader,
+        user_id: userId,
         month,
         year,
         total_ht,
@@ -74,11 +76,55 @@ export async function POST(request: NextRequest) {
     await supabase
       .from('expenses')
       .update({ status: 'submitted' })
-      .eq('user_id', authHeader)
+      .eq('user_id', userId)
       .eq('payment_method', 'cb_perso')
       .eq('status', 'pending_ndf');
 
-    // 5. TODO: Générer PDF et envoyer email
+    // 5. Générer PDF et stocker
+    const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+    const monthName = monthNames[month - 1];
+
+    try {
+      const htmlContent = generateNDFHTML({
+        reportId: ndf.id,
+        month: monthName,
+        year,
+        total_ht,
+        total_tva,
+        total_ttc,
+        expenses: expenses.map(e => ({
+          invoice_number: e.invoice_number,
+          invoice_date: e.invoice_date,
+          vendor: e.vendor,
+          amount_ht: e.amount_ht || 0,
+          amount_tva: e.amount_tva || 0,
+          amount_ttc: e.amount_ttc || 0,
+          category: e.category || 'Non catégorisée',
+        })),
+        employee: 'FM', // À adapter
+        createdAt: ndf.created_at,
+      });
+
+      // Uploader le PDF HTML en Supabase Storage (pour accès futur)
+      const buffer = Buffer.from(htmlContent, 'utf-8');
+      const pdfFileName = `ndf_${year}_${month.toString().padStart(2, '0')}_${ndf.id.substring(0, 8)}.html`;
+      
+      await supabase.storage
+        .from('expense-receipts')
+        .upload(`ndf-reports/${pdfFileName}`, buffer, {
+          contentType: 'text/html',
+          upsert: false,
+        });
+
+      // Mettre à jour le chemin du PDF dans la base
+      await supabase
+        .from('ndf_reports')
+        .update({ pdf_url: `ndf-reports/${pdfFileName}` })
+        .eq('id', ndf.id);
+    } catch (pdfError) {
+      console.error('Erreur génération PDF:', pdfError);
+      // Continuer même si PDF échoue
+    }
 
     return NextResponse.json({
       success: true,
