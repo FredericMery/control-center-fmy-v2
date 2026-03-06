@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     console.log('📤 Upload de l\'image vers Supabase Storage...');
     const { error: uploadError } = await supabase.storage
       .from('expense-receipts')
-      .upload(`${expenseId}.jpg`, buffer, {
+      .upload(`${userId}/${expenseId}.jpg`, buffer, {
         contentType: 'image/jpeg',
         upsert: false,
       });
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     if (uploadError) {
       console.error('❌ Erreur upload:', uploadError);
       return NextResponse.json(
-        { error: `Erreur upload: ${uploadError.message}` },
+        { error: `Erreur upload Storage: ${uploadError.message}. Assurez-vous que le bucket 'expense-receipts' existe dans Supabase.` },
         { status: 500 }
       );
     }
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     // 4. Récupérer l'URL de l'image
     const {
       data: { publicUrl },
-    } = supabase.storage.from('expense-receipts').getPublicUrl(`${expenseId}.jpg`);
+    } = supabase.storage.from('expense-receipts').getPublicUrl(`${userId}/${expenseId}.jpg`);
 
     // 5. Déterminer le statut selon la méthode de paiement
     const status = paymentMethod === 'cb_perso' ? 'pending_ndf' : 'pending';
