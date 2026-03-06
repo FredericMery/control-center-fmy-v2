@@ -36,15 +36,31 @@ export async function POST(request: NextRequest) {
 
     // 2. Générer un ID unique pour la dépense
     const expenseId = crypto.randomUUID();
+    const timestamp = Date.now();
+    const filename = `${userId}_${timestamp}_${expenseId.substring(0, 8)}.jpg`;
 
     // 3. Uploader l'image dans Supabase Storage
-    const base64Data = image.split(',')[1] || image;
-    const buffer = Buffer.from(base64Data, 'base64');
+    let base64Data = image;
     
-    console.log('📤 Upload de l\'image vers Supabase Storage...');
+    // Nettoyer le base64
+    if (image.includes(',')) {
+      base64Data = image.split(',')[1];
+    }
+    
+    // Vérifier que c'est du base64 valide
+    if (!base64Data || base64Data.length < 100) {
+      return NextResponse.json(
+        { error: 'Image invalide ou trop petite' },
+        { status: 400 }
+      );
+    }
+    
+    const buffer = Buffer.from(base64Data, 'base64');
+    console.log(`📤 Upload de l'image vers Supabase Storage... (${buffer.length} bytes, filename: ${filename})`);
+    
     const { error: uploadError } = await supabase.storage
       .from('expense-receipts')
-      .upload(`${userId}/${expenseId}.jpg`, buffer, {
+      .upload(filename, buffer, {
         contentType: 'image/jpeg',
         upsert: false,
       });
@@ -52,7 +68,7 @@ export async function POST(request: NextRequest) {
     if (uploadError) {
       console.error('❌ Erreur upload:', uploadError);
       return NextResponse.json(
-        { error: `Erreur upload Storage: ${uploadError.message}. Assurez-vous que le bucket 'expense-receipts' existe dans Supabase.` },
+        { error: `Erreur upload Storage: ${uploadError.message}` },
         { status: 500 }
       );
     }
@@ -62,7 +78,7 @@ export async function POST(request: NextRequest) {
     // 4. Récupérer l'URL de l'image
     const {
       data: { publicUrl },
-    } = supabase.storage.from('expense-receipts').getPublicUrl(`${userId}/${expenseId}.jpg`);
+    } = supabase.storage.from('expense-receipts').getPublicUrl(filename);
 
     // 5. Déterminer le statut selon la méthode de paiement
     const status = paymentMethod === 'cb_perso' ? 'pending_ndf' : 'pending';
