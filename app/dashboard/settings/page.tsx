@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "next/navigation";
+import EmailSettingsForm from "@/components/settings/EmailSettingsForm";
 
 export default function SettingsPage() {
   const user = useAuthStore((s) => s.user);
@@ -287,6 +288,11 @@ export default function SettingsPage() {
 
       </div>
 
+
+      {/* EMAILS */}
+      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-6">
+        <EmailSettingsForm />
+      </div>
 
       {/* PARTAGER */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
