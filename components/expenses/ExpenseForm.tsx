@@ -27,6 +27,17 @@ const PRO_REASONS = [
   'Autre',
 ];
 
+const SUPPORTED_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+]);
+
+const MAX_IMAGE_DIMENSION = 2200;
+
 export default function ExpenseForm() {
   const { t } = useI18n();
   const router = useRouter();
@@ -84,28 +95,26 @@ export default function ExpenseForm() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const supportedImageTypes = new Set([
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/webp',
-    ]);
-
-    if (!supportedImageTypes.has(file.type.toLowerCase())) {
-      setError('Format image non pris en charge. Utilisez JPG, PNG ou WEBP.');
+    const mimeType = file.type?.toLowerCase() || '';
+    if (mimeType && !SUPPORTED_IMAGE_TYPES.has(mimeType)) {
+      setError('Format image non pris en charge. Utilisez JPG, PNG, WEBP ou HEIC (iPhone).');
       setImage(null);
       return;
     }
 
     setError(null);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      setImage(base64);
-      handleScan(base64);
-    };
-    reader.readAsDataURL(file);
+    try {
+      // Convertit systematiquement l image en JPEG pour assurer la compatibilite Vision/API.
+      const jpegDataUrl = await convertImageToJpegDataUrl(file);
+      setImage(jpegDataUrl);
+      handleScan(jpegDataUrl);
+    } catch {
+      setImage(null);
+      setError(
+        'Impossible de lire cette photo iPhone. Reessayez ou exportez-la en JPG depuis Photos.'
+      );
+    }
   };
 
   const handleScan = async (base64Image: string) => {
@@ -294,7 +303,7 @@ export default function ExpenseForm() {
                 <>
                   <input
                     type="file"
-                    accept="image/jpeg,image/png,image/webp"
+                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                     onChange={handleImageUpload}
                     className="hidden"
                     id="photo-input"
@@ -405,4 +414,48 @@ export default function ExpenseForm() {
       </div>
     </div>
   );
+}
+
+async function convertImageToJpegDataUrl(file: File): Promise<string> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await loadImageElement(objectUrl);
+    const { width, height } = getScaledDimensions(image.width, image.height, MAX_IMAGE_DIMENSION);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('Canvas context unavailable');
+    }
+
+    context.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', 0.9);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Image decode failed'));
+    img.src = src;
+  });
+}
+
+function getScaledDimensions(width: number, height: number, maxDimension: number) {
+  const largest = Math.max(width, height);
+  if (largest <= maxDimension) {
+    return { width, height };
+  }
+
+  const ratio = maxDimension / largest;
+  return {
+    width: Math.max(1, Math.round(width * ratio)),
+    height: Math.max(1, Math.round(height * ratio)),
+  };
 }
