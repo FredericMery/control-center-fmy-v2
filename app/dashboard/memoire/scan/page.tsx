@@ -455,12 +455,25 @@ export default function MemoryScanPage() {
           </div>
 
           <button
+            type="button"
             onClick={runSmartScan}
             disabled={loadingScan || savingMemory}
-            className="rounded-md bg-emerald-400 px-4 py-1.5 text-xs font-semibold text-black shadow-lg shadow-emerald-900/30 disabled:opacity-50 sm:text-sm"
+            className="rounded-md bg-emerald-400 px-4 py-1.5 text-xs font-semibold text-black shadow-lg shadow-emerald-900/30 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
           >
             {loadingScan ? t('memory.scan.scanning') : t('memory.scan.scanButton')}
           </button>
+
+          {loadingScan && (
+            <div className="rounded-lg border border-emerald-300/35 bg-emerald-500/10 p-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-emerald-100">
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-emerald-300 border-t-transparent" />
+                {t('memory.scan.processingStatus')}
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-emerald-950/70">
+                <div className="h-full w-full animate-pulse bg-gradient-to-r from-emerald-300 via-emerald-100 to-emerald-300" />
+              </div>
+            </div>
+          )}
         </div>
 
         {error && (
@@ -532,19 +545,41 @@ export default function MemoryScanPage() {
 
             <div className="flex flex-wrap gap-2">
               <button
+                type="button"
                 onClick={saveMemory}
                 disabled={savingMemory}
-                className="rounded-md bg-emerald-400 px-4 py-1.5 text-xs font-semibold text-black shadow-lg shadow-emerald-900/30 disabled:opacity-60 sm:text-sm"
+                className="rounded-md bg-emerald-400 px-4 py-1.5 text-xs font-semibold text-black shadow-lg shadow-emerald-900/30 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
               >
                 {savingMemory ? t('notifications.saving') : t('memory.scan.saveCard')}
               </button>
               <button
+                type="button"
                 onClick={resetScan}
                 className="rounded-md border border-slate-500 px-3 py-1.5 text-xs font-medium hover:bg-slate-700 sm:text-sm"
               >
                 {t('common.cancel')}
               </button>
             </div>
+
+            {savingMemory && (
+              <div className="rounded-lg border border-amber-300/35 bg-amber-500/10 p-3 text-xs text-amber-100">
+                <div className="flex items-center gap-2 font-medium">
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-amber-300 border-t-transparent" />
+                  {t('memory.scan.savingInProgress')}
+                </div>
+              </div>
+            )}
+
+            {savedMemoryId && (
+              <div className="rounded-lg border border-emerald-300/40 bg-emerald-500/10 p-3 text-xs text-emerald-100">
+                <div className="flex items-center gap-2 font-medium">
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-300/25 text-[10px] text-emerald-100">
+                    ✓
+                  </span>
+                  {t('memory.scan.saveDone')}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
