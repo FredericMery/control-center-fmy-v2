@@ -3,6 +3,7 @@ import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 import { logAiUsage, requireValidationCode } from '@/lib/ai/client';
 import { createMemory, listMemories } from '@/lib/memory/memoryService';
 import { linkMemories } from '@/lib/memory/graphService';
+import { MEMORY_TEMPLATES } from '@/lib/memoryTemplates';
 import {
   ACTION_CATALOG,
   localizeActionDefinition,
@@ -91,6 +92,7 @@ export async function POST(request: NextRequest) {
     const validationCode = body?.validationCode as string | undefined;
     const actionId = body?.actionId as AssistantActionId | undefined;
     const detectedType = body?.detectedType as DetectedContentType | undefined;
+    const selectedTemplateId = String(body?.selectedTemplateId || '').trim().toLowerCase();
     const parsed = (body?.parsed || {}) as ParsedPayload;
     const rawText = String(body?.rawText || '');
 
@@ -106,12 +108,24 @@ export async function POST(request: NextRequest) {
 
     const action = ACTION_CATALOG[actionId];
     const localizedAction = localizeActionDefinition(action, language);
+    const safeTemplateId =
+      selectedTemplateId && (selectedTemplateId === 'other' || Boolean(MEMORY_TEMPLATES[selectedTemplateId]))
+        ? selectedTemplateId
+        : null;
+
     const structuredData = {
       ...(parsed.structured_data || {}),
       assistant_action_id: actionId,
       detected_type: detectedType,
       raw_ocr_text: rawText,
       action_executed_at: new Date().toISOString(),
+      ...(safeTemplateId
+        ? {
+            template_id: safeTemplateId,
+            category_id: safeTemplateId,
+            theme: safeTemplateId === 'other' ? 'Autres' : MEMORY_TEMPLATES[safeTemplateId]?.name,
+          }
+        : {}),
     };
 
     if (actionId === 'attach_monthly_expenses') {

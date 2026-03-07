@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 import { useI18n } from '@/components/providers/LanguageProvider';
+import { MEMORY_TEMPLATES, type FieldTemplate } from '@/lib/memoryTemplates';
 
 type Memory = {
   id: string;
@@ -26,6 +27,8 @@ type MemoryRelation = {
     rating: number | null;
   };
 };
+
+type TemplateFieldValues = Record<string, string>;
 
 type ThemeProfile = {
   tokenSet: Set<string>;
@@ -95,6 +98,108 @@ function safeString(value: unknown): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number') return String(value);
   return '';
+}
+
+function toFieldKey(label: string): string {
+  return label
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, '_');
+}
+
+function getTemplateFieldsFromMemory(memory: Memory, templateId: string): TemplateFieldValues {
+  const structured = memory.structured_data || {};
+  const nested =
+    structured.template_fields && typeof structured.template_fields === 'object'
+      ? (structured.template_fields as Record<string, unknown>)
+      : {};
+  const template = MEMORY_TEMPLATES[templateId];
+  if (!template) return {};
+
+  const result: TemplateFieldValues = {};
+  for (const field of template.fields) {
+    const key = toFieldKey(field.label);
+    const nestedValue = safeString(nested[key]);
+    const directValue = safeString((structured as Record<string, unknown>)[key]);
+    result[key] = nestedValue || directValue || '';
+  }
+
+  return result;
+}
+
+function renderTemplateFieldInput(args: {
+  field: FieldTemplate;
+  value: string;
+  onChange: (next: string) => void;
+}): React.ReactNode {
+  const { field, value, onChange } = args;
+
+  if (field.field_type === 'textarea') {
+    return (
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        rows={3}
+        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+      />
+    );
+  }
+
+  if (field.field_type === 'select' && Array.isArray(field.options) && field.options.length > 0) {
+    return (
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+      >
+        <option value="">--</option>
+        {field.options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (field.field_type === 'rating') {
+    return (
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+      >
+        <option value="">--</option>
+        {[1, 2, 3, 4, 5].map((entry) => (
+          <option key={entry} value={String(entry)}>
+            {entry}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  const typeMap: Record<string, string> = {
+    number: 'number',
+    date: 'date',
+    email: 'email',
+    phone: 'tel',
+    url: 'url',
+  };
+
+  const inputType = typeMap[field.field_type] || 'text';
+
+  return (
+    <input
+      type={inputType}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+    />
+  );
 }
 
 function truncate(value: string, max = 160): string {
@@ -234,6 +339,8 @@ export default function MemoryListPage() {
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [editTheme, setEditTheme] = useState('');
+  const [editTemplateId, setEditTemplateId] = useState<string>('other');
+  const [editTemplateFields, setEditTemplateFields] = useState<TemplateFieldValues>({});
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
 
@@ -342,6 +449,8 @@ export default function MemoryListPage() {
     [filteredItems, selectedId]
   );
 
+  const editTemplate = MEMORY_TEMPLATES[editTemplateId];
+
   async function loadMemories() {
     setLoading(true);
     setError(null);
@@ -449,10 +558,15 @@ export default function MemoryListPage() {
   }
 
   function openEdit(memory: EnrichedMemory) {
+    const structured = memory.structured_data || {};
+    const templateId = String(structured.template_id || structured.category_id || memory.categoryId || 'other');
+
     setEditingMemoryId(memory.id);
     setEditTitle(memory.title || '');
     setEditContent(memory.content || '');
     setEditTheme(memory.categoryLabel || 'General');
+    setEditTemplateId(templateId);
+    setEditTemplateFields(getTemplateFieldsFromMemory(memory, templateId));
     setError(null);
   }
 
@@ -461,6 +575,8 @@ export default function MemoryListPage() {
     setEditTitle('');
     setEditContent('');
     setEditTheme('');
+    setEditTemplateId('other');
+    setEditTemplateFields({});
     setSavingEdit(false);
   }
 
@@ -474,6 +590,12 @@ export default function MemoryListPage() {
 
     const memory = items.find((entry) => entry.id === editingMemoryId);
     if (!memory) return;
+
+    const cleanTemplateFields = Object.fromEntries(
+      Object.entries(editTemplateFields)
+        .map(([key, value]) => [key, value.trim()])
+        .filter(([, value]) => value.length > 0)
+    );
 
     setSavingEdit(true);
     setError(null);
@@ -489,6 +611,9 @@ export default function MemoryListPage() {
           structured_data: {
             ...(memory.structured_data || {}),
             theme: editTheme.trim() || 'General',
+            category_id: editTemplateId,
+            template_id: editTemplateId,
+            template_fields: cleanTemplateFields,
           },
         }),
       });
@@ -509,6 +634,9 @@ export default function MemoryListPage() {
                 structured_data: {
                   ...(entry.structured_data || {}),
                   theme: editTheme.trim() || 'General',
+                  category_id: editTemplateId,
+                  template_id: editTemplateId,
+                  template_fields: cleanTemplateFields,
                 },
               }
             : entry
@@ -553,6 +681,25 @@ export default function MemoryListPage() {
     } finally {
       setDeletingMemoryId(null);
     }
+  }
+
+  function handleEditTemplateChange(nextTemplateId: string) {
+    setEditTemplateId(nextTemplateId);
+
+    const template = MEMORY_TEMPLATES[nextTemplateId];
+    if (!template) {
+      setEditTemplateFields({});
+      return;
+    }
+
+    setEditTemplateFields((current) => {
+      const next: TemplateFieldValues = {};
+      for (const field of template.fields) {
+        const key = toFieldKey(field.label);
+        next[key] = current[key] || '';
+      }
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -947,6 +1094,22 @@ export default function MemoryListPage() {
                 </label>
 
                 <label className="block text-xs uppercase tracking-wide text-slate-400">
+                  {t('memory.list.editFieldTemplate')}
+                  <select
+                    value={editTemplateId}
+                    onChange={(event) => handleEditTemplateChange(event.target.value)}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  >
+                    {Object.entries(MEMORY_TEMPLATES).map(([id, template]) => (
+                      <option key={id} value={id}>
+                        {template.name}
+                      </option>
+                    ))}
+                    <option value="other">{t('memory.scan.templateOther')}</option>
+                  </select>
+                </label>
+
+                <label className="block text-xs uppercase tracking-wide text-slate-400">
                   {t('memory.list.editFieldContent')}
                   <textarea
                     value={editContent}
@@ -955,6 +1118,36 @@ export default function MemoryListPage() {
                     className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
                   />
                 </label>
+
+                {editTemplate && (
+                  <div className="rounded-md border border-slate-700 bg-slate-800/40 p-3">
+                    <p className="mb-2 text-xs uppercase tracking-wide text-slate-300">
+                      {t('memory.list.editTemplateFields')}
+                    </p>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {editTemplate.fields.map((field) => {
+                        const fieldKey = toFieldKey(field.label);
+                        const fieldValue = editTemplateFields[fieldKey] || '';
+
+                        return (
+                          <label key={fieldKey} className="block text-xs uppercase tracking-wide text-slate-400">
+                            {field.label}
+                            {renderTemplateFieldInput({
+                              field,
+                              value: fieldValue,
+                              onChange: (next) =>
+                                setEditTemplateFields((current) => ({
+                                  ...current,
+                                  [fieldKey]: next,
+                                })),
+                            })}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 flex justify-end gap-2">

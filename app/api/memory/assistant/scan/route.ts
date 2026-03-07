@@ -19,6 +19,16 @@ const CONFIG_MEMORY_TITLE = 'memory_action_mappings';
 const CONFIG_SOURCE = 'system_config';
 const CONFIG_OWNER_ID = process.env.MEMORY_ACTIONS_CONFIG_USER_ID || '63efeb2d-6b5f-486d-8163-7485b26b9329';
 
+function suggestTemplateId(detectedType: string): string {
+  if (detectedType === 'wine_label') return 'wines';
+  if (detectedType === 'business_card') return 'contacts';
+  if (detectedType === 'product') return 'ideas';
+  if (detectedType === 'note') return 'ideas';
+  if (detectedType === 'document') return 'learnings';
+  if (detectedType === 'invoice' || detectedType === 'receipt') return 'learnings';
+  return 'other';
+}
+
 async function loadMappings() {
   const supabase = getSupabaseAdminClient();
   const { data } = await supabase
@@ -94,6 +104,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       detectedType,
       detectedLabel: getDetectedTypeLabel(detectedType, language),
+      suggestedTemplateId: suggestTemplateId(detectedType),
       parsed,
       rawText,
       suggestions,

@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 import { useI18n } from '@/components/providers/LanguageProvider';
+import { MEMORY_TEMPLATES } from '@/lib/memoryTemplates';
 
 type SuggestedAction = {
   id: string;
@@ -15,6 +16,7 @@ type SuggestedAction = {
 type ScanResponse = {
   detectedType: string;
   detectedLabel: string;
+  suggestedTemplateId?: string;
   parsed: {
     title?: string;
     summary?: string;
@@ -26,6 +28,13 @@ type ScanResponse = {
 
 export default function MemoryScanPage() {
   const { t } = useI18n();
+  const templateOptions = useMemo(
+    () => [
+      ...Object.entries(MEMORY_TEMPLATES).map(([id, template]) => ({ id, name: template.name })),
+      { id: 'other', name: t('memory.scan.templateOther') },
+    ],
+    [t]
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [validationCode, setValidationCode] = useState('');
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -34,6 +43,7 @@ export default function MemoryScanPage() {
   const [loadingExecute, setLoadingExecute] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<ScanResponse | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('other');
   const [executedMemoryId, setExecutedMemoryId] = useState<string | null>(null);
 
   async function onImageSelected(event: React.ChangeEvent<HTMLInputElement>) {
@@ -79,7 +89,9 @@ export default function MemoryScanPage() {
         return;
       }
 
-      setScanResult(json as ScanResponse);
+      const nextResult = json as ScanResponse;
+      setScanResult(nextResult);
+      setSelectedTemplateId(nextResult.suggestedTemplateId || 'other');
     } catch {
       setError(t('memory.scan.errors.networkScan'));
     } finally {
@@ -105,6 +117,7 @@ export default function MemoryScanPage() {
           parsed: scanResult.parsed,
           rawText: scanResult.rawText,
           sourceImage: imageBase64,
+          selectedTemplateId,
         }),
       });
 
@@ -126,6 +139,7 @@ export default function MemoryScanPage() {
     setImageBase64(null);
     setSelectedFileName('');
     setScanResult(null);
+    setSelectedTemplateId('other');
     setExecutedMemoryId(null);
     setError(null);
     if (fileInputRef.current) {
@@ -205,6 +219,23 @@ export default function MemoryScanPage() {
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">{t('memory.scan.detectedContent')}</p>
               <h2 className="mt-1 text-2xl font-semibold">{scanResult.detectedLabel}</h2>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-xs uppercase tracking-wide text-emerald-200">
+                {t('memory.scan.targetTemplate')}
+              </label>
+              <select
+                value={selectedTemplateId}
+                onChange={(event) => setSelectedTemplateId(event.target.value)}
+                className="w-full rounded-md border border-emerald-300/40 bg-slate-900/70 px-3 py-2 text-sm text-white"
+              >
+                {templateOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
