@@ -34,10 +34,50 @@ type ThemeProfile = {
 
 type EnrichedMemory = Memory & {
   theme: string;
+  categoryId: string;
+  categoryLabel: string;
   scanDetail: string;
   thumbnail: string | null;
   searchableText: string;
   relevanceScore: number;
+};
+
+type MemoryCategory = {
+  id: string;
+  labels: {
+    fr: string;
+    en: string;
+    es: string;
+  };
+};
+
+const MEMORY_CATEGORIES: MemoryCategory[] = [
+  { id: 'wines', labels: { fr: 'Mes Vins', en: 'My Wines', es: 'Mis Vinos' } },
+  { id: 'spirits', labels: { fr: 'Mes Spiritueux', en: 'My Spirits', es: 'Mis Destilados' } },
+  { id: 'restaurants', labels: { fr: 'Mes Restaurants', en: 'My Restaurants', es: 'Mis Restaurantes' } },
+  { id: 'places', labels: { fr: 'Mes Lieux', en: 'My Places', es: 'Mis Lugares' } },
+  { id: 'books', labels: { fr: 'Mes Livres', en: 'My Books', es: 'Mis Libros' } },
+  { id: 'movies', labels: { fr: 'Mes Films', en: 'My Movies', es: 'Mis Peliculas' } },
+  { id: 'cars', labels: { fr: 'Mes Voitures', en: 'My Cars', es: 'Mis Coches' } },
+  { id: 'contacts', labels: { fr: 'Mes Contacts', en: 'My Contacts', es: 'Mis Contactos' } },
+  { id: 'ideas', labels: { fr: 'Mes Idees', en: 'My Ideas', es: 'Mis Ideas' } },
+  { id: 'learnings', labels: { fr: 'Mes Apprentissages', en: 'My Learnings', es: 'Mis Aprendizajes' } },
+  { id: 'other', labels: { fr: 'Autres', en: 'Others', es: 'Otros' } },
+];
+
+const CATEGORY_BY_ID = new Map(MEMORY_CATEGORIES.map((entry) => [entry.id, entry]));
+
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  wines: ['wine', 'vin', 'bordeaux', 'champagne', 'domaine', 'degustation'],
+  spirits: ['whisky', 'rhum', 'gin', 'vodka', 'tequila', 'spirit'],
+  restaurants: ['restaurant', 'cuisine', 'menu', 'plat', 'food'],
+  places: ['lieu', 'place', 'ville', 'pays', 'travel', 'trip'],
+  books: ['livre', 'book', 'auteur', 'author', 'lecture'],
+  movies: ['film', 'movie', 'serie', 'series', 'realisateur', 'director'],
+  cars: ['car', 'voiture', 'modele', 'motorisation', 'marque auto'],
+  contacts: ['contact', 'carte de visite', 'business card', 'societe', 'email', 'telephone'],
+  ideas: ['idea', 'idee', 'concept', 'business'],
+  learnings: ['learning', 'apprentissage', 'lecon', 'lesson', 'formation'],
 };
 
 const DETECTED_THEME_LABELS: Record<string, { fr: string; en: string; es: string }> = {
@@ -89,6 +129,51 @@ function getTheme(memory: Memory, language: 'fr' | 'en' | 'es'): string {
   }
 
   return 'General';
+}
+
+function getCategoryLabel(categoryId: string, language: 'fr' | 'en' | 'es'): string {
+  return CATEGORY_BY_ID.get(categoryId)?.labels?.[language] || CATEGORY_BY_ID.get('other')?.labels?.[language] || 'Autres';
+}
+
+function detectCategoryId(memory: Memory): string {
+  const structured = memory.structured_data || {};
+
+  const explicitCategory = safeString(structured.category_id || structured.template_id)
+    .trim()
+    .toLowerCase();
+  if (explicitCategory && CATEGORY_BY_ID.has(explicitCategory)) {
+    return explicitCategory;
+  }
+
+  const explicitTheme = safeString(structured.theme || structured.category || structured.topic)
+    .trim()
+    .toLowerCase();
+
+  const detectedType = safeString(structured.detected_type)
+    .trim()
+    .toLowerCase();
+
+  if (detectedType === 'wine_label') return 'wines';
+  if (detectedType === 'invoice' || detectedType === 'receipt') return 'learnings';
+  if (detectedType === 'business_card') return 'contacts';
+
+  const raw = [
+    memory.type || '',
+    memory.title || '',
+    memory.content || '',
+    explicitTheme,
+    detectedType,
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  for (const [categoryId, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (keywords.some((keyword) => raw.includes(keyword))) {
+      return categoryId;
+    }
+  }
+
+  return 'other';
 }
 
 function getScanDetail(memory: Memory): string {
@@ -155,9 +240,11 @@ export default function MemoryListPage() {
   const draftItems = useMemo(() => {
     return items.map((memory) => {
       const theme = getTheme(memory, language);
+      const categoryId = detectCategoryId(memory);
+      const categoryLabel = getCategoryLabel(categoryId, language);
       const scanDetail = getScanDetail(memory);
       const thumbnail = getThumbnail(memory);
-      const searchableText = [memory.title, memory.type, memory.content || '', theme, scanDetail]
+      const searchableText = [memory.title, memory.type, memory.content || '', theme, categoryLabel, scanDetail]
         .join(' ')
         .toLowerCase();
       const tokenSet = new Set(tokenize(searchableText));
@@ -165,6 +252,8 @@ export default function MemoryListPage() {
       return {
         ...memory,
         theme,
+        categoryId,
+        categoryLabel,
         scanDetail,
         thumbnail,
         searchableText,
@@ -177,11 +266,11 @@ export default function MemoryListPage() {
     const buckets = new Map<string, Map<string, number>>();
 
     for (const item of draftItems) {
-      const map = buckets.get(item.theme) || new Map<string, number>();
+      const map = buckets.get(item.categoryLabel) || new Map<string, number>();
       for (const token of item.tokenSet) {
         map.set(token, (map.get(token) || 0) + 1);
       }
-      buckets.set(item.theme, map);
+      buckets.set(item.categoryLabel, map);
     }
 
     const profiles = new Map<string, ThemeProfile>();
@@ -202,7 +291,7 @@ export default function MemoryListPage() {
 
   const enrichedItems = useMemo<EnrichedMemory[]>(() => {
     return draftItems.map((item) => {
-      const profile = themeProfiles.get(item.theme);
+      const profile = themeProfiles.get(item.categoryLabel);
       const overlap = profile
         ? Array.from(item.tokenSet).filter((token) => profile.tokenSet.has(token)).length
         : 0;
@@ -222,19 +311,23 @@ export default function MemoryListPage() {
   const themeCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of enrichedItems) {
-      counts.set(item.theme, (counts.get(item.theme) || 0) + 1);
+      counts.set(item.categoryId, (counts.get(item.categoryId) || 0) + 1);
     }
 
     return Array.from(counts.entries())
-      .map(([theme, count]) => ({ theme, count }))
-      .sort((a, b) => b.count - a.count || a.theme.localeCompare(b.theme));
-  }, [enrichedItems]);
+      .map(([categoryId, count]) => ({
+        categoryId,
+        categoryLabel: getCategoryLabel(categoryId, language),
+        count,
+      }))
+      .sort((a, b) => b.count - a.count || a.categoryLabel.localeCompare(b.categoryLabel));
+  }, [enrichedItems, language]);
 
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase();
 
     const selected = enrichedItems.filter((item) => {
-      if (activeTheme !== 'all' && item.theme !== activeTheme) return false;
+      if (activeTheme !== 'all' && item.categoryId !== activeTheme) return false;
       if (query && !item.searchableText.includes(query)) return false;
       return true;
     });
@@ -242,10 +335,7 @@ export default function MemoryListPage() {
     return selected.sort((a, b) => b.relevanceScore - a.relevanceScore);
   }, [enrichedItems, activeTheme, search]);
 
-  const boardThemes = useMemo(() => {
-    const themes = themeCounts.map((entry) => entry.theme);
-    return themes.slice(0, 8);
-  }, [themeCounts]);
+  const boardThemes = useMemo(() => MEMORY_CATEGORIES.map((entry) => entry.id), []);
 
   const selectedMemory = useMemo(
     () => filteredItems.find((item) => item.id === selectedId) || filteredItems[0] || null,
@@ -303,7 +393,7 @@ export default function MemoryListPage() {
     await loadRelations(memoryId);
   }
 
-  async function moveMemoryToTheme(memoryId: string, targetTheme: string) {
+  async function moveMemoryToTheme(memoryId: string, targetThemeCategoryId: string) {
     const memory = items.find((entry) => entry.id === memoryId);
     if (!memory) return;
 
@@ -323,7 +413,9 @@ export default function MemoryListPage() {
           validationCode,
           structured_data: {
             ...(memory.structured_data || {}),
-            theme: targetTheme,
+            theme: getCategoryLabel(targetThemeCategoryId, language),
+            category_id: targetThemeCategoryId,
+            template_id: targetThemeCategoryId,
           },
         }),
       });
@@ -341,7 +433,9 @@ export default function MemoryListPage() {
                 ...entry,
                 structured_data: {
                   ...(entry.structured_data || {}),
-                  theme: targetTheme,
+                  theme: getCategoryLabel(targetThemeCategoryId, language),
+                  category_id: targetThemeCategoryId,
+                  template_id: targetThemeCategoryId,
                 },
               }
             : entry
@@ -358,7 +452,7 @@ export default function MemoryListPage() {
     setEditingMemoryId(memory.id);
     setEditTitle(memory.title || '');
     setEditContent(memory.content || '');
-    setEditTheme(memory.theme || 'General');
+    setEditTheme(memory.categoryLabel || 'General');
     setError(null);
   }
 
@@ -538,8 +632,8 @@ export default function MemoryListPage() {
             >
               <option value="all">{t('memory.list.allThemes')}</option>
               {themeCounts.map((entry) => (
-                <option key={entry.theme} value={entry.theme}>
-                  {entry.theme} ({entry.count})
+                <option key={entry.categoryId} value={entry.categoryId}>
+                  {entry.categoryLabel} ({entry.count})
                 </option>
               ))}
             </select>
@@ -597,7 +691,7 @@ export default function MemoryListPage() {
           <section className="overflow-auto rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
             <div className="flex min-w-max gap-4">
               {boardThemes.map((theme) => {
-                const columnItems = filteredItems.filter((item) => item.theme === theme);
+                const columnItems = filteredItems.filter((item) => item.categoryId === theme);
                 return (
                   <div
                     key={theme}
@@ -612,7 +706,7 @@ export default function MemoryListPage() {
                     className="w-72 shrink-0 rounded-xl border border-slate-700 bg-slate-900 p-3"
                   >
                     <div className="mb-3 flex items-center justify-between">
-                      <p className="text-sm font-semibold text-cyan-200">{theme}</p>
+                      <p className="text-sm font-semibold text-cyan-200">{getCategoryLabel(theme, language)}</p>
                       <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">{columnItems.length}</span>
                     </div>
 
@@ -695,7 +789,7 @@ export default function MemoryListPage() {
                         </div>
                       )}
                       <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[10px] uppercase tracking-wide text-cyan-100">
-                        {memory.theme}
+                        {memory.categoryLabel}
                       </span>
                       <span className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[10px] text-emerald-200">
                         {memory.relevanceScore.toFixed(3)}
@@ -769,7 +863,7 @@ export default function MemoryListPage() {
               ) : (
                 <div className="space-y-4">
                   <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">{selectedMemory.theme}</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">{selectedMemory.categoryLabel}</p>
                     <h3 className="mt-1 text-xl font-semibold text-white">{selectedMemory.title}</h3>
                     <p className="mt-1 text-xs text-slate-400">{formatDate(selectedMemory.created_at, locale)}</p>
                     <p className="mt-1 text-xs text-emerald-300">
