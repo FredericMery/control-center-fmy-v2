@@ -2,15 +2,49 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { getAuthHeaders } from "@/lib/auth/clientSession";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "next/navigation";
 import EmailSettingsForm from "@/components/settings/EmailSettingsForm";
+
+type PlanName = "BASIC" | "PLUS" | "PRO";
+
+type PlanFeatures = {
+  tasks: boolean;
+  emails: boolean;
+  memory: boolean;
+  ai: boolean;
+  vision: boolean;
+  agent: boolean;
+};
+
+type Subscription = {
+  plan: PlanName;
+  price: number;
+  features: PlanFeatures;
+};
+
+type Profile = {
+  username: string | null;
+  avatar_url: string | null;
+};
+
+type AiUsageStats = {
+  totals: {
+    tokens: number;
+    costEstimate: number;
+  };
+  thisMonth: {
+    tokens: number;
+    costEstimate: number;
+  };
+};
 
 export default function SettingsPage() {
   const user = useAuthStore((s) => s.user);
   const router = useRouter();
 
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [previewAvatar, setPreviewAvatar] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
 
@@ -19,6 +53,10 @@ export default function SettingsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [usage, setUsage] = useState<AiUsageStats | null>(null);
+  const [loadingBilling, setLoadingBilling] = useState(false);
+  const [billingMessage, setBillingMessage] = useState<string | null>(null);
 
   /* ============================
      FETCH PROFILE SAFE
@@ -63,6 +101,48 @@ export default function SettingsPage() {
     };
 
     fetchOrCreateProfile();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadAiSettings = async () => {
+      setLoadingBilling(true);
+      setBillingMessage(null);
+
+      try {
+        const [subscriptionRes, usageRes] = await Promise.all([
+          fetch("/api/settings/subscription", {
+            headers: await getAuthHeaders(false),
+          }),
+          fetch("/api/settings/ai-usage", {
+            headers: await getAuthHeaders(false),
+          }),
+        ]);
+
+        const subscriptionJson = await subscriptionRes.json();
+        const usageJson = await usageRes.json();
+
+        if (subscriptionRes.ok) {
+          setSubscription(subscriptionJson.subscription || null);
+        }
+
+        if (usageRes.ok) {
+          setUsage(usageJson as AiUsageStats);
+        }
+
+        if (!subscriptionRes.ok || !usageRes.ok) {
+          setBillingMessage("Impossible de charger toutes les donnees IA");
+        }
+      } catch (error) {
+        console.error("loadAiSettings error", error);
+        setBillingMessage("Erreur chargement IA/abonnement");
+      } finally {
+        setLoadingBilling(false);
+      }
+    };
+
+    loadAiSettings();
   }, [user]);
 
   if (!user) return null;
@@ -113,7 +193,7 @@ export default function SettingsPage() {
         return;
       }
 
-      setProfile((prev: any) => ({
+      setProfile((prev) => ({
         ...prev,
         avatar_url: data.publicUrl,
       }));
@@ -211,6 +291,49 @@ export default function SettingsPage() {
     router.push("/");
   };
 
+  const updateSubscription = async (payload: Partial<Subscription> & { features?: Partial<PlanFeatures> }) => {
+    setBillingMessage(null);
+    try {
+      const response = await fetch("/api/settings/subscription", {
+        method: "PUT",
+        headers: await getAuthHeaders(),
+        body: JSON.stringify(payload),
+      });
+
+      const json = await response.json();
+      if (!response.ok) {
+        setBillingMessage(json?.error || "Erreur mise a jour abonnement");
+        return;
+      }
+
+      setSubscription(json.subscription || null);
+      setBillingMessage("Abonnement mis a jour");
+    } catch (error) {
+      console.error(error);
+      setBillingMessage("Erreur reseau abonnement");
+    }
+  };
+
+  const handlePlanChange = async (nextPlan: PlanName) => {
+    await updateSubscription({ plan: nextPlan });
+  };
+
+  const handleFeatureToggle = async (featureKey: keyof PlanFeatures, value: boolean) => {
+    await updateSubscription({
+      features: {
+        ...(subscription?.features || {
+          tasks: true,
+          emails: false,
+          memory: false,
+          ai: false,
+          vision: false,
+          agent: false,
+        }),
+        [featureKey]: value,
+      },
+    });
+  };
+
   return (
     <div className="text-blue-950 max-w-3xl mx-auto space-y-10 pb-20">
 
@@ -294,10 +417,76 @@ export default function SettingsPage() {
         <EmailSettingsForm />
       </div>
 
+      {/* IA + ABONNEMENT */}
+      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-6">
+        <h2 className="font-semibold text-lg">IA, modules et abonnement</h2>
+
+        {loadingBilling ? (
+          <p className="text-sm text-gray-500">Chargement des donnees IA...</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-xl border border-gray-200 p-4">
+                <p className="text-xs text-gray-500">Consommation totale</p>
+                <p className="text-lg font-semibold">{usage?.totals.tokens || 0} tokens</p>
+                <p className="text-sm text-gray-600">~ {Number(usage?.totals.costEstimate || 0).toFixed(4)} EUR</p>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 p-4">
+                <p className="text-xs text-gray-500">Ce mois-ci</p>
+                <p className="text-lg font-semibold">{usage?.thisMonth.tokens || 0} tokens</p>
+                <p className="text-sm text-gray-600">~ {Number(usage?.thisMonth.costEstimate || 0).toFixed(4)} EUR</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+              <p className="text-sm font-semibold">Plan actif</p>
+
+              <div className="flex flex-wrap gap-2">
+                {(["BASIC", "PLUS", "PRO"] as PlanName[]).map((plan) => (
+                  <button
+                    key={plan}
+                    onClick={() => handlePlanChange(plan)}
+                    className={`px-3 py-2 rounded-lg text-sm ${
+                      subscription?.plan === plan
+                        ? "bg-blue-900 text-white"
+                        : "bg-gray-100 text-gray-800"
+                    }`}
+                  >
+                    {plan}
+                  </button>
+                ))}
+              </div>
+
+              <p className="text-xs text-gray-600">
+                Prix mensuel: {Number(subscription?.price || 0).toFixed(2)} EUR
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2">
+                {(Object.entries(subscription?.features || {}) as Array<[keyof PlanFeatures, boolean]>).map(([key, value]) => (
+                  <label key={key} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm">
+                    <span>{key}</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(value)}
+                      onChange={(e) => handleFeatureToggle(key, e.target.checked)}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {billingMessage && (
+          <p className="text-xs text-gray-600">{billingMessage}</p>
+        )}
+      </div>
+
       {/* PARTAGER */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
         <h2 className="font-semibold text-lg">
-          Partager l'application
+          Partager l&apos;application
         </h2>
 
         <button

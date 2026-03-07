@@ -5,6 +5,12 @@ import { useAuthStore } from '@/store/authStore';
 import { useMemoryStore } from '@/store/memoryStore';
 import { MEMORY_TEMPLATES } from '@/lib/memoryTemplates';
 import Link from 'next/link';
+import { getAuthHeaders } from '@/lib/auth/clientSession';
+
+type SubscriptionFeatures = {
+  memory?: boolean;
+  ai?: boolean;
+};
 
 export default function MemorePage() {
   const { user } = useAuthStore();
@@ -15,12 +21,39 @@ export default function MemorePage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [canAccessAiBrain, setCanAccessAiBrain] = useState(false);
 
   useEffect(() => {
     if (user) {
       fetchSections();
     }
   }, [user, fetchSections]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadSubscription = async () => {
+      try {
+        const response = await fetch('/api/settings/subscription', {
+          headers: await getAuthHeaders(false),
+        });
+        const json = await response.json();
+
+        if (!response.ok) {
+          setCanAccessAiBrain(false);
+          return;
+        }
+
+        const features = (json?.subscription?.features || {}) as SubscriptionFeatures;
+        setCanAccessAiBrain(Boolean(features.memory && features.ai));
+      } catch (error) {
+        console.error('Failed to load subscription for AI guard:', error);
+        setCanAccessAiBrain(false);
+      }
+    };
+
+    loadSubscription();
+  }, [user]);
 
   const handleDeleteSection = async (e: React.MouseEvent, sectionId: string, sectionName: string) => {
     e.preventDefault();
@@ -93,12 +126,26 @@ export default function MemorePage() {
             <h1 className="text-4xl font-light text-white mb-2">📚 Mémoire</h1>
             <p className="text-gray-400 text-sm">Organize and remember what matters</p>
           </div>
-          <button
-            onClick={() => setShowNewSection(!showNewSection)}
-            className="px-4 py-2 bg-white text-black rounded-lg text-sm font-light hover:bg-gray-100 transition-colors"
-          >
-            {showNewSection ? 'Cancel' : '+ New Collection'}
-          </button>
+          <div className="flex gap-2">
+            {canAccessAiBrain ? (
+              <Link
+                href="/dashboard/memoire/brain"
+                className="px-4 py-2 bg-emerald-400 text-black rounded-lg text-sm font-medium hover:bg-emerald-300 transition-colors"
+              >
+                AI Brain
+              </Link>
+            ) : (
+              <span className="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg text-sm font-medium cursor-not-allowed">
+                AI Brain verrouille
+              </span>
+            )}
+            <button
+              onClick={() => setShowNewSection(!showNewSection)}
+              className="px-4 py-2 bg-white text-black rounded-lg text-sm font-light hover:bg-gray-100 transition-colors"
+            >
+              {showNewSection ? 'Cancel' : '+ New Collection'}
+            </button>
+          </div>
         </div>
 
         {/* New Section Selection */}

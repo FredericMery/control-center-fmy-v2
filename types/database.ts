@@ -93,6 +93,108 @@ export type Database = {
           field_value?: string | null;
         };
       };
+      memories: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          type: string;
+          content: string | null;
+          structured_data: Record<string, unknown>;
+          rating: number | null;
+          source: string | null;
+          source_image: string | null;
+          embedding: number[] | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          title: string;
+          type?: string;
+          content?: string | null;
+          structured_data?: Record<string, unknown>;
+          rating?: number | null;
+          source?: string | null;
+          source_image?: string | null;
+          embedding?: number[] | null;
+        };
+        Update: {
+          title?: string;
+          type?: string;
+          content?: string | null;
+          structured_data?: Record<string, unknown>;
+          rating?: number | null;
+          source?: string | null;
+          source_image?: string | null;
+          embedding?: number[] | null;
+          updated_at?: string;
+        };
+      };
+      memory_relations: {
+        Row: {
+          id: string;
+          from_memory: string;
+          to_memory: string;
+          relation_type: string;
+          created_at: string;
+        };
+        Insert: {
+          from_memory: string;
+          to_memory: string;
+          relation_type: string;
+        };
+        Update: {
+          relation_type?: string;
+        };
+      };
+      ai_usage_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          provider: string;
+          service: string;
+          tokens_used: number;
+          cost_estimate: number;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          provider: string;
+          service: string;
+          tokens_used?: number;
+          cost_estimate?: number;
+        };
+        Update: {
+          provider?: string;
+          service?: string;
+          tokens_used?: number;
+          cost_estimate?: number;
+        };
+      };
+      user_subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          plan: string;
+          price: number;
+          features: Record<string, boolean>;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          plan?: string;
+          price?: number;
+          features?: Record<string, boolean>;
+        };
+        Update: {
+          plan?: string;
+          price?: number;
+          features?: Record<string, boolean>;
+          updated_at?: string;
+        };
+      };
     };
   };
 };

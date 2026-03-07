@@ -138,7 +138,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = process.env.GOOGLE_VISION_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_VISION_API_KEY;
+    const apiKey =
+      process.env.GOOGLE_VISION_KEY ||
+      process.env.GOOGLE_VISION_API_KEY ||
+      process.env.NEXT_PUBLIC_GOOGLE_VISION_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(

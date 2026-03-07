@@ -1,5 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
+import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
+import { requireValidationCode } from '@/lib/ai/client';
+import { searchMemoriesByQuery } from '@/lib/memory/memoryService';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -78,5 +81,46 @@ export async function GET(request: NextRequest) {
       { error: 'Failed to search memory' },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * POST /api/memory/search
+ * AI vector search over the new memories table.
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const userId = await getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Non authentifie' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const query = String(body?.query || '').trim();
+    const limit = Number(body?.limit || 10);
+    const validationCode = body?.validationCode as string | undefined;
+
+    if (!query) {
+      return NextResponse.json({ error: 'query est requis' }, { status: 400 });
+    }
+
+    requireValidationCode(validationCode);
+
+    const results = await searchMemoriesByQuery({
+      userId,
+      query,
+      limit: Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 30) : 10,
+    });
+
+    return NextResponse.json({
+      query,
+      count: results.length,
+      results,
+    });
+  } catch (error) {
+    console.error('Error in AI memory search:', error);
+    const message = error instanceof Error ? error.message : 'Failed to search memory';
+    const status = message.includes('validation') ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
