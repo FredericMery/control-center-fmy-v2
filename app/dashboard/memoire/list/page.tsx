@@ -420,6 +420,8 @@ export default function MemoryListPage() {
   const [editTemplateFields, setEditTemplateFields] = useState<TemplateFieldValues>({});
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
+  const [previewPhotoSrc, setPreviewPhotoSrc] = useState<string | null>(null);
+  const [previewPhotoTitle, setPreviewPhotoTitle] = useState<string>('');
 
   const draftItems = useMemo(() => {
     return items.map((memory) => {
@@ -785,6 +787,16 @@ export default function MemoryListPage() {
     });
   }
 
+  function openPhotoPreview(src: string, title: string) {
+    setPreviewPhotoSrc(src);
+    setPreviewPhotoTitle(title);
+  }
+
+  function closePhotoPreview() {
+    setPreviewPhotoSrc(null);
+    setPreviewPhotoTitle('');
+  }
+
   useEffect(() => {
     loadMemories();
   }, []);
@@ -803,7 +815,7 @@ export default function MemoryListPage() {
   }, [selectedMemory?.id]);
 
   useEffect(() => {
-    if (!editingMemoryId) return;
+    if (!editingMemoryId && !previewPhotoSrc) return;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -811,7 +823,20 @@ export default function MemoryListPage() {
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [editingMemoryId]);
+  }, [editingMemoryId, previewPhotoSrc]);
+
+  useEffect(() => {
+    if (!previewPhotoSrc) return;
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        closePhotoPreview();
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [previewPhotoSrc]);
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_#1f3b4d_0%,_#0f172a_48%,_#020617_100%)] p-4 text-white sm:p-6">
@@ -1030,7 +1055,17 @@ export default function MemoryListPage() {
                   <div className="relative">
                     <div className="relative h-24 w-full bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 sm:h-28">
                       {memory.thumbnail ? (
-                        <img src={memory.thumbnail} alt={memory.title} className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => openPhotoPreview(memory.thumbnail as string, memory.title)}
+                          className="h-full w-full"
+                        >
+                          <img
+                            src={memory.thumbnail}
+                            alt={memory.title}
+                            className="h-full w-full object-cover transition hover:brightness-110"
+                          />
+                        </button>
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-xs uppercase tracking-[0.2em] text-slate-400">
                           {t('memory.list.noPhoto')}
@@ -1303,6 +1338,37 @@ export default function MemoryListPage() {
                 >
                   {savingEdit ? t('notifications.saving') : t('common.save')}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {previewPhotoSrc && (
+          <div
+            className="fixed inset-0 z-[70] bg-black/85 p-4"
+            onClick={closePhotoPreview}
+          >
+            <div className="mx-auto flex h-full max-w-5xl items-center justify-center">
+              <div
+                className="relative w-full"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={closePhotoPreview}
+                  className="absolute right-0 top-0 z-10 rounded-md border border-slate-500 bg-slate-900/90 px-2 py-1 text-xs text-white hover:bg-slate-700"
+                  aria-label={t('common.cancel')}
+                >
+                  X
+                </button>
+                <img
+                  src={previewPhotoSrc}
+                  alt={previewPhotoTitle || 'Memory photo'}
+                  className="max-h-[88vh] w-full rounded-lg object-contain"
+                />
+                {previewPhotoTitle && (
+                  <p className="mt-2 text-center text-sm text-slate-200">{previewPhotoTitle}</p>
+                )}
               </div>
             </div>
           </div>
