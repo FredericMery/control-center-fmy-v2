@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     const { data: expenses, error: expensesError } = await supabase
       .from('expenses')
-      .select('id, invoice_date, category, amount_ht, amount_tva, amount_ttc, payment_method, vendor, status, created_at')
+      .select('id, invoice_date, category, amount_ht, amount_tva, amount_ttc, payment_method, vendor, status, created_at, description')
       .eq('user_id', userId)
       .gte('created_at', start)
       .lte('created_at', end)
@@ -48,6 +48,19 @@ export async function GET(request: NextRequest) {
       { totalHt: 0, totalTax: 0, totalTtc: 0 }
     );
 
+    const rows = (expenses || []).map((expense) => {
+      const description = String(expense.description || '');
+      const emailSent = /EMAIL_SENT=true/i.test(description);
+      const recipientNameMatch = description.match(/Destinataire nom=([^|]+)/i);
+      const recipientDestinationMatch = description.match(/Destinataire=([^|]+)/i);
+      return {
+        ...expense,
+        email_sent: emailSent,
+        recipient_name: recipientNameMatch?.[1]?.trim() || null,
+        recipient_destination: recipientDestinationMatch?.[1]?.trim() || null,
+      };
+    });
+
     const { data: reportRow } = await supabase
       .from('ndf_reports')
       .select('id, total_ht, total_tva, total_ttc, status')
@@ -59,7 +72,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       month,
       year,
-      rows: expenses || [],
+      rows,
       totals: {
         totalHt: Number(reportRow?.total_ht ?? totals.totalHt),
         totalTax: Number(reportRow?.total_tva ?? totals.totalTax),

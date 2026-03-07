@@ -102,11 +102,45 @@ export async function POST(request: NextRequest) {
     const normalizedRecipientDestination = String(recipientDestination || '').trim().slice(0, 180);
     const expenseType = normalizedReason || invoiceData.expense_type || invoiceData.category || 'autre';
 
+    let emailSent = false;
+
+    if (paymentMethod === 'cb_pro') {
+      try {
+        // Récupérer l'email du destinataire depuis email_settings
+        const { data: settings } = await supabase
+          .from('email_settings')
+          .select('email')
+          .eq('type', 'facture')
+          .eq('user_id', userId)
+          .single();
+
+        if (settings?.email) {
+          await sendExpenseEmail({
+            userId,
+            to: settings.email,
+            vendor: invoiceData.vendor || 'Fournisseur',
+            amountHt: invoiceData.amount_ht || 0,
+            amountTax: invoiceData.amount_tva || 0,
+            amountTtc: invoiceData.amount_ttc || 0,
+            expenseType,
+            invoiceNumber: invoiceData.invoice_number || undefined,
+            invoiceDate: invoiceData.invoice_date || undefined,
+            photoUrl: publicUrl,
+          });
+          emailSent = true;
+        }
+      } catch (emailError) {
+        console.error('Erreur envoi email:', emailError);
+        emailSent = false;
+      }
+    }
+
     const aiContext = [
       invoiceData.description || '',
       normalizedReason ? `Reason utilisateur=${normalizedReason}` : '',
       normalizedRecipientName ? `Destinataire nom=${normalizedRecipientName}` : '',
       normalizedRecipientDestination ? `Destinataire=${normalizedRecipientDestination}` : '',
+      `EMAIL_SENT=${emailSent ? 'true' : 'false'}`,
       `IA categorie=${invoiceData.category || 'autre'}`,
       `IA expense_type=${invoiceData.expense_type || 'autre'}`,
       `IA ndf_eligible=${invoiceData.ndf_eligible ? 'true' : 'false'}`,
@@ -150,38 +184,7 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Dépense créée avec succès:', data.id);
 
-    // 7. Si CB Pro → envoyer email automatiquement
-    if (paymentMethod === 'cb_pro') {
-      try {
-        // Récupérer l'email du destinataire depuis email_settings
-        const { data: settings } = await supabase
-          .from('email_settings')
-          .select('email')
-          .eq('type', 'facture')
-          .eq('user_id', userId)
-          .single();
-
-        if (settings?.email) {
-          await sendExpenseEmail({
-            userId,
-            to: settings.email,
-            vendor: invoiceData.vendor || 'Fournisseur',
-            amountHt: invoiceData.amount_ht || 0,
-            amountTax: invoiceData.amount_tva || 0,
-            amountTtc: invoiceData.amount_ttc || 0,
-            expenseType,
-            invoiceNumber: invoiceData.invoice_number || undefined,
-            invoiceDate: invoiceData.invoice_date || undefined,
-            photoUrl: publicUrl,
-          });
-        }
-      } catch (emailError) {
-        console.error('Erreur envoi email:', emailError);
-        // Continuer même si email échoue
-      }
-    }
-
-    // 8. Mettre a jour le report du mois en cours.
+    // 7. Mettre a jour le report du mois en cours.
     await syncCurrentMonthReport(userId);
 
     return NextResponse.json({
