@@ -169,13 +169,18 @@ export default function MemoryScanPage() {
     if (!template) return {};
 
     const structured = parsed.structured_data || {};
+    const nested =
+      structured.template_fields && typeof structured.template_fields === 'object'
+        ? (structured.template_fields as Record<string, unknown>)
+        : {};
     const fields: TemplateFieldValues = {};
 
     for (const field of template.fields) {
       const key = toFieldKey(field.label);
+      const nestedValue = safeString(nested[key]);
       const direct = safeString((structured as Record<string, unknown>)[key]);
       const labelMatch = safeString((structured as Record<string, unknown>)[field.label]);
-      fields[key] = direct || labelMatch || '';
+      fields[key] = nestedValue || direct || labelMatch || '';
     }
 
     return fields;
@@ -223,6 +228,7 @@ export default function MemoryScanPage() {
         body: JSON.stringify({
           imageBase64,
           validationCode,
+          selectedTemplateId: effectiveTemplateId,
         }),
       });
 

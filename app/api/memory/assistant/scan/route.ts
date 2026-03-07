@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 import { callGoogleVision, requireValidationCode } from '@/lib/ai/client';
-import { parseOcrToMemory } from '@/lib/ai/parserService';
+import { parseOcrToMemory, parseOcrToTemplateFields } from '@/lib/ai/parserService';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import {
   buildSuggestions,
@@ -14,6 +14,7 @@ import {
 } from '@/lib/memory/actionMappings';
 import { resolveRequestLanguage } from '@/lib/i18n/serverLanguage';
 import { translateServerMessage } from '@/lib/i18n/serverMessages';
+import { MEMORY_TEMPLATES } from '@/lib/memoryTemplates';
 
 const CONFIG_MEMORY_TITLE = 'memory_action_mappings';
 const CONFIG_SOURCE = 'system_config';
@@ -75,6 +76,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const validationCode = body?.validationCode as string | undefined;
     const imageBase64 = body?.imageBase64 as string | undefined;
+    const selectedTemplateId = String(body?.selectedTemplateId || '').trim().toLowerCase();
 
     requireValidationCode(validationCode);
 
@@ -89,6 +91,33 @@ export async function POST(request: NextRequest) {
 
     const parsed = await parseOcrToMemory(userId, rawText, language);
     const detectedType = detectContentType(parsed, rawText);
+    const fallbackTemplateId = suggestTemplateId(detectedType);
+    const resolvedTemplateId =
+      selectedTemplateId && MEMORY_TEMPLATES[selectedTemplateId]
+        ? selectedTemplateId
+        : fallbackTemplateId;
+
+    let templateFields: Record<string, string> = {};
+    if (MEMORY_TEMPLATES[resolvedTemplateId]) {
+      try {
+        templateFields = await parseOcrToTemplateFields({
+          userId,
+          rawText,
+          templateId: resolvedTemplateId,
+          language,
+        });
+      } catch {
+        templateFields = {};
+      }
+    }
+
+    const parsedWithTemplateFields = {
+      ...parsed,
+      structured_data: {
+        ...(parsed.structured_data || {}),
+        template_fields: templateFields,
+      },
+    };
 
     const [mappings, usageCountByActionId] = await Promise.all([
       loadMappings(),
@@ -104,8 +133,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       detectedType,
       detectedLabel: getDetectedTypeLabel(detectedType, language),
-      suggestedTemplateId: suggestTemplateId(detectedType),
-      parsed,
+      suggestedTemplateId: resolvedTemplateId,
+      parsed: parsedWithTemplateFields,
       rawText,
       suggestions,
     });
