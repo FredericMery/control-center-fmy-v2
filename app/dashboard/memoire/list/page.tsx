@@ -145,6 +145,12 @@ export default function MemoryListPage() {
   const [viewMode, setViewMode] = useState<'cards' | 'board'>('cards');
   const [validationCode, setValidationCode] = useState('');
   const [movingMemoryId, setMovingMemoryId] = useState<string | null>(null);
+  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editTheme, setEditTheme] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
 
   const draftItems = useMemo(() => {
     return items.map((memory) => {
@@ -348,6 +354,113 @@ export default function MemoryListPage() {
     }
   }
 
+  function openEdit(memory: EnrichedMemory) {
+    setEditingMemoryId(memory.id);
+    setEditTitle(memory.title || '');
+    setEditContent(memory.content || '');
+    setEditTheme(memory.theme || 'General');
+    setError(null);
+  }
+
+  function closeEdit() {
+    setEditingMemoryId(null);
+    setEditTitle('');
+    setEditContent('');
+    setEditTheme('');
+    setSavingEdit(false);
+  }
+
+  async function saveEdit() {
+    if (!editingMemoryId) return;
+
+    if (!validationCode.trim()) {
+      setError(t('memory.list.validationCodeRequiredToEdit'));
+      return;
+    }
+
+    const memory = items.find((entry) => entry.id === editingMemoryId);
+    if (!memory) return;
+
+    setSavingEdit(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/memory/cards/${editingMemoryId}`, {
+        method: 'PATCH',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({
+          validationCode,
+          title: editTitle.trim(),
+          content: editContent,
+          structured_data: {
+            ...(memory.structured_data || {}),
+            theme: editTheme.trim() || 'General',
+          },
+        }),
+      });
+
+      const json = await response.json();
+      if (!response.ok) {
+        setError(json?.error || t('memory.list.editError'));
+        return;
+      }
+
+      setItems((current) =>
+        current.map((entry) =>
+          entry.id === editingMemoryId
+            ? {
+                ...entry,
+                title: editTitle.trim() || entry.title,
+                content: editContent,
+                structured_data: {
+                  ...(entry.structured_data || {}),
+                  theme: editTheme.trim() || 'General',
+                },
+              }
+            : entry
+        )
+      );
+
+      closeEdit();
+    } catch {
+      setError(t('memory.list.errors.network'));
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function deleteMemory(memoryId: string) {
+    if (!window.confirm(t('memory.list.deleteConfirm'))) {
+      return;
+    }
+
+    setDeletingMemoryId(memoryId);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/memory/cards/${memoryId}`, {
+        method: 'DELETE',
+        headers: await getAuthHeaders(false),
+      });
+
+      const json = await response.json();
+      if (!response.ok) {
+        setError(json?.error || t('memory.list.deleteError'));
+        return;
+      }
+
+      setItems((current) => current.filter((entry) => entry.id !== memoryId));
+      setRelations((current) => current.filter((entry) => entry.relatedMemory.id !== memoryId));
+      if (selectedId === memoryId) {
+        setSelectedId(null);
+      }
+    } catch {
+      setError(t('memory.list.errors.network'));
+    } finally {
+      setDeletingMemoryId(null);
+    }
+  }
+
   useEffect(() => {
     loadMemories();
   }, []);
@@ -505,18 +618,50 @@ export default function MemoryListPage() {
 
                     <div className="space-y-2">
                       {columnItems.map((memory) => (
-                        <button
+                        <div
                           key={memory.id}
                           draggable
                           onDragStart={(event) => {
                             event.dataTransfer.setData('text/memory-id', memory.id);
                           }}
-                          onClick={() => setSelectedId(memory.id)}
                           className="w-full rounded-lg border border-slate-700 bg-slate-800/70 p-2 text-left hover:border-cyan-400"
                         >
-                          <p className="line-clamp-2 text-sm font-medium text-white">{memory.title}</p>
+                          <div className="mb-2 flex items-start justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedId(memory.id)}
+                              className="line-clamp-2 text-left text-sm font-medium text-white"
+                            >
+                              {memory.title}
+                            </button>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openEdit(memory)}
+                                className="rounded border border-slate-600 p-1 text-slate-200 hover:bg-slate-700"
+                                aria-label={t('memory.list.editAria')}
+                                title={t('memory.list.editAria')}
+                              >
+                                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+                                  <path d="M3 17.25V21h3.75l11-11-3.75-3.75-11 11zm17.71-10.04a1 1 0 0 0 0-1.42l-2.5-2.5a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 2-1.79z" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteMemory(memory.id)}
+                                disabled={deletingMemoryId === memory.id}
+                                className="rounded border border-red-500/60 p-1 text-red-300 hover:bg-red-500/20 disabled:opacity-60"
+                                aria-label={t('memory.list.deleteAria')}
+                                title={t('memory.list.deleteAria')}
+                              >
+                                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+                                  <path d="M6 7h12l-1 14H7L6 7zm3-3h6l1 2H8l1-2z" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
                           <p className="mt-1 text-xs text-slate-400">{memory.relevanceScore.toFixed(3)}</p>
-                        </button>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -540,11 +685,7 @@ export default function MemoryListPage() {
                       : 'border-slate-700 bg-slate-900/70 hover:border-slate-500'
                   }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(memory.id)}
-                    className="w-full text-left"
-                  >
+                  <div className="relative">
                     <div className="relative h-28 w-full bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800">
                       {memory.thumbnail ? (
                         <img src={memory.thumbnail} alt={memory.title} className="h-full w-full object-cover" />
@@ -559,9 +700,38 @@ export default function MemoryListPage() {
                       <span className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[10px] text-emerald-200">
                         {memory.relevanceScore.toFixed(3)}
                       </span>
+                      <div className="absolute bottom-2 right-2 flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(memory)}
+                          className="rounded border border-slate-400/70 bg-black/60 p-1 text-slate-100 hover:bg-black/80"
+                          aria-label={t('memory.list.editAria')}
+                          title={t('memory.list.editAria')}
+                        >
+                          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+                            <path d="M3 17.25V21h3.75l11-11-3.75-3.75-11 11zm17.71-10.04a1 1 0 0 0 0-1.42l-2.5-2.5a1 1 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 2-1.79z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteMemory(memory.id)}
+                          disabled={deletingMemoryId === memory.id}
+                          className="rounded border border-red-400/70 bg-black/60 p-1 text-red-200 hover:bg-black/80 disabled:opacity-60"
+                          aria-label={t('memory.list.deleteAria')}
+                          title={t('memory.list.deleteAria')}
+                        >
+                          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+                            <path d="M6 7h12l-1 14H7L6 7zm3-3h6l1 2H8l1-2z" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="space-y-2 p-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(memory.id)}
+                      className="w-full space-y-2 p-3 text-left"
+                    >
                       <h2 className="line-clamp-2 text-sm font-semibold text-white">{memory.title}</h2>
                       <p className="line-clamp-3 text-xs text-slate-300">
                         {memory.scanDetail || t('memory.list.noScanDetail')}
@@ -587,8 +757,8 @@ export default function MemoryListPage() {
                           </button>
                         ))}
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                 </article>
               ))}
             </section>
@@ -655,6 +825,62 @@ export default function MemoryListPage() {
         {movingMemoryId && (
           <div className="rounded-lg border border-cyan-400/60 bg-cyan-500/10 p-3 text-sm text-cyan-100">
             {t('memory.list.movingCard')}
+          </div>
+        )}
+
+        {editingMemoryId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-xl">
+              <h2 className="text-lg font-semibold text-white">{t('memory.list.editTitle')}</h2>
+
+              <div className="mt-4 space-y-3">
+                <label className="block text-xs uppercase tracking-wide text-slate-400">
+                  {t('memory.list.editFieldTitle')}
+                  <input
+                    value={editTitle}
+                    onChange={(event) => setEditTitle(event.target.value)}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                </label>
+
+                <label className="block text-xs uppercase tracking-wide text-slate-400">
+                  {t('memory.list.editFieldTheme')}
+                  <input
+                    value={editTheme}
+                    onChange={(event) => setEditTheme(event.target.value)}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                </label>
+
+                <label className="block text-xs uppercase tracking-wide text-slate-400">
+                  {t('memory.list.editFieldContent')}
+                  <textarea
+                    value={editContent}
+                    onChange={(event) => setEditContent(event.target.value)}
+                    rows={5}
+                    className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeEdit}
+                  className="rounded-md border border-slate-600 px-3 py-2 text-sm text-slate-100 hover:bg-slate-700"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={saveEdit}
+                  disabled={savingEdit}
+                  className="rounded-md bg-cyan-400 px-3 py-2 text-sm font-semibold text-black disabled:opacity-60"
+                >
+                  {savingEdit ? t('notifications.saving') : t('common.save')}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
