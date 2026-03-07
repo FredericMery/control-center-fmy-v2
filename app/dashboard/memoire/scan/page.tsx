@@ -104,6 +104,7 @@ export default function MemoryScanPage() {
           detectedType: scanResult.detectedType,
           parsed: scanResult.parsed,
           rawText: scanResult.rawText,
+          sourceImage: imageBase64,
         }),
       });
 
