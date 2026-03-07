@@ -1,10 +1,19 @@
 import { callOpenAi } from '@/lib/ai/client';
+import type { AppLanguage } from '@/lib/i18n/translations';
+import { translateServerMessage } from '@/lib/i18n/serverMessages';
 import { searchMemoriesByQuery } from '@/lib/memory/memoryService';
 import { getRelatedMemories } from '@/lib/memory/graphService';
 
 export interface AskMemoryAgentInput {
   userId: string;
   question: string;
+  language: AppLanguage;
+}
+
+function getPromptLanguage(language: AppLanguage): string {
+  if (language === 'en') return 'English';
+  if (language === 'es') return 'Spanish';
+  return 'French';
 }
 
 export async function askMemoryAgent(input: AskMemoryAgentInput) {
@@ -23,6 +32,7 @@ export async function askMemoryAgent(input: AskMemoryAgentInput) {
     top_memories: similar,
     related_memories: graph,
   };
+  const promptLanguage = getPromptLanguage(input.language);
 
   const model = 'gpt-4.1-mini';
   const response = await callOpenAi({
@@ -35,7 +45,7 @@ export async function askMemoryAgent(input: AskMemoryAgentInput) {
         {
           role: 'system',
           content:
-            'You answer user questions using memory context only. If data is missing, clearly say what is missing.',
+            `You answer user questions using memory context only. If data is missing, clearly say what is missing. Always answer in ${promptLanguage}.`,
         },
         {
           role: 'user',
@@ -52,7 +62,7 @@ export async function askMemoryAgent(input: AskMemoryAgentInput) {
   const answer =
     response?.output?.[0]?.content?.[0]?.text ||
     response?.output_text ||
-    'Je n\'ai pas pu generer de reponse.';
+    translateServerMessage(input.language, 'memory.defaultAnswer');
 
   return {
     answer,

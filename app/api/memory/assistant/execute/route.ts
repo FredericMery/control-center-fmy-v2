@@ -5,9 +5,12 @@ import { createMemory, listMemories } from '@/lib/memory/memoryService';
 import { linkMemories } from '@/lib/memory/graphService';
 import {
   ACTION_CATALOG,
+  localizeActionDefinition,
   type AssistantActionId,
   type DetectedContentType,
 } from '@/lib/memory/actionMappings';
+import { resolveRequestLanguage } from '@/lib/i18n/serverLanguage';
+import { translateServerMessage } from '@/lib/i18n/serverMessages';
 
 type ParsedPayload = {
   title?: string;
@@ -76,10 +79,12 @@ async function tryCreateLink(args: {
 }
 
 export async function POST(request: NextRequest) {
+  const language = resolveRequestLanguage(request);
+
   try {
     const userId = await getUserIdFromRequest(request);
     if (!userId) {
-      return NextResponse.json({ error: 'Non authentifie' }, { status: 401 });
+      return NextResponse.json({ error: translateServerMessage(language, 'auth.unauthenticated') }, { status: 401 });
     }
 
     const body = await request.json();
@@ -92,14 +97,15 @@ export async function POST(request: NextRequest) {
     requireValidationCode(validationCode);
 
     if (!actionId || !ACTION_CATALOG[actionId]) {
-      return NextResponse.json({ error: 'Action invalide' }, { status: 400 });
+      return NextResponse.json({ error: translateServerMessage(language, 'memory.invalidAction') }, { status: 400 });
     }
 
     if (!detectedType) {
-      return NextResponse.json({ error: 'detectedType requis' }, { status: 400 });
+      return NextResponse.json({ error: translateServerMessage(language, 'memory.detectedTypeRequired') }, { status: 400 });
     }
 
     const action = ACTION_CATALOG[actionId];
+    const localizedAction = localizeActionDefinition(action, language);
     const structuredData = {
       ...(parsed.structured_data || {}),
       assistant_action_id: actionId,
@@ -119,7 +125,7 @@ export async function POST(request: NextRequest) {
 
     const memory = await createMemory({
       userId,
-      title: String(parsed.title || action.label).slice(0, 200),
+      title: String(parsed.title || localizedAction.label).slice(0, 200),
       type: action.memoryType,
       content: String(parsed.summary || '').slice(0, 4000),
       structuredData,
@@ -144,12 +150,16 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       memory,
-      action,
+      action: localizedAction,
       linkedMemoryId,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erreur assistant execute';
-    const status = message.includes('validation') ? 401 : 500;
+    const rawMessage = error instanceof Error ? error.message : '';
+    const isValidationError = rawMessage.includes('validation');
+    const message = isValidationError
+      ? translateServerMessage(language, 'validation.required')
+      : translateServerMessage(language, 'memory.errorAssistantExecute');
+    const status = isValidationError ? 401 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

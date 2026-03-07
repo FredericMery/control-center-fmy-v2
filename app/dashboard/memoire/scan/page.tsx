@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
+import { useI18n } from '@/components/providers/LanguageProvider';
 
 type SuggestedAction = {
   id: string;
@@ -24,6 +25,7 @@ type ScanResponse = {
 };
 
 export default function MemoryScanPage() {
+  const { t } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [validationCode, setValidationCode] = useState('');
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -47,12 +49,12 @@ export default function MemoryScanPage() {
 
   async function runSmartScan() {
     if (!validationCode.trim()) {
-      setError('Entrez le code de validation IA.');
+      setError(t('memory.scan.errors.validationCode'));
       return;
     }
 
     if (!imageBase64) {
-      setError('Selectionnez une image avant de lancer le scan.');
+      setError(t('memory.scan.errors.imageBeforeScan'));
       fileInputRef.current?.click();
       return;
     }
@@ -73,13 +75,13 @@ export default function MemoryScanPage() {
 
       const json = await response.json();
       if (!response.ok) {
-        setError(json?.error || 'Erreur de scan');
+        setError(json?.error || t('memory.scan.errors.scan'));
         return;
       }
 
       setScanResult(json as ScanResponse);
     } catch {
-      setError('Erreur reseau pendant le scan');
+      setError(t('memory.scan.errors.networkScan'));
     } finally {
       setLoadingScan(false);
     }
@@ -107,13 +109,13 @@ export default function MemoryScanPage() {
 
       const json = await response.json();
       if (!response.ok) {
-        setError(json?.error || 'Erreur execution action');
+        setError(json?.error || t('memory.scan.errors.execute'));
         return;
       }
 
       setExecutedMemoryId(json?.memory?.id || null);
     } catch {
-      setError('Erreur reseau pendant l execution');
+      setError(t('memory.scan.errors.networkExecute'));
     } finally {
       setLoadingExecute(false);
     }
@@ -135,30 +137,30 @@ export default function MemoryScanPage() {
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">Scan intelligent</h1>
+            <h1 className="text-2xl font-semibold">{t('memory.scan.title')}</h1>
             <p className="mt-1 text-sm text-slate-300">
-              Image -&gt; OCR -&gt; interpretation IA -&gt; suggestion d&apos;action
+              {t('memory.scan.subtitle')}
             </p>
           </div>
           <Link
             href="/dashboard/memoire"
             className="rounded-md border border-slate-600 px-3 py-2 text-sm hover:bg-slate-700"
           >
-            Retour
+            {t('common.back')}
           </Link>
         </div>
 
         <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 space-y-4">
           <div>
             <label className="mb-2 block text-xs uppercase tracking-wide text-slate-300">
-              Code validation IA
+              {t('memory.scan.validationCode')}
             </label>
             <input
               type="password"
               value={validationCode}
               onChange={(e) => setValidationCode(e.target.value)}
               className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm"
-              placeholder="Entrez le code"
+              placeholder={t('memory.scan.validationCodePlaceholder')}
             />
           </div>
 
@@ -175,10 +177,10 @@ export default function MemoryScanPage() {
               onClick={() => fileInputRef.current?.click()}
               className="rounded-md border border-slate-600 px-3 py-2 text-sm hover:bg-slate-700"
             >
-              Choisir une image
+              {t('memory.scan.chooseImage')}
             </button>
             <p className="text-xs text-slate-400">
-              {selectedFileName || 'Aucun fichier selectionne'}
+              {selectedFileName || t('memory.scan.noFile')}
             </p>
           </div>
 
@@ -187,7 +189,7 @@ export default function MemoryScanPage() {
             disabled={loadingScan || loadingExecute}
             className="rounded-md bg-emerald-400 px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
           >
-            {loadingScan ? 'Analyse en cours...' : 'Scanner'}
+            {loadingScan ? t('memory.scan.scanning') : t('memory.scan.scanButton')}
           </button>
         </div>
 
@@ -200,12 +202,12 @@ export default function MemoryScanPage() {
         {scanResult && (
           <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 p-5 space-y-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">Detected content</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">{t('memory.scan.detectedContent')}</p>
               <h2 className="mt-1 text-2xl font-semibold">{scanResult.detectedLabel}</h2>
             </div>
 
             <div>
-              <p className="text-sm font-medium text-emerald-100">Suggested actions:</p>
+              <p className="text-sm font-medium text-emerald-100">{t('memory.scan.suggestedActions')}</p>
               <div className="mt-2 space-y-2">
                 {scanResult.suggestions.map((action) => (
                   <button
@@ -225,20 +227,20 @@ export default function MemoryScanPage() {
               onClick={resetScan}
               className="rounded-md border border-slate-500 px-3 py-2 text-sm hover:bg-slate-700"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         )}
 
         {executedMemoryId && (
           <div className="rounded-xl border border-sky-300/40 bg-sky-500/10 p-4 text-sm text-sky-100">
-            Action executee. Memoire creee avec succes.
+            {t('memory.scan.executionSuccess')}
             <div className="mt-3 flex gap-3">
               <Link
                 href="/dashboard/memoire/list"
                 className="rounded-md bg-white px-3 py-2 text-sm font-medium text-black"
               >
-                View memories
+                {t('memory.scan.viewMemories')}
               </Link>
             </div>
           </div>

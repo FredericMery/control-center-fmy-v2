@@ -2,14 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 import { requireValidationCode, callGoogleVision } from '@/lib/ai/client';
 import { parseOcrToMemory } from '@/lib/ai/parserService';
+import { resolveRequestLanguage } from '@/lib/i18n/serverLanguage';
+import { translateServerMessage } from '@/lib/i18n/serverMessages';
 import { createMemory, listMemories } from '@/lib/memory/memoryService';
 import { linkMemories } from '@/lib/memory/graphService';
 
 export async function POST(request: NextRequest) {
+  const language = resolveRequestLanguage(request);
+
   try {
     const userId = await getUserIdFromRequest(request);
     if (!userId) {
-      return NextResponse.json({ error: 'Non authentifie' }, { status: 401 });
+      return NextResponse.json({ error: translateServerMessage(language, 'auth.unauthenticated') }, { status: 401 });
     }
 
     const body = await request.json();
@@ -19,15 +23,15 @@ export async function POST(request: NextRequest) {
     requireValidationCode(validationCode);
 
     if (!imageBase64) {
-      return NextResponse.json({ error: 'imageBase64 requis' }, { status: 400 });
+      return NextResponse.json({ error: translateServerMessage(language, 'memory.imageRequired') }, { status: 400 });
     }
 
     const rawText = await callGoogleVision(userId, imageBase64);
     if (!rawText) {
-      return NextResponse.json({ error: 'Aucun texte detecte' }, { status: 422 });
+      return NextResponse.json({ error: translateServerMessage(language, 'memory.noTextDetected') }, { status: 422 });
     }
 
-    const parsed = await parseOcrToMemory(userId, rawText);
+    const parsed = await parseOcrToMemory(userId, rawText, language);
 
     const memory = await createMemory({
       userId,
@@ -75,8 +79,12 @@ export async function POST(request: NextRequest) {
       linkedMemories: linked,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erreur ingestion memoire';
-    const status = message.includes('validation') ? 401 : 500;
+    const rawMessage = error instanceof Error ? error.message : '';
+    const isValidationError = rawMessage.includes('validation');
+    const message = isValidationError
+      ? translateServerMessage(language, 'validation.required')
+      : translateServerMessage(language, 'memory.errorAssistantScan');
+    const status = isValidationError ? 401 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

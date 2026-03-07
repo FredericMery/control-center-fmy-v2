@@ -6,11 +6,14 @@ import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import {
   buildSuggestions,
   detectContentType,
+  getDetectedTypeLabel,
+  localizeActionDefinition,
   parseActionChoiceService,
   sanitizeActionMappings,
   DEFAULT_ACTION_MAPPINGS,
-  DETECTED_TYPE_LABELS,
 } from '@/lib/memory/actionMappings';
+import { resolveRequestLanguage } from '@/lib/i18n/serverLanguage';
+import { translateServerMessage } from '@/lib/i18n/serverMessages';
 
 const CONFIG_MEMORY_TITLE = 'memory_action_mappings';
 const CONFIG_SOURCE = 'system_config';
@@ -51,10 +54,12 @@ async function loadUsageCountByAction(userId: string, detectedType: string) {
 }
 
 export async function POST(request: NextRequest) {
+  const language = resolveRequestLanguage(request);
+
   try {
     const userId = await getUserIdFromRequest(request);
     if (!userId) {
-      return NextResponse.json({ error: 'Non authentifie' }, { status: 401 });
+      return NextResponse.json({ error: translateServerMessage(language, 'auth.unauthenticated') }, { status: 401 });
     }
 
     const body = await request.json();
@@ -64,15 +69,15 @@ export async function POST(request: NextRequest) {
     requireValidationCode(validationCode);
 
     if (!imageBase64) {
-      return NextResponse.json({ error: 'imageBase64 requis' }, { status: 400 });
+      return NextResponse.json({ error: translateServerMessage(language, 'memory.imageRequired') }, { status: 400 });
     }
 
     const rawText = await callGoogleVision(userId, imageBase64);
     if (!rawText) {
-      return NextResponse.json({ error: 'Aucun texte detecte' }, { status: 422 });
+      return NextResponse.json({ error: translateServerMessage(language, 'memory.noTextDetected') }, { status: 422 });
     }
 
-    const parsed = await parseOcrToMemory(userId, rawText);
+    const parsed = await parseOcrToMemory(userId, rawText, language);
     const detectedType = detectContentType(parsed, rawText);
 
     const [mappings, usageCountByActionId] = await Promise.all([
@@ -84,18 +89,22 @@ export async function POST(request: NextRequest) {
       detectedType,
       mappings,
       usageCountByActionId,
-    });
+    }).map((suggestion) => localizeActionDefinition(suggestion, language));
 
     return NextResponse.json({
       detectedType,
-      detectedLabel: DETECTED_TYPE_LABELS[detectedType],
+      detectedLabel: getDetectedTypeLabel(detectedType, language),
       parsed,
       rawText,
       suggestions,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Erreur scan assistant';
-    const status = message.includes('validation') ? 401 : 500;
+    const rawMessage = error instanceof Error ? error.message : '';
+    const isValidationError = rawMessage.includes('validation');
+    const message = isValidationError
+      ? translateServerMessage(language, 'validation.required')
+      : translateServerMessage(language, 'memory.errorAssistantScan');
+    const status = isValidationError ? 401 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

@@ -20,5 +20,12 @@ export async function getAuthHeaders(includeJson = true): Promise<HeadersInit> {
     headers.Authorization = `Bearer ${token}`;
   }
 
+  if (typeof window !== 'undefined') {
+    const storedLanguage = window.localStorage.getItem('app_language');
+    if (storedLanguage) {
+      headers['x-app-language'] = storedLanguage;
+    }
+  }
+
   return headers;
 }

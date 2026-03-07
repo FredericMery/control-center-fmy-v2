@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
+import { useI18n } from '@/components/providers/LanguageProvider';
 
 type Memory = {
   id: string;
@@ -26,6 +27,8 @@ type MemoryRelation = {
 };
 
 export default function MemoryListPage() {
+  const { t, language } = useI18n();
+  const locale = language === 'en' ? 'en-US' : language === 'es' ? 'es-ES' : 'fr-FR';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<Memory[]>([]);
@@ -46,7 +49,7 @@ export default function MemoryListPage() {
       });
       const json = await response.json();
       if (!response.ok) {
-        setError(json?.error || 'Erreur chargement memoires');
+        setError(json?.error || t('memory.list.errors.load'));
         return;
       }
 
@@ -54,7 +57,7 @@ export default function MemoryListPage() {
       setItems(memoryItems);
       setSelectedId((prev) => prev || memoryItems[0]?.id || null);
     } catch {
-      setError('Erreur reseau');
+      setError(t('memory.list.errors.network'));
     } finally {
       setLoading(false);
     }
@@ -106,21 +109,21 @@ export default function MemoryListPage() {
       <div className="mx-auto max-w-6xl space-y-5">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">Memory list</h1>
-            <p className="text-sm text-slate-300">Memory card, rating system, related memories.</p>
+            <h1 className="text-2xl font-semibold">{t('memory.list.title')}</h1>
+            <p className="text-sm text-slate-300">{t('memory.list.subtitle')}</p>
           </div>
           <div className="flex gap-2">
             <Link
               href="/dashboard/memoire/scan"
               className="rounded-md border border-emerald-300/60 px-3 py-2 text-sm hover:bg-emerald-500/20"
             >
-              Scan
+              {t('memory.assistantScan')}
             </Link>
             <Link
               href="/dashboard/memoire"
               className="rounded-md border border-slate-600 px-3 py-2 text-sm hover:bg-slate-700"
             >
-              Retour
+              {t('common.back')}
             </Link>
           </div>
         </div>
@@ -134,12 +137,12 @@ export default function MemoryListPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-200">
-              Memories
+              {t('memory.list.memories')}
             </h2>
             {loading ? (
-              <p className="text-sm text-slate-400">Chargement...</p>
+              <p className="text-sm text-slate-400">{t('common.loading')}</p>
             ) : items.length === 0 ? (
-              <p className="text-sm text-slate-400">Aucune memoire.</p>
+              <p className="text-sm text-slate-400">{t('memory.list.empty')}</p>
             ) : (
               <div className="max-h-[560px] space-y-2 overflow-auto pr-1">
                 {items.map((memory) => (
@@ -161,9 +164,9 @@ export default function MemoryListPage() {
           </section>
 
           <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 space-y-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-200">Memory detail</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-200">{t('memory.list.detail')}</h2>
             {!selectedMemory ? (
-              <p className="text-sm text-slate-400">Selectionnez une memoire.</p>
+              <p className="text-sm text-slate-400">{t('memory.list.selectMemory')}</p>
             ) : (
               <>
                 <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-4 space-y-2">
@@ -173,12 +176,12 @@ export default function MemoryListPage() {
                     <p className="text-sm text-slate-200">{selectedMemory.content}</p>
                   )}
                   <p className="text-xs text-slate-400">
-                    {new Date(selectedMemory.created_at).toLocaleString('fr-FR')}
+                    {new Date(selectedMemory.created_at).toLocaleString(locale)}
                   </p>
                 </div>
 
                 <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-4">
-                  <p className="mb-2 text-sm text-slate-200">Rating</p>
+                  <p className="mb-2 text-sm text-slate-200">{t('memory.list.rating')}</p>
                   <div className="flex gap-2">
                     {[1, 2, 3, 4, 5].map((value) => (
                       <button
@@ -195,9 +198,9 @@ export default function MemoryListPage() {
                 </div>
 
                 <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-4">
-                  <p className="mb-2 text-sm text-slate-200">Related memories</p>
+                  <p className="mb-2 text-sm text-slate-200">{t('memory.list.related')}</p>
                   {relations.length === 0 ? (
-                    <p className="text-sm text-slate-400">Aucune relation pour cette memoire.</p>
+                    <p className="text-sm text-slate-400">{t('memory.list.noRelated')}</p>
                   ) : (
                     <div className="space-y-2">
                       {relations.map((relation) => (
