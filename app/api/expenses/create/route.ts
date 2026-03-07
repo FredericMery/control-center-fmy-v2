@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     if (uploadError) {
       console.error('❌ Erreur upload:', uploadError);
       return NextResponse.json(
-        { error: `Erreur upload Storage: ${uploadError.message}` },
+        { error: toUserFacingExpenseError(uploadError?.message) },
         { status: 500 }
       );
     }
@@ -191,10 +191,46 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error('❌ Erreur API complète:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Erreur serveur' },
+      {
+        error: toUserFacingExpenseError(
+          error instanceof Error ? error.message : 'Erreur serveur'
+        ),
+      },
       { status: 500 }
     );
   }
+}
+
+function toUserFacingExpenseError(message: string): string {
+  const raw = String(message || '').trim();
+  const lower = raw.toLowerCase();
+
+  if (!raw) return 'Erreur serveur lors du traitement de la depense';
+
+  if (lower.includes('code de validation ia invalide')) {
+    return 'Code de validation IA invalide';
+  }
+
+  if (
+    lower.includes('did not match the expected pattern') ||
+    lower.includes('expected pattern')
+  ) {
+    return 'Format d image non reconnu. Utilisez une photo JPG, PNG ou WEBP.';
+  }
+
+  if (lower.includes('google vision') || lower.includes('vision')) {
+    return 'Erreur lecture IA de la facture. Reessayez avec une photo plus nette.';
+  }
+
+  if (lower.includes('openai')) {
+    return 'Erreur analyse IA. Reessayez dans quelques instants.';
+  }
+
+  if (lower.includes('storage') || lower.includes('upload')) {
+    return 'Erreur upload de la photo. Reessayez avec une image plus legere.';
+  }
+
+  return raw;
 }
 
 async function syncCurrentMonthReport(userId: string) {

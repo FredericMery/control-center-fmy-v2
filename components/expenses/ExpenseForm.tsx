@@ -84,6 +84,21 @@ export default function ExpenseForm() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const supportedImageTypes = new Set([
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+    ]);
+
+    if (!supportedImageTypes.has(file.type.toLowerCase())) {
+      setError('Format image non pris en charge. Utilisez JPG, PNG ou WEBP.');
+      setImage(null);
+      return;
+    }
+
+    setError(null);
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const base64 = event.target?.result as string;
@@ -279,7 +294,7 @@ export default function ExpenseForm() {
                 <>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp"
                     onChange={handleImageUpload}
                     className="hidden"
                     id="photo-input"
