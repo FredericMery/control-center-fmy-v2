@@ -194,7 +194,7 @@ export default function SettingsPage() {
       }
 
       setProfile((prev) => ({
-        ...prev,
+        username: prev?.username ?? null,
         avatar_url: data.publicUrl,
       }));
 
