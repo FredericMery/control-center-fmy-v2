@@ -9,6 +9,13 @@ export default function NotificationSettingsPage() {
   const { t } = useI18n();
   const user = useAuthStore((state) => state.user);
 
+  type NotificationSettingKey =
+    | "daily_summary"
+    | "deadline_reminder"
+    | "push_enabled"
+    | "sound_enabled"
+    | "summary_hour";
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -51,15 +58,22 @@ export default function NotificationSettingsPage() {
     fetchSettings();
   }, [user]);
 
-  const updateSetting = (
-    key: keyof typeof settings,
-    value: boolean | number
-  ) => {
+  const updateSetting = (key: NotificationSettingKey, value: boolean | number) => {
     setSettings((prev) => ({
       ...prev,
       [key]: value,
     }));
   };
+
+  const toggleItems: Array<{
+    key: Extract<NotificationSettingKey, "daily_summary" | "deadline_reminder" | "push_enabled" | "sound_enabled">;
+    label: string;
+  }> = [
+    { key: "daily_summary", label: t('notifications.dailySummary') },
+    { key: "deadline_reminder", label: t('notifications.deadlineReminder') },
+    { key: "push_enabled", label: t('notifications.mobilePush') },
+    { key: "sound_enabled", label: t('notifications.soundVibration') },
+  ];
 
   const saveSettings = async () => {
     if (!user) return;
@@ -92,12 +106,7 @@ export default function NotificationSettingsPage() {
       <div className="space-y-6 max-w-xl">
 
         {/* TOGGLES */}
-        {[
-          { key: "daily_summary", label: t('notifications.dailySummary') },
-          { key: "deadline_reminder", label: t('notifications.deadlineReminder') },
-          { key: "push_enabled", label: t('notifications.mobilePush') },
-          { key: "sound_enabled", label: t('notifications.soundVibration') },
-        ].map((item) => (
+        {toggleItems.map((item) => (
           <div
             key={item.key}
             className="flex justify-between items-center bg-white/5 p-4 rounded-2xl"
@@ -110,7 +119,7 @@ export default function NotificationSettingsPage() {
               onClick={() =>
                 updateSetting(
                   item.key,
-                  !settings[item.key as keyof typeof settings]
+                  !settings[item.key]
                 )
               }
               className={`w-12 h-6 flex items-center rounded-full transition ${

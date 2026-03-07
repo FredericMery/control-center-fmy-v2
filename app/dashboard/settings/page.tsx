@@ -7,6 +7,7 @@ import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "next/navigation";
 import EmailSettingsForm from "@/components/settings/EmailSettingsForm";
 import { useI18n } from "@/components/providers/LanguageProvider";
+import { FULL_ACCESS_USER_IDS } from "@/lib/subscription/accessControl";
 
 type PlanName = "BASIC" | "PLUS" | "PRO";
 
@@ -41,6 +42,15 @@ type AiUsageStats = {
   };
 };
 
+type MemoryActionsSettingsResponse = {
+  canEdit: boolean;
+  primaryActions: Record<string, string>;
+  mappings: Record<string, string[]>;
+  defaults: Record<string, string[]>;
+  labels: Record<string, string>;
+  catalog: Record<string, { id: string; label: string; description: string }>;
+};
+
 export default function SettingsPage() {
   const { t, language, setLanguage } = useI18n();
   const user = useAuthStore((s) => s.user);
@@ -59,6 +69,10 @@ export default function SettingsPage() {
   const [usage, setUsage] = useState<AiUsageStats | null>(null);
   const [loadingBilling, setLoadingBilling] = useState(false);
   const [billingMessage, setBillingMessage] = useState<string | null>(null);
+  const [memoryActionsConfig, setMemoryActionsConfig] = useState<MemoryActionsSettingsResponse | null>(null);
+  const [memoryActionsDraft, setMemoryActionsDraft] = useState<Record<string, string>>({});
+  const [memoryActionsStatus, setMemoryActionsStatus] = useState<string | null>(null);
+  const [loadingMemoryActions, setLoadingMemoryActions] = useState(false);
 
   /* ============================
      FETCH PROFILE SAFE
@@ -146,6 +160,38 @@ export default function SettingsPage() {
 
     loadAiSettings();
   }, [user, t]);
+
+  useEffect(() => {
+    if (!user || !FULL_ACCESS_USER_IDS.has(user.id)) {
+      setMemoryActionsConfig(null);
+      return;
+    }
+
+    const loadMemoryActions = async () => {
+      setLoadingMemoryActions(true);
+      setMemoryActionsStatus(null);
+      try {
+        const response = await fetch('/api/settings/memory-actions', {
+          headers: await getAuthHeaders(false),
+        });
+        const json = (await response.json()) as MemoryActionsSettingsResponse & { error?: string };
+
+        if (!response.ok) {
+          setMemoryActionsStatus(json.error || 'Erreur chargement mappings memoire');
+          return;
+        }
+
+        setMemoryActionsConfig(json);
+        setMemoryActionsDraft(json.primaryActions || {});
+      } catch {
+        setMemoryActionsStatus('Erreur reseau mappings memoire');
+      } finally {
+        setLoadingMemoryActions(false);
+      }
+    };
+
+    loadMemoryActions();
+  }, [user]);
 
   if (!user) return null;
 
@@ -336,6 +382,35 @@ export default function SettingsPage() {
     });
   };
 
+  const saveMemoryActions = async () => {
+    if (!memoryActionsConfig) return;
+
+    setMemoryActionsStatus(null);
+    try {
+      const response = await fetch('/api/settings/memory-actions', {
+        method: 'PUT',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ primaryActions: memoryActionsDraft }),
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        setMemoryActionsStatus(json?.error || 'Erreur sauvegarde mappings');
+        return;
+      }
+
+      const merged = {
+        ...memoryActionsConfig,
+        primaryActions: json.primaryActions || memoryActionsDraft,
+        mappings: json.mappings || memoryActionsConfig.mappings,
+      };
+      setMemoryActionsConfig(merged);
+      setMemoryActionsDraft(merged.primaryActions || {});
+      setMemoryActionsStatus('Mappings memoire sauvegardes');
+    } catch {
+      setMemoryActionsStatus('Erreur reseau sauvegarde mappings');
+    }
+  };
+
   return (
     <div className="text-blue-950 max-w-3xl mx-auto space-y-10 pb-20">
 
@@ -435,6 +510,65 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
+
+      {FULL_ACCESS_USER_IDS.has(user.id) && (
+        <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+          <h2 className="font-semibold text-lg">Memory action mappings (admin)</h2>
+          <p className="text-sm text-gray-600">
+            Definissez l action prioritaire proposee pour chaque type detecte apres un scan.
+          </p>
+
+          {loadingMemoryActions && (
+            <p className="text-sm text-gray-500">Chargement...</p>
+          )}
+
+          {!loadingMemoryActions && memoryActionsConfig && (
+            <div className="space-y-3">
+              {Object.entries(memoryActionsConfig.labels || {}).map(([detectedType, label]) => {
+                const options = Array.from(
+                  new Set([
+                    ...(memoryActionsConfig.defaults?.[detectedType] || []),
+                    ...(memoryActionsConfig.mappings?.[detectedType] || []),
+                  ])
+                );
+
+                return (
+                  <div key={detectedType} className="grid gap-2 md:grid-cols-2 md:items-center">
+                    <label className="text-sm font-medium text-gray-700">{label}</label>
+                    <select
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      value={memoryActionsDraft[detectedType] || options[0] || ''}
+                      onChange={(e) =>
+                        setMemoryActionsDraft((prev) => ({
+                          ...prev,
+                          [detectedType]: e.target.value,
+                        }))
+                      }
+                    >
+                      {options.map((actionId) => (
+                        <option key={actionId} value={actionId}>
+                          {memoryActionsConfig.catalog?.[actionId]?.label || actionId}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+
+              <button
+                onClick={saveMemoryActions}
+                className="px-4 py-2 rounded-lg bg-blue-900 text-white text-sm"
+              >
+                Sauvegarder mappings
+              </button>
+            </div>
+          )}
+
+          {memoryActionsStatus && (
+            <p className="text-xs text-gray-600">{memoryActionsStatus}</p>
+          )}
+        </div>
+      )}
 
       {/* EMAILS */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-6">

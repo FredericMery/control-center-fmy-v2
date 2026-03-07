@@ -1,12 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useAuthStore } from '@/store/authStore';
-import { useMemoryStore } from '@/store/memoryStore';
-import { MEMORY_TEMPLATES } from '@/lib/memoryTemplates';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
-import { useI18n } from '@/components/providers/LanguageProvider';
 
 type SubscriptionFeatures = {
   memory?: boolean;
@@ -14,26 +10,10 @@ type SubscriptionFeatures = {
 };
 
 export default function MemorePage() {
-  const { t } = useI18n();
-  const { user } = useAuthStore();
-  const { sections, loadingSections, fetchSections, deleteSection } = useMemoryStore();
-  const [showNewSection, setShowNewSection] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [customName, setCustomName] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [canAccessAiBrain, setCanAccessAiBrain] = useState(false);
 
   useEffect(() => {
-    if (user) {
-      fetchSections();
-    }
-  }, [user, fetchSections]);
-
-  useEffect(() => {
-    if (!user) return;
-
     const loadSubscription = async () => {
       try {
         const response = await fetch('/api/settings/subscription', {
@@ -48,281 +28,78 @@ export default function MemorePage() {
 
         const features = (json?.subscription?.features || {}) as SubscriptionFeatures;
         setCanAccessAiBrain(Boolean(features.memory && features.ai));
-      } catch (error) {
-        console.error('Failed to load subscription for AI guard:', error);
+      } catch {
         setCanAccessAiBrain(false);
+      } finally {
+        setLoading(false);
       }
     };
 
     loadSubscription();
-  }, [user]);
+  }, []);
 
-  const handleDeleteSection = async (e: React.MouseEvent, sectionId: string, sectionName: string) => {
-    e.preventDefault();
-    e.stopPropagation();
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 text-white">
+        <div className="mx-auto max-w-3xl rounded-xl border border-slate-700 bg-slate-900/60 p-6">
+          Chargement...
+        </div>
+      </div>
+    );
+  }
 
-    if (!confirm(`Supprimer "${sectionName}" et toutes ses fiches ?`)) {
-      return;
-    }
-
-    setDeletingId(sectionId);
-    try {
-      await deleteSection(sectionId);
-      await fetchSections();
-    } catch (err) {
-      console.error('Failed to delete section:', err);
-      alert('Erreur lors de la suppression');
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const handleCreateSection = async (templateId: string) => {
-    if (!user) return;
-
-    setCreating(true);
-    setCreateError(null);
-    
-    try {
-      const { createSection } = useMemoryStore.getState();
-      const name = customName || MEMORY_TEMPLATES[templateId]?.name;
-
-      console.log('🚀 Starting section creation:', { templateId, name, userId: user.id });
-      
-      const newSection = await createSection(templateId, name);
-      
-      if (!newSection) {
-        console.error('❌ createSection returned null');
-        setCreateError('Failed to create collection. Check console for details.');
-        setCreating(false);
-        return;
-      }
-
-      console.log('✅ Section created:', newSection);
-
-      // Refresh sections to show the new collection
-      await fetchSections();
-      setShowNewSection(false);
-      setSelectedTemplate(null);
-      setCustomName('');
-    } catch (err) {
-      console.error('💥 Exception during section creation:', err);
-      setCreateError(`Error: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const templates = Object.values(MEMORY_TEMPLATES);
-
-  // Group sections by template
-  const userSections = sections.filter((s) => s.template_id && !s.is_custom);
-  const customSections = sections.filter((s) => s.is_custom);
+  if (!canAccessAiBrain) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 text-white">
+        <div className="mx-auto max-w-3xl rounded-xl border border-amber-400/40 bg-amber-500/10 p-6 space-y-3">
+          <h1 className="text-2xl font-semibold">AI Brain verrouille</h1>
+          <p className="text-sm text-amber-100">
+            Cette page necessite les modules Memory + AI actives dans l&apos;abonnement.
+          </p>
+          <Link
+            href="/dashboard/settings"
+            className="inline-block rounded-md bg-white px-3 py-2 text-sm text-black"
+          >
+            Aller aux parametres
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black to-gray-900 p-4">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-4xl font-light text-white mb-2">📚 {t('memory.title')}</h1>
-            <p className="text-gray-400 text-sm">{t('memory.subtitle')}</p>
-          </div>
-          <div className="flex gap-2">
-            {canAccessAiBrain ? (
-              <Link
-                href="/dashboard/memoire/brain"
-                className="px-4 py-2 bg-emerald-400 text-black rounded-lg text-sm font-medium hover:bg-emerald-300 transition-colors"
-              >
-                {t('memory.aiBrain')}
-              </Link>
-            ) : (
-              <span className="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg text-sm font-medium cursor-not-allowed">
-                {t('memory.aiBrainLocked')}
-              </span>
-            )}
-            <button
-              onClick={() => setShowNewSection(!showNewSection)}
-              className="px-4 py-2 bg-white text-black rounded-lg text-sm font-light hover:bg-gray-100 transition-colors"
-            >
-              {showNewSection ? t('memory.cancel') : t('memory.newCollection')}
-            </button>
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 p-6 text-white">
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-8">
+          <h1 className="text-3xl font-semibold">Memoire IA</h1>
+          <p className="mt-2 text-sm text-slate-300">
+            Je scanne, l&apos;assistant comprend, et il propose l&apos;action la plus utile.
+          </p>
         </div>
 
-        {/* New Section Selection */}
-        {showNewSection && (
-          <div className="mb-8 p-6 bg-gray-900/50 border border-gray-700 rounded-lg">
-            <h3 className="text-lg font-light text-white mb-4">{t('memory.chooseTemplate')}</h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              {templates.map((template) => (
-                <button
-                  key={template.id}
-                  onClick={() => setSelectedTemplate(template.id)}
-                  className={`p-4 rounded-lg text-center transition-all ${
-                    selectedTemplate === template.id
-                      ? 'bg-white text-black border-2 border-white'
-                      : 'bg-gray-800 text-white border border-gray-700 hover:bg-gray-700'
-                  }`}
-                >
-                  <div className="text-3xl mb-2">{template.icon}</div>
-                  <div className="text-sm font-light">{template.name}</div>
-                </button>
-              ))}
-            </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Link
+            href="/dashboard/memoire/scan"
+            className="rounded-xl border border-emerald-300/60 bg-emerald-500/15 p-6 hover:bg-emerald-500/25 transition"
+          >
+            <p className="text-xs uppercase tracking-[0.2em] text-emerald-200">Assistant</p>
+            <h2 className="mt-2 text-2xl font-semibold">Scan</h2>
+            <p className="mt-2 text-sm text-slate-200">
+              Scanner une image et obtenir des actions intelligentes automatiquement.
+            </p>
+          </Link>
 
-            {selectedTemplate && (
-              <div className="mt-6 p-4 bg-gray-800 rounded-lg">
-                <label className="block text-sm text-gray-300 mb-2">
-                  {t('memory.collectionNameOptional')}
-                </label>
-                <input
-                  type="text"
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
-                  placeholder={MEMORY_TEMPLATES[selectedTemplate]?.name}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-500 focus:outline-none focus:border-white transition-colors"
-                />
-                {createError && (
-                  <p className="text-sm text-red-400 mt-3">{createError}</p>
-                )}
-                <div className="flex gap-2 mt-4">
-                  <button
-                    onClick={() => handleCreateSection(selectedTemplate)}
-                    disabled={creating}
-                    className="flex-1 px-4 py-2 bg-white text-black rounded text-sm font-light hover:bg-gray-100 transition-colors disabled:opacity-50"
-                  >
-                    {creating ? t('memory.creating') : t('memory.create')}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedTemplate(null);
-                      setCustomName('');
-                      setCreateError(null);
-                    }}
-                    className="px-4 py-2 bg-gray-700 text-white rounded text-sm font-light hover:bg-gray-600 transition-colors"
-                  >
-                    {t('memory.clear')}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Sections Grid */}
-        {loadingSections ? (
-          <div className="flex items-center justify-center h-64">
-            <p className="text-gray-400">{t('memory.loading')}</p>
-          </div>
-        ) : userSections.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-center">
-            <p className="text-gray-400 mb-4">{t('memory.noCollections')}</p>
-            <p className="text-sm text-gray-500">{t('memory.createFirstCollection')}</p>
-          </div>
-        ) : (
-          <>
-            {/* User Collections */}
-            {userSections.length > 0 && (
-              <div>
-                <h2 className="text-lg font-light text-white mb-4">{t('memory.collections')}</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {userSections.map((section) => {
-                    const template = section.template_id
-                      ? MEMORY_TEMPLATES[section.template_id]
-                      : null;
-
-                    return (
-                      <div
-                        key={section.id}
-                        className="group relative p-5 bg-gray-800 hover:bg-gray-750 border border-gray-700 rounded-lg transition-all hover:border-gray-600"
-                      >
-                        <Link href={`/dashboard/memoire/${section.id}`} className="block">
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="text-3xl">{template?.icon || '📝'}</div>
-                            <div className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded">
-                              {section.items_count || 0} {t('memory.items')}
-                            </div>
-                          </div>
-                          <h3 className="text-lg font-light text-white mb-1 group-hover:text-gray-100 transition-colors">
-                            {section.section_name}
-                          </h3>
-                          {section.description && (
-                            <p className="text-xs text-gray-500 line-clamp-2">
-                              {section.description}
-                            </p>
-                          )}
-                        </Link>
-                        
-                        <button
-                          onClick={(e) => handleDeleteSection(e, section.id, section.section_name)}
-                          disabled={deletingId === section.id}
-                          className="absolute top-3 right-3 p-2 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
-                          title={t('memory.deleteMemory')}
-                        >
-                          {deletingId === section.id ? (
-                            <span className="text-sm">⌛</span>
-                          ) : (
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          )}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Custom Collections */}
-            {customSections.length > 0 && (
-              <div className="mt-8">
-                <h2 className="text-lg font-light text-white mb-4">Custom Collections</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {customSections.map((section) => (
-                    <div
-                      key={section.id}
-                      className="group relative p-5 bg-gray-800 hover:bg-gray-750 border border-gray-700 rounded-lg transition-all hover:border-gray-600"
-                    >
-                      <Link href={`/dashboard/memoire/${section.id}`} className="block">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="text-3xl">📝</div>
-                          <div className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded">
-                            {section.items_count || 0} items
-                          </div>
-                        </div>
-                        <h3 className="text-lg font-light text-white mb-1 group-hover:text-gray-100 transition-colors">
-                          {section.section_name}
-                        </h3>
-                        {section.description && (
-                          <p className="text-xs text-gray-500 line-clamp-2">
-                            {section.description}
-                          </p>
-                        )}
-                      </Link>
-                      
-                      <button
-                        onClick={(e) => handleDeleteSection(e, section.id, section.section_name)}
-                        disabled={deletingId === section.id}
-                        className="absolute top-3 right-3 p-2 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
-                        title="Supprimer cette mémoire"
-                      >
-                        {deletingId === section.id ? (
-                          <span className="text-sm">⌛</span>
-                        ) : (
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        )}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
+          <Link
+            href="/dashboard/memoire/list"
+            className="rounded-xl border border-slate-500/60 bg-slate-700/20 p-6 hover:bg-slate-700/35 transition"
+          >
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Knowledge</p>
+            <h2 className="mt-2 text-2xl font-semibold">View memories</h2>
+            <p className="mt-2 text-sm text-slate-200">
+              Parcourir les fiches memoire, les noter et explorer les relations.
+            </p>
+          </Link>
+        </div>
       </div>
     </div>
   );
