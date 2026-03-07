@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 
 type SuggestedAction = {
@@ -24,8 +24,10 @@ type ScanResponse = {
 };
 
 export default function MemoryScanPage() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [validationCode, setValidationCode] = useState('');
   const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string>('');
   const [loadingScan, setLoadingScan] = useState(false);
   const [loadingExecute, setLoadingExecute] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,12 +40,20 @@ export default function MemoryScanPage() {
 
     const base64 = await fileToBase64(file);
     setImageBase64(base64);
+    setSelectedFileName(file.name);
     setExecutedMemoryId(null);
+    setError(null);
   }
 
   async function runSmartScan() {
+    if (!validationCode.trim()) {
+      setError('Entrez le code de validation IA.');
+      return;
+    }
+
     if (!imageBase64) {
-      setError('Selectionnez une image.');
+      setError('Selectionnez une image avant de lancer le scan.');
+      fileInputRef.current?.click();
       return;
     }
 
@@ -111,9 +121,13 @@ export default function MemoryScanPage() {
 
   function resetScan() {
     setImageBase64(null);
+    setSelectedFileName('');
     setScanResult(null);
     setExecutedMemoryId(null);
     setError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   }
 
   return (
@@ -148,18 +162,29 @@ export default function MemoryScanPage() {
             />
           </div>
 
-          <div>
+          <div className="space-y-2">
             <input
+              ref={fileInputRef}
               type="file"
               accept="image/*"
               onChange={onImageSelected}
-              className="block w-full text-sm"
+              className="hidden"
             />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-md border border-slate-600 px-3 py-2 text-sm hover:bg-slate-700"
+            >
+              Choisir une image
+            </button>
+            <p className="text-xs text-slate-400">
+              {selectedFileName || 'Aucun fichier selectionne'}
+            </p>
           </div>
 
           <button
             onClick={runSmartScan}
-            disabled={!imageBase64 || !validationCode || loadingScan || loadingExecute}
+            disabled={loadingScan || loadingExecute}
             className="rounded-md bg-emerald-400 px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
           >
             {loadingScan ? 'Analyse en cours...' : 'Scanner'}
