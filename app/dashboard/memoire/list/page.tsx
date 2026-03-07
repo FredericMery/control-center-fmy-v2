@@ -719,6 +719,17 @@ export default function MemoryListPage() {
     loadRelations(selectedMemory.id);
   }, [selectedMemory?.id]);
 
+  useEffect(() => {
+    if (!editingMemoryId) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [editingMemoryId]);
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_#1f3b4d_0%,_#0f172a_48%,_#020617_100%)] p-6 text-white">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -1070,8 +1081,8 @@ export default function MemoryListPage() {
         )}
 
         {editingMemoryId && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-            <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-xl">
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 p-4">
+            <div className="mx-auto my-6 w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-xl max-h-[88vh] overflow-y-auto">
               <h2 className="text-lg font-semibold text-white">{t('memory.list.editTitle')}</h2>
 
               <div className="mt-4 space-y-3">
