@@ -43,6 +43,9 @@ type EnrichedMemory = Memory & {
   thumbnail: string | null;
   searchableText: string;
   relevanceScore: number;
+  effectiveRating: number;
+  wineYear: string;
+  wineColor: string;
 };
 
 type MemoryCategory = {
@@ -98,6 +101,80 @@ function safeString(value: unknown): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number') return String(value);
   return '';
+}
+
+function toNumericRating(value: unknown): number {
+  const numeric = Number(String(value || '').replace(',', '.').trim());
+  if (!Number.isFinite(numeric)) return 0;
+  const rounded = Math.round(numeric);
+  if (rounded < 1 || rounded > 5) return 0;
+  return rounded;
+}
+
+function getTemplateField(structured: Record<string, unknown>, key: string): string {
+  const nested =
+    structured.template_fields && typeof structured.template_fields === 'object'
+      ? (structured.template_fields as Record<string, unknown>)
+      : {};
+
+  const nestedValue = safeString(nested[key]).trim();
+  if (nestedValue) return nestedValue;
+  return safeString(structured[key]).trim();
+}
+
+function getEffectiveRating(memory: Memory): number {
+  if ((memory.rating || 0) > 0) return Number(memory.rating || 0);
+
+  const structured = memory.structured_data || {};
+  const candidates = [
+    getTemplateField(structured, 'note_personnelle'),
+    getTemplateField(structured, 'impact'),
+    getTemplateField(structured, 'potentiel_business'),
+    getTemplateField(structured, 'rating'),
+  ];
+
+  for (const candidate of candidates) {
+    const parsed = toNumericRating(candidate);
+    if (parsed > 0) return parsed;
+  }
+
+  return 0;
+}
+
+function getWineYear(memory: Memory): string {
+  const structured = memory.structured_data || {};
+  const candidates = [
+    getTemplateField(structured, 'annee'),
+    getTemplateField(structured, 'year'),
+    safeString(structured.vintage).trim(),
+  ];
+
+  for (const candidate of candidates) {
+    const match = candidate.match(/\b(19\d{2}|20\d{2})\b/);
+    if (match) return match[1];
+  }
+
+  return '-';
+}
+
+function getWineColor(memory: Memory): string {
+  const structured = memory.structured_data || {};
+  const candidates = [
+    getTemplateField(structured, 'type'),
+    getTemplateField(structured, 'couleur'),
+    safeString(structured.color).trim(),
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = candidate.toLowerCase();
+    if (normalized.includes('rouge') || normalized.includes('red')) return 'Rouge';
+    if (normalized.includes('blanc') || normalized.includes('white')) return 'Blanc';
+    if (normalized.includes('rose') || normalized.includes('rosé') || normalized.includes('pink')) return 'Rose';
+    if (normalized.includes('champagne') || normalized.includes('sparkling')) return 'Champagne';
+    if (candidate.trim()) return candidate.trim();
+  }
+
+  return '-';
 }
 
 function toFieldKey(label: string): string {
@@ -355,6 +432,9 @@ export default function MemoryListPage() {
         .join(' ')
         .toLowerCase();
       const tokenSet = new Set(tokenize(searchableText));
+      const effectiveRating = getEffectiveRating(memory);
+      const wineYear = getWineYear(memory);
+      const wineColor = getWineColor(memory);
 
       return {
         ...memory,
@@ -365,6 +445,9 @@ export default function MemoryListPage() {
         thumbnail,
         searchableText,
         tokenSet,
+        effectiveRating,
+        wineYear,
+        wineColor,
       };
     });
   }, [items, language]);
@@ -403,7 +486,7 @@ export default function MemoryListPage() {
         ? Array.from(item.tokenSet).filter((token) => profile.tokenSet.has(token)).length
         : 0;
       const semanticDensity = profile ? overlap / Math.max(1, profile.tokenSet.size) : 0;
-      const ratingBoost = (item.rating || 0) / 5;
+      const ratingBoost = item.effectiveRating / 5;
       const recencyBoost = Math.max(0, 1 - (Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60 * 24 * 45));
 
       const relevanceScore = Number((semanticDensity * 0.55 + ratingBoost * 0.25 + recencyBoost * 0.2).toFixed(3));
@@ -769,7 +852,7 @@ export default function MemoryListPage() {
             <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-200">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
               <span className="uppercase tracking-wide text-slate-400">{t('memory.list.ratedCards')}</span>
-              <span className="font-semibold tabular-nums text-white">{items.filter((entry) => (entry.rating || 0) > 0).length}</span>
+              <span className="font-semibold tabular-nums text-white">{enrichedItems.filter((entry) => entry.effectiveRating > 0).length}</span>
             </div>
             <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-200">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
@@ -992,9 +1075,26 @@ export default function MemoryListPage() {
                       className="w-full space-y-1.5 p-2.5 text-left"
                     >
                       <h2 className="line-clamp-2 text-sm font-semibold text-white">{memory.title}</h2>
-                      <p className="line-clamp-3 text-xs text-slate-300">
-                        {memory.scanDetail || t('memory.list.noScanDetail')}
-                      </p>
+                      {memory.categoryId === 'wines' ? (
+                        <div className="grid grid-cols-3 gap-2 text-[11px]">
+                          <div className="rounded-md border border-slate-700 bg-slate-800/60 px-2 py-1">
+                            <p className="uppercase tracking-wide text-slate-400">{t('memory.list.wineYear')}</p>
+                            <p className="font-semibold text-slate-100">{memory.wineYear}</p>
+                          </div>
+                          <div className="rounded-md border border-slate-700 bg-slate-800/60 px-2 py-1">
+                            <p className="uppercase tracking-wide text-slate-400">{t('memory.list.wineRating')}</p>
+                            <p className="font-semibold text-amber-300">{memory.effectiveRating > 0 ? `${memory.effectiveRating}/5` : '-'}</p>
+                          </div>
+                          <div className="rounded-md border border-slate-700 bg-slate-800/60 px-2 py-1">
+                            <p className="uppercase tracking-wide text-slate-400">{t('memory.list.wineColor')}</p>
+                            <p className="font-semibold text-slate-100">{memory.wineColor}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="line-clamp-3 text-xs text-slate-300">
+                          {memory.scanDetail || t('memory.list.noScanDetail')}
+                        </p>
+                      )}
                       <div className="flex items-center justify-between text-[11px] text-slate-400">
                         <span>{formatDate(memory.created_at, locale)}</span>
                         <span>{memory.type}</span>
@@ -1009,7 +1109,7 @@ export default function MemoryListPage() {
                               event.stopPropagation();
                               setRating(memory.id, value);
                             }}
-                            className={`text-lg leading-none ${(memory.rating || 0) >= value ? 'text-amber-300' : 'text-slate-600'}`}
+                            className={`text-lg leading-none ${memory.effectiveRating >= value ? 'text-amber-300' : 'text-slate-600'}`}
                             aria-label={t('memory.list.rateAria', { value })}
                           >
                             ★
@@ -1036,7 +1136,26 @@ export default function MemoryListPage() {
                     </p>
                   </div>
 
-                  {selectedMemory.scanDetail && (
+                  {selectedMemory.categoryId === 'wines' && (
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                        <p className="text-[10px] uppercase tracking-wide text-slate-400">{t('memory.list.wineYear')}</p>
+                        <p className="mt-1 text-base font-semibold text-white">{selectedMemory.wineYear}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                        <p className="text-[10px] uppercase tracking-wide text-slate-400">{t('memory.list.wineRating')}</p>
+                        <p className="mt-1 text-base font-semibold text-amber-300">
+                          {selectedMemory.effectiveRating > 0 ? `${selectedMemory.effectiveRating}/5` : '-'}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                        <p className="text-[10px] uppercase tracking-wide text-slate-400">{t('memory.list.wineColor')}</p>
+                        <p className="mt-1 text-base font-semibold text-white">{selectedMemory.wineColor}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedMemory.scanDetail && selectedMemory.categoryId !== 'wines' && (
                     <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
                       <p className="mb-1 text-xs uppercase tracking-wide text-slate-400">{t('memory.list.scannedDetail')}</p>
                       <p className="text-sm text-slate-200">{selectedMemory.scanDetail}</p>

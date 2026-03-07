@@ -195,6 +195,9 @@ const fr: TranslationTable = {
   'memory.list.editFieldTemplate': 'Type de memoire',
   'memory.list.editFieldContent': 'Contenu',
   'memory.list.editTemplateFields': 'Champs specifiques de la memoire',
+  'memory.list.wineYear': 'Annee',
+  'memory.list.wineRating': 'Note',
+  'memory.list.wineColor': 'Couleur',
 
   // Settings
   'settings.title': 'Parametres',
@@ -452,6 +455,9 @@ const en: TranslationTable = {
   'memory.list.editFieldTemplate': 'Memory type',
   'memory.list.editFieldContent': 'Content',
   'memory.list.editTemplateFields': 'Memory-specific fields',
+  'memory.list.wineYear': 'Year',
+  'memory.list.wineRating': 'Rating',
+  'memory.list.wineColor': 'Color',
 
   'settings.title': 'Settings',
   'settings.account': 'Account',
@@ -705,6 +711,9 @@ const es: TranslationTable = {
   'memory.list.editFieldTemplate': 'Tipo de memoria',
   'memory.list.editFieldContent': 'Contenido',
   'memory.list.editTemplateFields': 'Campos especificos de la memoria',
+  'memory.list.wineYear': 'Ano',
+  'memory.list.wineRating': 'Nota',
+  'memory.list.wineColor': 'Color',
 
   'settings.title': 'Configuracion',
   'settings.account': 'Cuenta',
