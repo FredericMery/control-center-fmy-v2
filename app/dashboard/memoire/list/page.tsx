@@ -731,62 +731,66 @@ export default function MemoryListPage() {
   }, [editingMemoryId]);
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_#1f3b4d_0%,_#0f172a_48%,_#020617_100%)] p-6 text-white">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="rounded-2xl border border-cyan-300/20 bg-slate-900/60 p-5 backdrop-blur">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_#1f3b4d_0%,_#0f172a_48%,_#020617_100%)] p-4 text-white sm:p-6">
+      <div className="mx-auto max-w-7xl space-y-5">
+        <header className="rounded-2xl border border-cyan-300/20 bg-slate-900/60 p-4 backdrop-blur">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight">{t('memory.list.title')}</h1>
-              <p className="mt-1 text-sm text-slate-300">{t('memory.list.premiumSubtitle')}</p>
+              <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{t('memory.list.title')}</h1>
+              <p className="mt-1 text-xs text-slate-300 md:text-sm">{t('memory.list.premiumSubtitle')}</p>
             </div>
             <div className="flex gap-2">
               <Link
                 href="/dashboard/memoire/scan"
-                className="rounded-md border border-cyan-300/60 bg-cyan-500/20 px-3 py-2 text-sm hover:bg-cyan-500/35"
+                className="rounded-md border border-cyan-300/60 bg-cyan-500/20 px-3 py-1.5 text-xs font-medium hover:bg-cyan-500/35 sm:text-sm"
               >
                 {t('memory.assistantScan')}
               </Link>
               <Link
                 href="/dashboard/memoire"
-                className="rounded-md border border-slate-600 px-3 py-2 text-sm hover:bg-slate-700"
+                className="rounded-md border border-slate-600 px-3 py-1.5 text-xs font-medium hover:bg-slate-700 sm:text-sm"
               >
                 {t('common.back')}
               </Link>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-4">
-            <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-400">{t('memory.list.totalCards')}</p>
-              <p className="mt-1 text-xl font-semibold">{items.length}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan-300" />
+              <span className="uppercase tracking-wide text-slate-400">{t('memory.list.totalCards')}</span>
+              <span className="font-semibold tabular-nums text-white">{items.length}</span>
             </div>
-            <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-400">{t('memory.list.themesCount')}</p>
-              <p className="mt-1 text-xl font-semibold">{themeCounts.length}</p>
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
+              <span className="uppercase tracking-wide text-slate-400">{t('memory.list.themesCount')}</span>
+              <span className="font-semibold tabular-nums text-white">{themeCounts.length}</span>
             </div>
-            <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-400">{t('memory.list.ratedCards')}</p>
-              <p className="mt-1 text-xl font-semibold">{items.filter((entry) => (entry.rating || 0) > 0).length}</p>
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+              <span className="uppercase tracking-wide text-slate-400">{t('memory.list.ratedCards')}</span>
+              <span className="font-semibold tabular-nums text-white">{items.filter((entry) => (entry.rating || 0) > 0).length}</span>
             </div>
-            <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-400">{t('memory.list.smartRanking')}</p>
-              <p className="mt-1 text-xl font-semibold">{t('memory.list.smartRankingEnabled')}</p>
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800/50 px-2.5 py-1 text-[11px] text-slate-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+              <span className="uppercase tracking-wide text-slate-400">{t('memory.list.smartRanking')}</span>
+              <span className="font-semibold text-emerald-200">{t('memory.list.smartRankingEnabled')}</span>
             </div>
           </div>
         </header>
 
-        <section className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4 backdrop-blur">
-          <div className="grid gap-3 md:grid-cols-[1fr,220px,220px]">
+        <section className="rounded-2xl border border-slate-700 bg-slate-900/60 p-3 backdrop-blur">
+          <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_180px_220px_auto]">
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={t('memory.list.searchPlaceholder')}
-              className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+              className="rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-[13px] text-white outline-none focus:border-cyan-400"
             />
             <select
               value={activeTheme}
               onChange={(event) => setActiveTheme(event.target.value)}
-              className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+              className="rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-[13px] text-white outline-none focus:border-cyan-400"
             >
               <option value="all">{t('memory.list.allThemes')}</option>
               {themeCounts.map((entry) => (
@@ -800,35 +804,38 @@ export default function MemoryListPage() {
               value={validationCode}
               onChange={(event) => setValidationCode(event.target.value)}
               placeholder={t('memory.list.validationCodePlaceholder')}
-              className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+              className="rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-[13px] text-white outline-none focus:border-cyan-400"
             />
+
+            <div className="inline-flex items-center rounded-md border border-slate-700 bg-slate-800/70 p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`rounded px-3 py-1.5 text-[11px] font-semibold sm:text-xs ${
+                  viewMode === 'cards'
+                    ? 'bg-cyan-400 text-black'
+                    : 'text-slate-200 hover:bg-slate-700'
+                }`}
+              >
+                {t('memory.list.cardsView')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('board')}
+                className={`rounded px-3 py-1.5 text-[11px] font-semibold sm:text-xs ${
+                  viewMode === 'board'
+                    ? 'bg-cyan-400 text-black'
+                    : 'text-slate-200 hover:bg-slate-700'
+                }`}
+              >
+                {t('memory.list.boardView')}
+              </button>
+            </div>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setViewMode('cards')}
-              className={`rounded-md px-3 py-2 text-sm ${
-                viewMode === 'cards'
-                  ? 'bg-cyan-400 text-black'
-                  : 'border border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700'
-              }`}
-            >
-              {t('memory.list.cardsView')}
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('board')}
-              className={`rounded-md px-3 py-2 text-sm ${
-                viewMode === 'board'
-                  ? 'bg-cyan-400 text-black'
-                  : 'border border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700'
-              }`}
-            >
-              {t('memory.list.boardView')}
-            </button>
-            <p className="text-xs text-slate-400">{t('memory.list.dragHint')}</p>
-          </div>
+          <p className={`mt-2 text-[11px] ${viewMode === 'board' ? 'text-cyan-300/80' : 'text-slate-500'}`}>
+            {t('memory.list.dragHint')}
+          </p>
         </section>
 
         {error && (
@@ -846,7 +853,7 @@ export default function MemoryListPage() {
             {t('memory.list.emptyFiltered')}
           </div>
         ) : viewMode === 'board' ? (
-          <section className="overflow-auto rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+          <section className="overflow-auto rounded-2xl border border-slate-700 bg-slate-900/60 p-3 sm:p-4">
             <div className="flex min-w-max gap-4">
               {boardThemes.map((theme) => {
                 const columnItems = filteredItems.filter((item) => item.categoryId === theme);
@@ -923,7 +930,7 @@ export default function MemoryListPage() {
           </section>
         ) : (
           <div className="grid gap-4 xl:grid-cols-[2fr,1fr]">
-            <section className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+            <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
               {filteredItems.map((memory) => (
                 <article
                   key={memory.id}
@@ -938,7 +945,7 @@ export default function MemoryListPage() {
                   }`}
                 >
                   <div className="relative">
-                    <div className="relative h-28 w-full bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800">
+                    <div className="relative h-24 w-full bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 sm:h-28">
                       {memory.thumbnail ? (
                         <img src={memory.thumbnail} alt={memory.title} className="h-full w-full object-cover" />
                       ) : (
@@ -982,7 +989,7 @@ export default function MemoryListPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedId(memory.id)}
-                      className="w-full space-y-2 p-3 text-left"
+                      className="w-full space-y-1.5 p-2.5 text-left"
                     >
                       <h2 className="line-clamp-2 text-sm font-semibold text-white">{memory.title}</h2>
                       <p className="line-clamp-3 text-xs text-slate-300">
@@ -1015,7 +1022,7 @@ export default function MemoryListPage() {
               ))}
             </section>
 
-            <aside className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+            <aside className="rounded-2xl border border-slate-700 bg-slate-900/70 p-3.5">
               {!selectedMemory ? (
                 <p className="text-sm text-slate-400">{t('memory.list.selectMemory')}</p>
               ) : (
