@@ -5,12 +5,14 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { supabase } from "@/lib/supabase/client";
+import { useI18n } from "@/components/providers/LanguageProvider";
 
 export default function DashboardLayout({
   children,
 }: {
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const user = useAuthStore((state) => state.user);
   const loading = useAuthStore((state) => state.loading);
   const router = useRouter();
@@ -51,7 +53,7 @@ export default function DashboardLayout({
     return (
       <div className="min-h-screen flex items-center justify-center bg-black text-white">
         <div className="animate-pulse text-indigo-500">
-          Chargement...
+          {t('common.loading')}
         </div>
       </div>
     );
@@ -70,7 +72,7 @@ export default function DashboardLayout({
             </div>
             <div>
               <span className="font-bold text-lg">H+</span>
-              <p className="text-xs text-gray-400">Control</p>
+              <p className="text-xs text-gray-400">{t('nav.control')}</p>
             </div>
           </Link>
 
@@ -83,7 +85,7 @@ export default function DashboardLayout({
                   : "text-gray-400 hover:text-white"
               }`}
             >
-              📋 Tasks
+              📋 {t('nav.tasks')}
             </Link>
 
             <Link
@@ -94,7 +96,7 @@ export default function DashboardLayout({
                   : "text-gray-400 hover:text-white"
               }`}
             >
-              📚 Mémoire
+              📚 {t('nav.memory')}
             </Link>
 
             <Link
@@ -105,7 +107,7 @@ export default function DashboardLayout({
                   : "text-gray-400 hover:text-white"
               }`}
             >
-              ⚙️ Settings
+              ⚙️ {t('nav.settings')}
             </Link>
           </nav>
         </div>

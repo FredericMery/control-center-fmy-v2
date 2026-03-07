@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { trackApiCall, trackAppUsage } from '@/lib/tracking/analytics';
+import { useI18n } from '@/components/providers/LanguageProvider';
 
 type PaymentMethod = 'cb_perso' | 'cb_pro';
 
 export default function ExpenseForm() {
+  const { t } = useI18n();
   const router = useRouter();
   const [step, setStep] = useState<'method' | 'scan' | 'review'>('method');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
@@ -15,6 +17,7 @@ export default function ExpenseForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [validationCode, setValidationCode] = useState('');
   const [formData, setFormData] = useState({
     vendor: '',
     amount_ttc: '',
@@ -61,7 +64,7 @@ export default function ExpenseForm() {
 
   const handleScan = async (base64Image: string) => {
     if (!authToken) {
-      setError('Authentification requise. Veuillez vous reconnecter.');
+      setError('Authentication required. Please sign in again.');
       return;
     }
 
@@ -79,6 +82,7 @@ export default function ExpenseForm() {
         body: JSON.stringify({
           image: base64Image,
           paymentMethod,
+          validationCode,
         }),
       });
 
@@ -86,7 +90,7 @@ export default function ExpenseForm() {
       console.log('📦 Réponse API:', data);
 
       if (!response.ok) {
-        const errorMsg = data.error || 'Erreur lors du scan';
+        const errorMsg = data.error || t('expenses.scanError');
         console.error('❌ Erreur API:', errorMsg);
         setError(errorMsg);
         setImage(null); // Reset l'image pour permettre un nouveau scan
@@ -112,8 +116,8 @@ export default function ExpenseForm() {
       setTimeout(() => {
         router.push('/dashboard/notifications');
       }, 2000);
-    } catch (err: any) {
-      const errorMsg = err?.message || 'Erreur lors du traitement de la facture';
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : t('expenses.processingError');
       setError(errorMsg);
       setImage(null); // Reset l'image pour permettre un nouveau scan
       console.error('❌ Erreur catch:', err);
@@ -127,8 +131,8 @@ export default function ExpenseForm() {
       {/* Header */}
       <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
         <div className="max-w-2xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-slate-900">Saisir une dépense</h1>
-          <p className="text-sm text-slate-600">Scannez votre facture pour extraire les données</p>
+          <h1 className="text-2xl font-bold text-slate-900">{t('expenses.captureTitle')}</h1>
+          <p className="text-sm text-slate-600">{t('expenses.captureSubtitle')}</p>
         </div>
       </div>
 
@@ -184,6 +188,20 @@ export default function ExpenseForm() {
 
             {/* Upload Area */}
             <div className="bg-white rounded-xl shadow-sm border-2 border-dashed border-slate-300 p-12 text-center hover:border-blue-400 transition-colors">
+              <div className="max-w-sm mx-auto mb-5">
+                <label className="block text-xs font-medium text-slate-700 mb-2">
+                  {t('expenses.validationCode')}
+                </label>
+                <input
+                  type="password"
+                  value={validationCode}
+                  onChange={(e) => setValidationCode(e.target.value)}
+                  placeholder={t('expenses.enterCode')}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  disabled={isLoading}
+                />
+              </div>
+
               {!image ? (
                 <>
                   <input
@@ -192,16 +210,18 @@ export default function ExpenseForm() {
                     onChange={handleImageUpload}
                     className="hidden"
                     id="photo-input"
-                    disabled={isLoading}
+                    disabled={isLoading || !validationCode.trim()}
                   />
                   <label
                     htmlFor="photo-input"
-                    className="cursor-pointer space-y-3 block"
+                    className={`space-y-3 block ${
+                      validationCode.trim() ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+                    }`}
                   >
                     <div className="text-5xl">📷</div>
                     <div>
-                      <h3 className="font-semibold text-slate-900">Choisir une photo</h3>
-                      <p className="text-sm text-slate-600">ou glissez-la ici</p>
+                      <h3 className="font-semibold text-slate-900">{t('expenses.choosePhoto')}</h3>
+                      <p className="text-sm text-slate-600">{t('expenses.orDrop')}</p>
                     </div>
                   </label>
                 </>
@@ -209,7 +229,7 @@ export default function ExpenseForm() {
                 <div className="space-y-4">
                   <div className="text-5xl">✓</div>
                   <p className="text-slate-900 font-semibold">
-                    {isLoading ? 'Analyse en cours...' : 'Facture scannée'}
+                    {isLoading ? t('expenses.processing') : t('expenses.scanned')}
                   </p>
                 </div>
               )}
@@ -232,7 +252,7 @@ export default function ExpenseForm() {
                 }}
                 className="flex-1 px-4 py-3 rounded-lg border border-slate-300 text-slate-900 font-medium hover:bg-slate-50 transition-colors"
               >
-                Retour
+                {t('expenses.back')}
               </button>
             </div>
           </div>
@@ -278,7 +298,7 @@ export default function ExpenseForm() {
             </div>
 
             <p className="text-sm text-slate-600 text-center">
-              Redirection vers l'historique dans 2 secondes...
+              Redirection vers l&apos;historique dans 2 secondes...
             </p>
           </div>
         )}

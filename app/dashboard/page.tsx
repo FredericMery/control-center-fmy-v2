@@ -7,6 +7,7 @@ import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import { getMonthNameFr } from "@/lib/monthHelper";
 import { supabase } from "@/lib/supabase/client";
+import { useI18n } from "@/components/providers/LanguageProvider";
 
 interface Card {
   id: string;
@@ -53,10 +54,14 @@ const cards: Card[] = [
 ];
 
 export default function DashboardPage() {
+  const { t, language } = useI18n();
   const user = useAuthStore((state) => state.user);
   const { tasks, fetchTasks } = useTaskStore();
   const [visionCountMonth, setVisionCountMonth] = useState(0);
-  const monthName = getMonthNameFr();
+  const monthName =
+    language === 'fr'
+      ? getMonthNameFr()
+      : new Intl.DateTimeFormat(language, { month: 'long' }).format(new Date());
 
   useEffect(() => {
     if (user) {
@@ -127,7 +132,7 @@ export default function DashboardPage() {
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold">Control Center</h1>
-            <p className="text-xs text-gray-400">Vue d'ensemble</p>
+            <p className="text-xs text-gray-400">{t('dashboard.overview')}</p>
           </div>
           <NotificationBell />
         </div>
@@ -140,23 +145,23 @@ export default function DashboardPage() {
           {/* Mini Dashboard */}
           <div className="grid grid-cols-2 gap-2 mb-2">
             <div className="bg-white/5 backdrop-blur-sm rounded-lg p-3 border border-white/10">
-              <p className="text-[10px] text-gray-400 uppercase mb-1">Pro à lancer</p>
+              <p className="text-[10px] text-gray-400 uppercase mb-1">{t('dashboard.proToLaunch')}</p>
               <p className="text-xl font-bold text-blue-400">{proTodoCount}</p>
             </div>
             <div className="bg-white/5 backdrop-blur-sm rounded-lg p-3 border border-white/10">
-              <p className="text-[10px] text-gray-400 uppercase mb-1">Perso à lancer</p>
+              <p className="text-[10px] text-gray-400 uppercase mb-1">{t('dashboard.persoToLaunch')}</p>
               <p className="text-xl font-bold text-purple-400">{persoTodoCount}</p>
             </div>
             <div className="bg-white/5 backdrop-blur-sm rounded-lg p-3 border border-white/10">
-              <p className="text-[10px] text-gray-400 uppercase mb-1">Clôturées aujourd'hui</p>
+              <p className="text-[10px] text-gray-400 uppercase mb-1">{t('dashboard.closedToday')}</p>
               <p className="text-xl font-bold text-emerald-400">{todayDoneCount}</p>
             </div>
             <div className="bg-white/5 backdrop-blur-sm rounded-lg p-3 border border-white/10">
-              <p className="text-[10px] text-gray-400 uppercase mb-1">Mémoires actives</p>
+              <p className="text-[10px] text-gray-400 uppercase mb-1">{t('dashboard.activeMemories')}</p>
               <p className="text-xl font-bold text-amber-400">{memoireCount}</p>
             </div>
             <div className="bg-white/5 backdrop-blur-sm rounded-lg p-3 border border-white/10 col-span-2">
-              <p className="text-[10px] text-gray-400 uppercase mb-1">Appels API Vision ({monthName})</p>
+              <p className="text-[10px] text-gray-400 uppercase mb-1">{t('dashboard.visionCalls', { month: monthName })}</p>
               <p className="text-xl font-bold text-indigo-400">{visionCountMonth}</p>
             </div>
           </div>
@@ -181,7 +186,7 @@ export default function DashboardPage() {
                     <Link
                       href={`/dashboard/tasks?type=${card.id}&new=1`}
                       className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 text-white shadow-lg shadow-indigo-500/30 active:scale-95 transition-all flex items-center justify-center text-sm font-semibold"
-                      aria-label={`Ajouter une tâche ${card.title}`}
+                      aria-label={t('dashboard.addTaskAria', { title: card.title })}
                     >
                       +
                     </Link>
@@ -192,7 +197,7 @@ export default function DashboardPage() {
                       href="/dashboard/memoire"
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 transition-all"
                     >
-                      Accès
+                      {t('dashboard.access')}
                     </Link>
                   )}
 
@@ -201,7 +206,7 @@ export default function DashboardPage() {
                       href="/expenses"
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/30 transition-all"
                     >
-                      Saisir
+                      {t('dashboard.capture')}
                     </Link>
                   )}
                 </div>

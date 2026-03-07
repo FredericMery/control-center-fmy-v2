@@ -1,6 +1,7 @@
 import "./globals.css";
 import AuthProvider from "@/components/providers/AuthProvider";
 import ThemeProvider from "@/components/providers/ThemeProvider";
+import LanguageProvider from "@/components/providers/LanguageProvider";
 
 export const metadata = {
   title: "H+ – Mémorises ce qui compte",
@@ -28,7 +29,9 @@ export default function RootLayout({
     <html lang="fr" suppressHydrationWarning>
       <body className="bg-black text-white antialiased">
         <AuthProvider>
-          <ThemeProvider>{children}</ThemeProvider>
+          <LanguageProvider>
+            <ThemeProvider>{children}</ThemeProvider>
+          </LanguageProvider>
         </AuthProvider>
       </body>
     </html>

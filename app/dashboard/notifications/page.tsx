@@ -3,8 +3,10 @@
 import { useEffect } from "react";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useAuthStore } from "@/store/authStore";
+import { useI18n } from "@/components/providers/LanguageProvider";
 
 export default function NotificationsPage() {
+  const { t } = useI18n();
 
   const {
     notifications,
@@ -25,15 +27,15 @@ export default function NotificationsPage() {
     <div className="min-h-screen bg-black text-white px-6 py-10">
 
       <h1 className="text-xl font-light mb-8">
-        Centre de notifications
+        {t('notifications.center')}
       </h1>
 
       {loading && (
-        <div className="text-gray-400">Chargement...</div>
+        <div className="text-gray-400">{t('common.loading')}</div>
       )}
 
       {!loading && notifications.length === 0 && (
-        <div className="text-gray-400">Aucune notification</div>
+        <div className="text-gray-400">{t('notifications.none')}</div>
       )}
 
       <div className="space-y-4 max-w-2xl">
@@ -60,7 +62,7 @@ export default function NotificationsPage() {
                 onClick={() => markAsRead(notif.id)}
                 className="mt-4 text-xs underline"
               >
-                Marquer comme lu
+                {t('notifications.markRead')}
               </button>
             )}
           </div>

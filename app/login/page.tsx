@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "next/navigation";
+import { useI18n } from "@/components/providers/LanguageProvider";
 
 export default function LoginPage() {
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -40,7 +42,7 @@ export default function LoginPage() {
             <span className="text-3xl font-bold text-white">✓</span>
           </div>
           <h1 className="text-4xl font-bold tracking-tight mb-2">H+</h1>
-          <p className="text-gray-400">Mémorise ce qui compte</p>
+          <p className="text-gray-400">{t('login.remember')}</p>
         </div>
 
         {/* CARD */}
@@ -62,7 +64,7 @@ export default function LoginPage() {
 
           <div>
             <label className="text-sm font-medium text-gray-300 block mb-2">
-              Mot de passe
+              {t('login.password')}
             </label>
             <input
               type="password"
@@ -79,11 +81,11 @@ export default function LoginPage() {
             disabled={!email || !password || isLoading}
             className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/30"
           >
-            {isLoading ? "Connexion..." : "Se connecter"}
+            {isLoading ? t('login.signingIn') : t('login.signIn')}
           </button>
 
           <div className="text-center text-sm text-gray-400">
-            <p>Connexion sauvegardée 30 jours</p>
+            <p>{t('login.sessionSaved')}</p>
           </div>
 
         </div>

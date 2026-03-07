@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { extractInvoiceData } from '@/lib/vision/extractInvoice';
 import { sendExpenseEmail } from '@/lib/email/resendService';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
+import { requireValidationCode } from '@/lib/ai/client';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,7 +12,7 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { image, paymentMethod } = await request.json();
+    const { image, paymentMethod, validationCode } = await request.json();
 
     if (!image || !paymentMethod) {
       return NextResponse.json(
@@ -29,10 +30,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Extraire les données de la facture via Google Vision
-    console.log('📄 Extraction des données de la facture...');
-    const invoiceData = await extractInvoiceData(image);
-    console.log('✅ Données extraites:', invoiceData);
+    // Ce module utilise l'IA (Vision + GPT), donc code obligatoire.
+    requireValidationCode(validationCode);
+
+    // 1. Pipeline IA: OCR Vision -> Analyse GPT -> Donnees structurees
+    console.log('📄 Extraction IA des données de la facture...');
+    const invoiceData = await extractInvoiceData(image, userId);
+    console.log('✅ Données IA extraites:', invoiceData);
 
     // 2. Générer un ID unique pour la dépense
     const expenseId = crypto.randomUUID();
@@ -80,8 +84,22 @@ export async function POST(request: NextRequest) {
       data: { publicUrl },
     } = supabase.storage.from('expense-receipts').getPublicUrl(filename);
 
-    // 5. Déterminer le statut selon la méthode de paiement
-    const status = paymentMethod === 'cb_perso' ? 'pending_ndf' : 'pending';
+    // 5. Déterminer le statut selon méthode + eligibilite NDF detectee par IA
+    const status =
+      paymentMethod === 'cb_perso' && invoiceData.ndf_eligible
+        ? 'pending_ndf'
+        : 'pending';
+
+    const aiContext = [
+      invoiceData.description || '',
+      `IA categorie=${invoiceData.category || 'autre'}`,
+      `IA ndf_eligible=${invoiceData.ndf_eligible ? 'true' : 'false'}`,
+      `IA confidence=${invoiceData.confidence ?? 'null'}`,
+      `IA review=${invoiceData.needs_review ? 'true' : 'false'}`,
+    ]
+      .filter(Boolean)
+      .join(' | ')
+      .slice(0, 255);
 
     // 6. Créer la dépense dans Supabase
     console.log('💾 Création de la dépense en base...');
@@ -97,8 +115,8 @@ export async function POST(request: NextRequest) {
         amount_ht: invoiceData.amount_ht,
         amount_tva: invoiceData.amount_tva,
         amount_ttc: invoiceData.amount_ttc,
-        category: 'À catégoriser',
-        description: invoiceData.description,
+        category: invoiceData.category || 'Non catégorisée',
+        description: aiContext,
         photo_url: publicUrl,
         status,
         currency: 'EUR',
@@ -146,14 +164,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       expense: data,
+      ai: {
+        pipeline: 'vision+gpt',
+        ndf_eligible: invoiceData.ndf_eligible,
+        confidence: invoiceData.confidence,
+        needs_review: invoiceData.needs_review,
+      },
       message: paymentMethod === 'cb_perso' 
-        ? 'Dépense enregistrée pour la note de frais'
-        : 'Facture envoyée à la comptabilité',
+        ? invoiceData.ndf_eligible
+          ? 'Dépense IA enregistrée pour la note de frais'
+          : 'Dépense IA enregistrée, verification manuelle recommandee'
+        : 'Facture analysee par IA et envoyee à la comptabilité',
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Erreur API complète:', error);
     return NextResponse.json(
-      { error: error?.message || 'Erreur serveur' },
+      { error: error instanceof Error ? error.message : 'Erreur serveur' },
       { status: 500 }
     );
   }

@@ -6,6 +6,7 @@ import { getAuthHeaders } from "@/lib/auth/clientSession";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "next/navigation";
 import EmailSettingsForm from "@/components/settings/EmailSettingsForm";
+import { useI18n } from "@/components/providers/LanguageProvider";
 
 type PlanName = "BASIC" | "PLUS" | "PRO";
 
@@ -41,12 +42,13 @@ type AiUsageStats = {
 };
 
 export default function SettingsPage() {
+  const { t, language, setLanguage } = useI18n();
   const user = useAuthStore((s) => s.user);
   const router = useRouter();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [previewAvatar, setPreviewAvatar] = useState<string | null>(null);
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<"loading" | "success" | "error" | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -132,18 +134,18 @@ export default function SettingsPage() {
         }
 
         if (!subscriptionRes.ok || !usageRes.ok) {
-          setBillingMessage("Impossible de charger toutes les donnees IA");
+          setBillingMessage(t("settings.loadError"));
         }
       } catch (error) {
         console.error("loadAiSettings error", error);
-        setBillingMessage("Erreur chargement IA/abonnement");
+        setBillingMessage(t("settings.loadAiError"));
       } finally {
         setLoadingBilling(false);
       }
     };
 
     loadAiSettings();
-  }, [user]);
+  }, [user, t]);
 
   if (!user) return null;
 
@@ -163,7 +165,7 @@ export default function SettingsPage() {
     const localPreview = URL.createObjectURL(file);
 
     setPreviewAvatar(localPreview);
-    setUploadStatus("Chargement...");
+    setUploadStatus("loading");
 
     try {
       const filePath = `${user.id}/avatar.jpg`;
@@ -174,7 +176,7 @@ export default function SettingsPage() {
 
       if (uploadError) {
         console.error("Upload error:", uploadError);
-        setUploadStatus("Chargement NOK");
+        setUploadStatus("error");
         return;
       }
 
@@ -189,7 +191,7 @@ export default function SettingsPage() {
 
       if (updateError) {
         console.error("Profile update error:", updateError);
-        setUploadStatus("Chargement NOK");
+        setUploadStatus("error");
         return;
       }
 
@@ -199,10 +201,10 @@ export default function SettingsPage() {
       }));
 
       setPreviewAvatar(data.publicUrl);
-      setUploadStatus("Chargement OK");
+      setUploadStatus("success");
     } catch (err) {
       console.error(err);
-      setUploadStatus("Chargement NOK");
+      setUploadStatus("error");
     }
   };
 
@@ -233,7 +235,7 @@ export default function SettingsPage() {
       await navigator.share(shareData);
     } else {
       await navigator.clipboard.writeText(window.location.origin);
-      alert("Lien copié !");
+      alert("Lien copie !");
     }
   };
 
@@ -302,15 +304,15 @@ export default function SettingsPage() {
 
       const json = await response.json();
       if (!response.ok) {
-        setBillingMessage(json?.error || "Erreur mise a jour abonnement");
+        setBillingMessage(json?.error || t("settings.subscriptionUpdateError"));
         return;
       }
 
       setSubscription(json.subscription || null);
-      setBillingMessage("Abonnement mis a jour");
+      setBillingMessage(t("settings.subscriptionUpdated"));
     } catch (error) {
       console.error(error);
-      setBillingMessage("Erreur reseau abonnement");
+      setBillingMessage(t("settings.networkError"));
     }
   };
 
@@ -338,13 +340,13 @@ export default function SettingsPage() {
     <div className="text-blue-950 max-w-3xl mx-auto space-y-10 pb-20">
 
       <h1 className="text-2xl font-semibold">
-        Paramètres
+        {t("settings.title")}
       </h1>
 
       {/* COMPTE */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-6">
 
-        <h2 className="font-semibold text-lg">Compte</h2>
+        <h2 className="font-semibold text-lg">{t("settings.account")}</h2>
 
         <div className="flex items-center gap-6">
 
@@ -360,7 +362,7 @@ export default function SettingsPage() {
             )}
 
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs">
-              Changer
+              {t("settings.change")}
             </div>
           </div>
 
@@ -372,21 +374,25 @@ export default function SettingsPage() {
           />
 
           <div className="text-sm space-y-1">
-            <p><strong>Pseudo :</strong> {profile?.username}</p>
-            <p><strong>Email :</strong> {user.email}</p>
+            <p><strong>{t("settings.username")} :</strong> {profile?.username}</p>
+            <p><strong>{t("settings.email")} :</strong> {user.email}</p>
             <p className="text-gray-500 text-xs">
               ID : {user.id}
             </p>
 
             {uploadStatus && (
               <p className={`text-xs mt-2 ${
-                uploadStatus.includes("OK")
+                uploadStatus === "success"
                   ? "text-green-600"
-                  : uploadStatus.includes("NOK")
+                  : uploadStatus === "error"
                   ? "text-red-600"
                   : "text-gray-500"
               }`}>
-                {uploadStatus}
+                {uploadStatus === "loading"
+                  ? t("common.loading")
+                  : uploadStatus === "success"
+                  ? t("settings.subscriptionUpdated")
+                  : t("settings.subscriptionUpdateError")}
               </p>
             )}
           </div>
@@ -398,19 +404,37 @@ export default function SettingsPage() {
             onClick={handleLogout}
             className="px-4 py-2 bg-black text-white rounded-xl text-sm"
           >
-            Se déconnecter
+            {t("settings.logout")}
           </button>
 
           <button
             onClick={handleSignOutAll}
             className="px-4 py-2 bg-blue-950 text-white rounded-xl text-sm"
           >
-            Déconnexion tous les appareils
+            {t("settings.logoutAll")}
           </button>
         </div>
 
       </div>
 
+
+      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+        <h2 className="font-semibold text-lg">{t("language.title")}</h2>
+        <p className="text-sm text-gray-600">{t("language.description")}</p>
+        <div className="flex flex-wrap gap-2">
+          {(["fr", "en", "es"] as const).map((lang) => (
+            <button
+              key={lang}
+              onClick={() => setLanguage(lang)}
+              className={`px-4 py-2 rounded-lg text-sm ${
+                language === lang ? "bg-blue-900 text-white" : "bg-gray-100 text-gray-800"
+              }`}
+            >
+              {t(`language.${lang}`)}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* EMAILS */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-6">
@@ -419,28 +443,28 @@ export default function SettingsPage() {
 
       {/* IA + ABONNEMENT */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-6">
-        <h2 className="font-semibold text-lg">IA, modules et abonnement</h2>
+        <h2 className="font-semibold text-lg">{t("settings.aiSection")}</h2>
 
         {loadingBilling ? (
-          <p className="text-sm text-gray-500">Chargement des donnees IA...</p>
+          <p className="text-sm text-gray-500">{t("settings.loadingAi")}</p>
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-xs text-gray-500">Consommation totale</p>
-                <p className="text-lg font-semibold">{usage?.totals.tokens || 0} tokens</p>
+                <p className="text-xs text-gray-500">{t("settings.totalUsage")}</p>
+                <p className="text-lg font-semibold">{usage?.totals.tokens || 0} {t("settings.aiTokens")}</p>
                 <p className="text-sm text-gray-600">~ {Number(usage?.totals.costEstimate || 0).toFixed(4)} EUR</p>
               </div>
 
               <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-xs text-gray-500">Ce mois-ci</p>
-                <p className="text-lg font-semibold">{usage?.thisMonth.tokens || 0} tokens</p>
+                <p className="text-xs text-gray-500">{t("settings.thisMonth")}</p>
+                <p className="text-lg font-semibold">{usage?.thisMonth.tokens || 0} {t("settings.aiTokens")}</p>
                 <p className="text-sm text-gray-600">~ {Number(usage?.thisMonth.costEstimate || 0).toFixed(4)} EUR</p>
               </div>
             </div>
 
             <div className="rounded-xl border border-gray-200 p-4 space-y-3">
-              <p className="text-sm font-semibold">Plan actif</p>
+              <p className="text-sm font-semibold">{t("settings.activePlan")}</p>
 
               <div className="flex flex-wrap gap-2">
                 {(["BASIC", "PLUS", "PRO"] as PlanName[]).map((plan) => (
@@ -459,7 +483,7 @@ export default function SettingsPage() {
               </div>
 
               <p className="text-xs text-gray-600">
-                Prix mensuel: {Number(subscription?.price || 0).toFixed(2)} EUR
+                {t("settings.monthlyPrice")}: {Number(subscription?.price || 0).toFixed(2)} EUR
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2">
@@ -486,21 +510,21 @@ export default function SettingsPage() {
       {/* PARTAGER */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
         <h2 className="font-semibold text-lg">
-          Partager l&apos;application
+          {t("settings.shareApp")}
         </h2>
 
         <button
           onClick={handleShare}
           className="px-4 py-2 bg-black text-white rounded-xl text-sm"
         >
-          Partager
+          {t("common.share")}
         </button>
       </div>
 
       {/* ACCÈS RAPIDE */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
         <h2 className="font-semibold text-lg">
-          Accès rapide
+          {t("settings.quickAccess")}
         </h2>
 
         <div className="flex gap-4 flex-wrap">
@@ -509,21 +533,21 @@ export default function SettingsPage() {
                     onClick={() => router.push("/dashboard")}
                     className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
                   >
-                    Tableau de bord
+                    {t("settings.dashboard")}
                   </button>
 
                   <button
                     onClick={() => router.push("/dashboard/tasks")}
                     className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
                   >
-                    Tâches
+                    {t("settings.tasks")}
                   </button>
 
                   <button
                     onClick={() => router.push("/dashboard/memoire")}
                     className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
                   >
-                    Mémoire
+                    {t("settings.memory")}
                   </button>
 
                   {/* 🔔 NOUVEAU */}
@@ -533,7 +557,7 @@ export default function SettingsPage() {
                     }
                     className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm hover:bg-indigo-700 transition"
                   >
-                    🔔 Notifications
+                    🔔 {t("settings.notifications")}
                   </button>
 
         </div>
@@ -543,7 +567,7 @@ export default function SettingsPage() {
       {/* DONNÉES */}
       <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
         <h2 className="font-semibold text-lg">
-          Données
+          {t("settings.data")}
         </h2>
 
         <div className="flex gap-4 flex-wrap">
@@ -551,14 +575,14 @@ export default function SettingsPage() {
             onClick={handleExport}
             className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
           >
-            Exporter mes données
+            {t("settings.export")}
           </button>
 
           <button
             onClick={() => setShowDeleteModal(true)}
             className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm"
           >
-            Supprimer mon compte
+            {t("settings.deleteAccount")}
           </button>
         </div>
       </div>
@@ -567,7 +591,7 @@ export default function SettingsPage() {
       <div className="text-center text-xs text-gray-400 pt-10">
         My Hyppocampe<br />
         Version 2.4<br />
-        Built by Fred 🧠
+        {t("settings.versionBuiltBy")}
       </div>
 
     </div>

@@ -1,4 +1,11 @@
+"use client";
+
+import Link from 'next/link';
+import { useI18n } from '@/components/providers/LanguageProvider';
+
 export default function LandingPage() {
+  const { t } = useI18n();
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-white to-gray-100 text-center px-6">
 
@@ -7,16 +14,12 @@ export default function LandingPage() {
       </h1>
 
       <p className="text-gray-600 max-w-md mb-8">
-        Ton cerveau externe.  
-        Tâches, mémoire, organisation.
+        {t('landing.subtitle')}
       </p>
 
-      <a
-        href="/"
-        className="px-6 py-3 bg-black text-white rounded-xl"
-      >
-        Se connecter
-      </a>
+      <Link href="/" className="px-6 py-3 bg-black text-white rounded-xl">
+        {t('login.signIn')}
+      </Link>
 
     </div>
   );

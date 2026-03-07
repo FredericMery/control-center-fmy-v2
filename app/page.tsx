@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { useI18n } from "@/components/providers/LanguageProvider";
 
 export default function AuthPage() {
+  const { t } = useI18n();
   const router = useRouter();
 
   const [email, setEmail] = useState("");
@@ -24,7 +26,7 @@ export default function AuthPage() {
 
     if (resetMode) {
       await supabase.auth.resetPasswordForEmail(email);
-      alert("Email de réinitialisation envoyé");
+      alert(t('auth.resetEmailSent'));
       setLoading(false);
       return;
     }
@@ -44,7 +46,7 @@ export default function AuthPage() {
       router.push("/dashboard");
     } else {
       if (!passwordStrong) {
-        alert("Mot de passe trop faible");
+        alert(t('auth.passwordWeak'));
         setLoading(false);
         return;
       }
@@ -102,7 +104,7 @@ export default function AuthPage() {
           <>
             <input
               type="password"
-              placeholder="Mot de passe"
+              placeholder={t('login.password')}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full p-3 border rounded-xl"
@@ -122,12 +124,12 @@ export default function AuthPage() {
           className="w-full py-3 bg-black text-white rounded-xl"
         >
           {loading
-            ? "Chargement..."
+            ? t('common.loading')
             : resetMode
-            ? "Réinitialiser"
+            ? t('auth.reset')
             : isLogin
-            ? "Se connecter"
-            : "Créer un compte"}
+            ? t('login.signIn')
+            : t('auth.createAccount')}
         </button>
 
         <div className="text-sm text-center text-gray-500 space-y-2">
@@ -137,8 +139,8 @@ export default function AuthPage() {
               className="cursor-pointer"
             >
               {isLogin
-                ? "Créer un compte"
-                : "Déjà un compte ? Se connecter"}
+                ? t('auth.createAccount')
+                : t('auth.hasAccount')}
             </p>
           )}
 
@@ -147,8 +149,8 @@ export default function AuthPage() {
             className="cursor-pointer"
           >
             {resetMode
-              ? "Retour"
-              : "Mot de passe oublié ?"}
+              ? t('auth.back')
+              : t('auth.forgotPassword')}
           </p>
         </div>
       </div>

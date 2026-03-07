@@ -11,15 +11,9 @@ import Link from "next/link";
 import NotificationBell from "@/components/NotificationBell";
 import { supabase } from "@/lib/supabase/client";
 import { getValidAccessToken } from "@/lib/auth/clientToken";
+import { useI18n } from "@/components/providers/LanguageProvider";
 
 const statuses = ["todo", "in_progress", "waiting", "done"] as const;
-
-const statusLabels: Record<string, string> = {
-  todo: "À faire",
-  in_progress: "En cours",
-  waiting: "En attente",
-  done: "Terminé",
-};
 
 const statusColors: Record<string, string> = {
   todo: "bg-slate-600/30 text-slate-200",
@@ -36,6 +30,7 @@ const statusEmojis: Record<string, string> = {
 };
 
 export default function TasksPage() {
+  const { t, language } = useI18n();
   const searchParams = useSearchParams();
   const typeParam = searchParams.get("type") as "pro" | "perso" || "pro";
   const openCreate = searchParams.get("new") === "1";
@@ -136,8 +131,8 @@ export default function TasksPage() {
               </Link>
               <div className="text-4xl">{typeEmoji}</div>
               <div>
-                <h1 className="text-2xl font-bold tracking-tight">Tâches {typeTitle}</h1>
-                <p className="text-sm text-gray-400">Gérez vos priorités</p>
+                <h1 className="text-2xl font-bold tracking-tight">{t('tasks.title', { type: typeTitle })}</h1>
+                <p className="text-sm text-gray-400">{t('tasks.subtitle')}</p>
               </div>
             </div>
 
@@ -146,7 +141,7 @@ export default function TasksPage() {
                 onClick={toggleArchivedView}
                 className="px-4 py-2 rounded-full text-xs font-medium bg-white/5 text-gray-300 hover:bg-white/10 transition-all"
               >
-                {showArchived ? "Actives" : "Archives"}
+                {showArchived ? t('tasks.active') : t('tasks.archives')}
               </button>
               <NotificationBell />
             </div>
@@ -162,14 +157,14 @@ export default function TasksPage() {
           <div className="text-center py-16">
             <div className="text-6xl mb-4">🎯</div>
             <p className="text-gray-400 text-lg mb-6">
-              {showArchived ? "Aucune tâche archivée" : "Aucune tâche pour le moment"}
+              {showArchived ? t('tasks.noneArchived') : t('tasks.noneYet')}
             </p>
             {!showArchived && (
               <button
                 onClick={() => setShowModal(true)}
                 className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-full font-semibold transition-all hover:scale-105"
               >
-                Créer une tâche +
+                {t('tasks.createTask')}
               </button>
             )}
           </div>
@@ -209,7 +204,7 @@ export default function TasksPage() {
                         <div
                           className={`px-3 py-1 rounded-full text-xs uppercase font-medium ${statusColors[task.status]}`}
                         >
-                          {statusLabels[task.status]}
+                          {t(`tasks.status.${task.status}`)}
                         </div>
 
                         {task.deadline && (
@@ -220,7 +215,7 @@ export default function TasksPage() {
                                 : "text-gray-400"
                             }`}
                           >
-                            📅 {new Date(task.deadline).toLocaleDateString("fr-FR")}
+                            📅 {new Date(task.deadline).toLocaleDateString(language === 'fr' ? 'fr-FR' : language === 'es' ? 'es-ES' : 'en-US')}
                           </div>
                         )}
                       </div>
@@ -234,14 +229,14 @@ export default function TasksPage() {
                             className="px-2 py-1 rounded-md bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs hover:bg-emerald-500/30 transition-colors"
                             title={`Appeler: ${contacts.phone}`}
                           >
-                            📱 Tél
+                            📱 {t('tasks.phone')}
                           </a>
                         ) : (
                           <span
                             className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-gray-500 text-xs"
-                            title="Ajoute un numéro (ex: +33 6 12 34 56 78)"
+                            title={t('tasks.addPhoneHint')}
                           >
-                            📱 Tél
+                            📱 {t('tasks.phone')}
                           </span>
                         )}
 
@@ -252,14 +247,14 @@ export default function TasksPage() {
                             className="px-2 py-1 rounded-md bg-sky-500/20 border border-sky-400/40 text-sky-300 text-xs hover:bg-sky-500/30 transition-colors"
                             title={`Email: ${contacts.email}`}
                           >
-                            📧 Mail
+                            📧 {t('tasks.mail')}
                           </a>
                         ) : (
                           <span
                             className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-gray-500 text-xs"
-                            title="Ajoute un email (ex: nom@domaine.com)"
+                            title={t('tasks.addEmailHint')}
                           >
-                            📧 Mail
+                            📧 {t('tasks.mail')}
                           </span>
                         )}
 
@@ -277,7 +272,7 @@ export default function TasksPage() {
                         ) : (
                           <span
                             className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-gray-500 text-xs"
-                            title="Ajoute un contact (ex: @Prénom Nom)"
+                            title={t('tasks.addTeamsHint')}
                           >
                             💬 Teams
                           </span>
@@ -298,7 +293,7 @@ export default function TasksPage() {
 
                   {expandedTaskId === task.id && (
                     <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
-                      <p className="text-xs text-gray-400 uppercase tracking-wide">Changer le statut</p>
+                      <p className="text-xs text-gray-400 uppercase tracking-wide">{t('tasks.changeStatus')}</p>
                       <div className="flex gap-2 flex-wrap">
                         {statuses.map((status) => (
                           <button
@@ -310,7 +305,7 @@ export default function TasksPage() {
                             }}
                             className={`px-4 py-2 rounded-lg text-xs uppercase font-medium transition-all ${statusColors[status]} hover:brightness-110`}
                           >
-                            {statusEmojis[status]} {statusLabels[status]}
+                            {statusEmojis[status]} {t(`tasks.status.${status}`)}
                           </button>
                         ))}
                       </div>
@@ -329,7 +324,7 @@ export default function TasksPage() {
                           }}
                           className="w-full px-4 py-2 rounded-lg bg-purple-600/30 text-purple-300 hover:bg-purple-600/40 text-xs uppercase font-medium transition-all"
                         >
-                          ✉️ Transférer
+                          ✉️ {t('tasks.transfer')}
                         </button>
                       </div>
                     </div>
@@ -360,7 +355,7 @@ export default function TasksPage() {
             if (!token) {
               await supabase.auth.signOut();
               window.location.href = "/login";
-              throw new Error("Session expirée. Veuillez vous reconnecter.");
+              throw new Error(t('tasks.sessionExpired'));
             }
 
             const response = await fetch("/api/tasks/transfer", {
@@ -382,7 +377,7 @@ export default function TasksPage() {
               if (response.status === 401) {
                 await supabase.auth.signOut();
                 window.location.href = "/login";
-                throw new Error("Session expirée. Veuillez vous reconnecter.");
+                throw new Error(t('tasks.sessionExpired'));
               }
 
               const contentType = response.headers.get("content-type") || "";
@@ -390,7 +385,7 @@ export default function TasksPage() {
                 ? await response.json()
                 : { error: await response.text() };
               console.error('❌ Erreur serveur:', errorData);
-              throw new Error(errorData.details || errorData.error || "Erreur lors du transfert");
+              throw new Error(errorData.details || errorData.error || t('tasks.transferError'));
             }
 
             const result = await response.json();
@@ -402,10 +397,11 @@ export default function TasksPage() {
             // Fermer le modal et montrer un message de succès
             setTransferModalOpen(false);
             setSelectedTaskForTransfer(null);
-            alert(`✅ Tâche transférée à ${email}`);
-          } catch (error: any) {
+            alert(`✅ ${t('tasks.transferSuccess', { email })}`);
+          } catch (error: unknown) {
             console.error("❌ Erreur transfert complète:", error);
-            alert(`❌ Erreur: ${error.message || 'Erreur inconnue'}`);
+            const message = error instanceof Error ? error.message : t('tasks.unknownError');
+            alert(`❌ ${t('tasks.transferError')}: ${message}`);
           } finally {
             setIsTransferring(false);
           }

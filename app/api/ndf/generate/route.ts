@@ -38,17 +38,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!expenses || expenses.length === 0) {
+    const eligibleExpenses = (expenses || []).filter(
+      (expense) => !(expense.description || '').includes('IA ndf_eligible=false')
+    );
+
+    if (eligibleExpenses.length === 0) {
       return NextResponse.json(
-        { error: 'Aucune dépense à soumettre' },
+        { error: 'Aucune dépense éligible à soumettre' },
         { status: 400 }
       );
     }
 
     // 2. Calculer les totaux
-    const total_ht = expenses.reduce((sum, e) => sum + (e.amount_ht || 0), 0);
-    const total_tva = expenses.reduce((sum, e) => sum + (e.amount_tva || 0), 0);
-    const total_ttc = expenses.reduce((sum, e) => sum + (e.amount_ttc || 0), 0);
+    const total_ht = eligibleExpenses.reduce((sum, e) => sum + (e.amount_ht || 0), 0);
+    const total_tva = eligibleExpenses.reduce((sum, e) => sum + (e.amount_tva || 0), 0);
+    const total_ttc = eligibleExpenses.reduce((sum, e) => sum + (e.amount_ttc || 0), 0);
 
     // 3. Créer la note de frais
     const { data: ndf, error: ndfError } = await supabase
@@ -76,9 +80,7 @@ export async function POST(request: NextRequest) {
     await supabase
       .from('expenses')
       .update({ status: 'submitted' })
-      .eq('user_id', userId)
-      .eq('payment_method', 'cb_perso')
-      .eq('status', 'pending_ndf');
+      .in('id', eligibleExpenses.map((e) => e.id));
 
     // 5. Générer PDF et stocker
     const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
@@ -92,7 +94,7 @@ export async function POST(request: NextRequest) {
         total_ht,
         total_tva,
         total_ttc,
-        expenses: expenses.map(e => ({
+        expenses: eligibleExpenses.map(e => ({
           invoice_number: e.invoice_number,
           invoice_date: e.invoice_date,
           vendor: e.vendor,
@@ -129,7 +131,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       ndf,
-      expenses_count: expenses.length,
+      expenses_count: eligibleExpenses.length,
       totals: {
         ht: total_ht,
         tva: total_tva,

@@ -7,6 +7,7 @@ import {
   getContactsPermission,
   setContactsPermission,
 } from '@/lib/contacts/contactPicker';
+import { useI18n } from '@/components/providers/LanguageProvider';
 
 interface EmailSetting {
   id: string;
@@ -15,6 +16,7 @@ interface EmailSetting {
 }
 
 export default function EmailSettingsForm() {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<EmailSetting[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -159,9 +161,9 @@ export default function EmailSettingsForm() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold text-slate-900 mb-2">Emails</h2>
+        <h2 className="text-2xl font-bold text-slate-900 mb-2">{t('emails.title')}</h2>
         <p className="text-slate-600 text-sm">
-          Configurez où envoyer les factures et les notes de frais
+          {t('emails.subtitle')}
         </p>
       </div>
 
@@ -206,7 +208,7 @@ export default function EmailSettingsForm() {
             disabled={isSaving}
             className="w-full px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
           >
-            {isSaving ? 'Sauvegarde...' : 'Sauvegarder'}
+            {isSaving ? t('common.loading') : t('common.save')}
           </button>
         </div>
       </div>
@@ -238,7 +240,7 @@ export default function EmailSettingsForm() {
             disabled={isSaving}
             className="w-full px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
           >
-            {isSaving ? 'Sauvegarde...' : 'Sauvegarder'}
+            {isSaving ? t('common.loading') : t('common.save')}
           </button>
         </div>
       </div>
@@ -274,7 +276,7 @@ export default function EmailSettingsForm() {
                   : 'bg-slate-200 text-slate-900 hover:bg-slate-300'
               }`}
             >
-              {contactsEnabled ? '✓ Activé' : 'Désactivé'}
+              {contactsEnabled ? `✓ ${t('common.enabled')}` : t('common.disabled')}
             </button>
             
             <p className="text-sm text-slate-600">

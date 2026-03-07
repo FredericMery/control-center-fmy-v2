@@ -6,6 +6,7 @@ import { useMemoryStore } from '@/store/memoryStore';
 import { MEMORY_TEMPLATES } from '@/lib/memoryTemplates';
 import Link from 'next/link';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
+import { useI18n } from '@/components/providers/LanguageProvider';
 
 type SubscriptionFeatures = {
   memory?: boolean;
@@ -13,6 +14,7 @@ type SubscriptionFeatures = {
 };
 
 export default function MemorePage() {
+  const { t } = useI18n();
   const { user } = useAuthStore();
   const { sections, loadingSections, fetchSections, deleteSection } = useMemoryStore();
   const [showNewSection, setShowNewSection] = useState(false);
@@ -123,8 +125,8 @@ export default function MemorePage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-4xl font-light text-white mb-2">📚 Mémoire</h1>
-            <p className="text-gray-400 text-sm">Organize and remember what matters</p>
+            <h1 className="text-4xl font-light text-white mb-2">📚 {t('memory.title')}</h1>
+            <p className="text-gray-400 text-sm">{t('memory.subtitle')}</p>
           </div>
           <div className="flex gap-2">
             {canAccessAiBrain ? (
@@ -132,18 +134,18 @@ export default function MemorePage() {
                 href="/dashboard/memoire/brain"
                 className="px-4 py-2 bg-emerald-400 text-black rounded-lg text-sm font-medium hover:bg-emerald-300 transition-colors"
               >
-                AI Brain
+                {t('memory.aiBrain')}
               </Link>
             ) : (
               <span className="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg text-sm font-medium cursor-not-allowed">
-                AI Brain verrouille
+                {t('memory.aiBrainLocked')}
               </span>
             )}
             <button
               onClick={() => setShowNewSection(!showNewSection)}
               className="px-4 py-2 bg-white text-black rounded-lg text-sm font-light hover:bg-gray-100 transition-colors"
             >
-              {showNewSection ? 'Cancel' : '+ New Collection'}
+              {showNewSection ? t('memory.cancel') : t('memory.newCollection')}
             </button>
           </div>
         </div>
@@ -151,7 +153,7 @@ export default function MemorePage() {
         {/* New Section Selection */}
         {showNewSection && (
           <div className="mb-8 p-6 bg-gray-900/50 border border-gray-700 rounded-lg">
-            <h3 className="text-lg font-light text-white mb-4">Choose a template</h3>
+            <h3 className="text-lg font-light text-white mb-4">{t('memory.chooseTemplate')}</h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               {templates.map((template) => (
                 <button
@@ -172,7 +174,7 @@ export default function MemorePage() {
             {selectedTemplate && (
               <div className="mt-6 p-4 bg-gray-800 rounded-lg">
                 <label className="block text-sm text-gray-300 mb-2">
-                  Collection name (optional)
+                  {t('memory.collectionNameOptional')}
                 </label>
                 <input
                   type="text"
@@ -190,7 +192,7 @@ export default function MemorePage() {
                     disabled={creating}
                     className="flex-1 px-4 py-2 bg-white text-black rounded text-sm font-light hover:bg-gray-100 transition-colors disabled:opacity-50"
                   >
-                    {creating ? 'Creating...' : 'Create'}
+                    {creating ? t('memory.creating') : t('memory.create')}
                   </button>
                   <button
                     onClick={() => {
@@ -200,7 +202,7 @@ export default function MemorePage() {
                     }}
                     className="px-4 py-2 bg-gray-700 text-white rounded text-sm font-light hover:bg-gray-600 transition-colors"
                   >
-                    Clear
+                    {t('memory.clear')}
                   </button>
                 </div>
               </div>
@@ -211,19 +213,19 @@ export default function MemorePage() {
         {/* Sections Grid */}
         {loadingSections ? (
           <div className="flex items-center justify-center h-64">
-            <p className="text-gray-400">Loading...</p>
+            <p className="text-gray-400">{t('memory.loading')}</p>
           </div>
         ) : userSections.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-center">
-            <p className="text-gray-400 mb-4">No collections yet</p>
-            <p className="text-sm text-gray-500">Create your first collection to get started</p>
+            <p className="text-gray-400 mb-4">{t('memory.noCollections')}</p>
+            <p className="text-sm text-gray-500">{t('memory.createFirstCollection')}</p>
           </div>
         ) : (
           <>
             {/* User Collections */}
             {userSections.length > 0 && (
               <div>
-                <h2 className="text-lg font-light text-white mb-4">Collections</h2>
+                <h2 className="text-lg font-light text-white mb-4">{t('memory.collections')}</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {userSections.map((section) => {
                     const template = section.template_id
@@ -239,7 +241,7 @@ export default function MemorePage() {
                           <div className="flex items-start justify-between mb-3">
                             <div className="text-3xl">{template?.icon || '📝'}</div>
                             <div className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded">
-                              {section.items_count || 0} items
+                              {section.items_count || 0} {t('memory.items')}
                             </div>
                           </div>
                           <h3 className="text-lg font-light text-white mb-1 group-hover:text-gray-100 transition-colors">
@@ -256,7 +258,7 @@ export default function MemorePage() {
                           onClick={(e) => handleDeleteSection(e, section.id, section.section_name)}
                           disabled={deletingId === section.id}
                           className="absolute top-3 right-3 p-2 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
-                          title="Supprimer cette mémoire"
+                          title={t('memory.deleteMemory')}
                         >
                           {deletingId === section.id ? (
                             <span className="text-sm">⌛</span>
