@@ -8,56 +8,18 @@ import { useAuthStore } from "@/store/authStore";
 import { getMonthNameFr } from "@/lib/monthHelper";
 import { supabase } from "@/lib/supabase/client";
 import { useI18n } from "@/components/providers/LanguageProvider";
-
-interface Card {
-  id: string;
-  title: string;
-  icon: string;
-  bgColor: string;
-  textColor: string;
-  link: string;
-}
-
-const cards: Card[] = [
-  {
-    id: "pro",
-    title: "Pro",
-    icon: "💼",
-    bgColor: "bg-blue-600/10",
-    textColor: "text-blue-400",
-    link: "/dashboard/tasks?type=pro",
-  },
-  {
-    id: "perso",
-    title: "Perso",
-    icon: "🎯",
-    bgColor: "bg-purple-600/10",
-    textColor: "text-purple-400",
-    link: "/dashboard/tasks?type=perso",
-  },
-  {
-    id: "memoire",
-    title: "Mémoire",
-    icon: "📚",
-    bgColor: "bg-emerald-600/10",
-    textColor: "text-emerald-400",
-    link: "/dashboard/memoire",
-  },
-  {
-    id: "expenses",
-    title: "Dépenses",
-    icon: "💰",
-    bgColor: "bg-amber-600/10",
-    textColor: "text-amber-400",
-    link: "/expenses",
-  },
-];
+import {
+  DASHBOARD_MODULES,
+  loadEnabledDashboardModules,
+  type DashboardModuleId,
+} from "@/lib/modules/dashboardModules";
 
 export default function DashboardPage() {
   const { t, language } = useI18n();
   const user = useAuthStore((state) => state.user);
   const { tasks, fetchTasks } = useTaskStore();
   const [visionCountMonth, setVisionCountMonth] = useState(0);
+  const [enabledModules, setEnabledModules] = useState<DashboardModuleId[]>([]);
   const monthName =
     language === 'fr'
       ? getMonthNameFr()
@@ -68,6 +30,10 @@ export default function DashboardPage() {
       fetchTasks();
     }
   }, [user]);
+
+  useEffect(() => {
+    setEnabledModules(loadEnabledDashboardModules());
+  }, []);
 
   useEffect(() => {
     const fetchMonthlyStats = async () => {
@@ -124,6 +90,12 @@ export default function DashboardPage() {
 
   // TODO: Récupérer le nombre de mémoires actives depuis Supabase
   const memoireCount = 0;
+
+  const cards = useMemo(() => {
+    const enabled = new Set(enabledModules);
+    const selected = DASHBOARD_MODULES.filter((module) => enabled.has(module.id));
+    return selected.length > 0 ? selected : DASHBOARD_MODULES;
+  }, [enabledModules]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white flex flex-col">

@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useAuthStore } from '@/store/authStore';
+import { getAuthHeaders } from '@/lib/auth/clientSession';
 import { useI18n } from '@/components/providers/LanguageProvider';
 
-type Expense = {
+type ExpenseRow = {
   id: string;
+  category: string;
+  amount_ht: number;
+  amount_tva: number;
   vendor: string;
   amount_ttc: number;
   invoice_date: string | null;
@@ -15,40 +18,65 @@ type Expense = {
   created_at: string;
 };
 
+type ExpenseReportResponse = {
+  month: number;
+  year: number;
+  rows: ExpenseRow[];
+  totals: {
+    totalHt: number;
+    totalTax: number;
+    totalTtc: number;
+    status: string;
+  };
+};
+
 export default function ExpensesListPage() {
   const { t, language } = useI18n();
-  const user = useAuthStore((state) => state.user);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [report, setReport] = useState<ExpenseReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
     fetchExpenses();
-  }, [user]);
+  }, []);
 
   const fetchExpenses = async () => {
     try {
-      // À implémenter: récupérer les dépenses depuis l'API
-      setExpenses([]);
-    } catch (error) {
-      console.error('Erreur:', error);
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch('/api/expenses/report', {
+        headers: await getAuthHeaders(false),
+      });
+
+      const json = (await response.json()) as ExpenseReportResponse & { error?: string };
+      if (!response.ok) {
+        setError(json.error || 'Erreur chargement report');
+        return;
+      }
+
+      setReport(json);
+    } catch {
+      setError('Erreur reseau report depenses');
     } finally {
       setLoading(false);
     }
   };
 
+  const locale = language === 'fr' ? 'fr-FR' : language === 'es' ? 'es-ES' : 'en-US';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white">
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div className="sticky top-0 z-20 border-b border-slate-700 bg-slate-950/90 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">{t('expenses.historyTitle')}</h1>
-            <p className="text-sm text-slate-600">{t('expenses.manage')}</p>
+            <h1 className="text-2xl font-bold text-white">{t('expenses.historyTitle')}</h1>
+            <p className="text-sm text-slate-300">{t('expenses.manage')}</p>
           </div>
           <Link
             href="/expenses"
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 transition-colors"
           >
             + {t('expenses.add')}
           </Link>
@@ -56,45 +84,78 @@ export default function ExpensesListPage() {
       </div>
 
       {/* Content */}
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="mx-auto max-w-6xl px-4 py-8">
+        {error && (
+          <div className="mb-4 rounded-lg border border-red-400/40 bg-red-500/10 p-3 text-sm text-red-100">
+            {error}
+          </div>
+        )}
+
         {loading ? (
           <div className="text-center py-16">
-            <p className="text-slate-600">{t('common.loading')}</p>
+            <p className="text-slate-300">{t('common.loading')}</p>
           </div>
-        ) : expenses.length === 0 ? (
-          <div className="text-center py-16">
+        ) : !report || report.rows.length === 0 ? (
+          <div className="rounded-xl border border-slate-700 bg-slate-900/70 py-16 text-center">
             <div className="text-5xl mb-4">📋</div>
-            <p className="text-slate-600 mb-6">{t('expenses.empty')}</p>
+            <p className="text-slate-300 mb-6">{t('expenses.empty')}</p>
             <Link
               href="/expenses"
-              className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="inline-block rounded-lg bg-cyan-500 px-6 py-3 font-semibold text-slate-950 hover:bg-cyan-400 transition-colors"
             >
               {t('expenses.addExpense')}
             </Link>
           </div>
         ) : (
-          <div className="space-y-3">
-            {expenses.map((expense) => (
-              <div
-                key={expense.id}
-                className="bg-white rounded-lg shadow-sm border border-slate-200 p-4"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-slate-900">{expense.vendor}</h3>
-                    <p className="text-sm text-slate-600">
-                      {new Date(expense.created_at).toLocaleDateString(language === 'fr' ? 'fr-FR' : language === 'es' ? 'es-ES' : 'en-US')}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-slate-900">{expense.amount_ttc} €</p>
-                    <p className="text-xs text-slate-600">
-                      {expense.payment_method === 'cb_perso' ? t('expenses.paymentPersonal') : t('expenses.paymentPro')}
-                    </p>
-                  </div>
-                </div>
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-4">
+                <p className="text-xs uppercase tracking-wide text-slate-400">HT mois en cours</p>
+                <p className="mt-1 text-2xl font-semibold text-white">{report.totals.totalHt.toFixed(2)} €</p>
               </div>
-            ))}
+              <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-4">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Taxe mois en cours</p>
+                <p className="mt-1 text-2xl font-semibold text-white">{report.totals.totalTax.toFixed(2)} €</p>
+              </div>
+              <div className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 p-4">
+                <p className="text-xs uppercase tracking-wide text-cyan-200">TTC mois en cours</p>
+                <p className="mt-1 text-2xl font-semibold text-cyan-100">{report.totals.totalTtc.toFixed(2)} €</p>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900/70">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px] text-sm">
+                  <thead className="bg-slate-800/80 text-slate-300">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold">Date</th>
+                      <th className="px-4 py-3 text-left font-semibold">Type</th>
+                      <th className="px-4 py-3 text-right font-semibold">HT</th>
+                      <th className="px-4 py-3 text-right font-semibold">Taxe</th>
+                      <th className="px-4 py-3 text-right font-semibold">TTC</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.rows.map((expense) => (
+                      <tr key={expense.id} className="border-t border-slate-800 text-slate-200">
+                        <td className="px-4 py-3">
+                          {expense.invoice_date
+                            ? new Date(expense.invoice_date).toLocaleDateString(locale)
+                            : new Date(expense.created_at).toLocaleDateString(locale)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-white">{expense.category || '-'}</div>
+                          <div className="text-xs text-slate-400">{expense.vendor || '-'}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right">{Number(expense.amount_ht || 0).toFixed(2)} €</td>
+                        <td className="px-4 py-3 text-right">{Number(expense.amount_tva || 0).toFixed(2)} €</td>
+                        <td className="px-4 py-3 text-right font-semibold text-cyan-200">{Number(expense.amount_ttc || 0).toFixed(2)} €</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
       </div>

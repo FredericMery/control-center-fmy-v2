@@ -1,11 +1,16 @@
 import { Resend } from 'resend';
+import { callOpenAi } from '@/lib/ai/client';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export interface SendExpenseEmailParams {
+  userId: string;
   to: string;
   vendor: string;
-  amount: number;
+  amountHt: number;
+  amountTax: number;
+  amountTtc: number;
+  expenseType: string;
   invoiceNumber?: string | null;
   invoiceDate?: string | null;
   photoUrl?: string;
@@ -15,21 +20,40 @@ export interface SendExpenseEmailParams {
  * Envoie une facture CB Pro par email via Resend
  */
 export async function sendExpenseEmail({
+  userId,
   to,
   vendor,
-  amount,
+  amountHt,
+  amountTax,
+  amountTtc,
+  expenseType,
   invoiceNumber,
   invoiceDate,
   photoUrl,
 }: SendExpenseEmailParams) {
   try {
+    const aiBody = await generateExpenseEmailBodyWithAi({
+      userId,
+      vendor,
+      expenseType,
+      amountHt,
+      amountTax,
+      amountTtc,
+      invoiceNumber,
+      invoiceDate,
+    });
+
     const response = await resend.emails.send({
       from: process.env.EMAIL_FROM || 'noreply@meetsync-ai.com',
       to,
       subject: `Facture - ${vendor}`,
       html: generateExpenseEmailHTML({
+        aiBody,
         vendor,
-        amount,
+        amountHt,
+        amountTax,
+        amountTtc,
+        expenseType,
         invoiceNumber,
         invoiceDate,
       }),
@@ -50,12 +74,101 @@ export async function sendExpenseEmail({
   }
 }
 
+async function generateExpenseEmailBodyWithAi(args: {
+  userId: string;
+  vendor: string;
+  expenseType: string;
+  amountHt: number;
+  amountTax: number;
+  amountTtc: number;
+  invoiceNumber?: string | null;
+  invoiceDate?: string | null;
+}): Promise<string> {
+  const model = 'gpt-4.1-mini';
+  const prompt = [
+    'Rédige un email professionnel en français pour la comptabilité.',
+    'Contexte: transmission d un justificatif de dépense CB Pro.',
+    'Le texte doit être clair, court, poli, sans markdown.',
+    'Inclure explicitement les champs: Date / type / HT / Taxe / TTC.',
+    '',
+    `Fournisseur: ${args.vendor}`,
+    `Date: ${args.invoiceDate || 'N/A'}`,
+    `Type: ${args.expenseType}`,
+    `HT: ${args.amountHt.toFixed(2)} EUR`,
+    `Taxe: ${args.amountTax.toFixed(2)} EUR`,
+    `TTC: ${args.amountTtc.toFixed(2)} EUR`,
+    `Numero facture: ${args.invoiceNumber || 'N/A'}`,
+  ].join('\n');
+
+  try {
+    const response = await callOpenAi({
+      userId: args.userId,
+      service: 'responses',
+      model,
+      body: {
+        model,
+        input: [
+          {
+            role: 'system',
+            content: 'Tu rédiges des emails pro en français. Réponse texte brut uniquement.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+      },
+    });
+
+    const content =
+      response?.output?.[0]?.content?.[0]?.text ||
+      response?.output_text ||
+      '';
+
+    const clean = String(content).trim();
+    if (clean.length > 20) return clean.slice(0, 2400);
+    return '';
+  } catch {
+    return '';
+  }
+}
+
 function generateExpenseEmailHTML({
+  aiBody,
   vendor,
-  amount,
+  amountHt,
+  amountTax,
+  amountTtc,
+  expenseType,
   invoiceNumber,
   invoiceDate,
-}: Omit<SendExpenseEmailParams, 'to' | 'photoUrl'>) {
+}: Omit<SendExpenseEmailParams, 'to' | 'photoUrl' | 'userId'> & { aiBody: string }) {
+  const fallbackBody = [
+    'Bonjour,',
+    '',
+    'Veuillez trouver ci-joint le justificatif d une depense effectuee avec la carte bancaire professionnelle.',
+    '',
+    `Date: ${invoiceDate ? new Date(invoiceDate).toLocaleDateString('fr-FR') : 'N/A'}`,
+    `Type: ${expenseType}`,
+    `HT: ${amountHt.toFixed(2)} EUR`,
+    `Taxe: ${amountTax.toFixed(2)} EUR`,
+    `TTC: ${amountTtc.toFixed(2)} EUR`,
+    invoiceNumber ? `Numero facture: ${invoiceNumber}` : '',
+    `Fournisseur: ${vendor}`,
+    '',
+    'Merci.',
+  ]
+    .filter(Boolean)
+    .join('<br>');
+
+  const aiBodyHtml = aiBody
+    ? aiBody
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join('<br>')
+    : fallbackBody;
+
   return `
     <!DOCTYPE html>
     <html>
@@ -77,19 +190,17 @@ function generateExpenseEmailHTML({
           </div>
 
           <div class="content">
-            <p>Bonjour,</p>
-            <p>Veuillez trouver ci-joint le justificatif d'une dépense effectuée avec la carte bancaire professionnelle.</p>
+            <p>${aiBodyHtml}</p>
             
             <div class="details">
               <strong>Fournisseur:</strong> ${vendor}<br>
-              <strong>Montant TTC:</strong> ${amount.toFixed(2)} €<br>
+              <strong>Date:</strong> ${invoiceDate ? new Date(invoiceDate).toLocaleDateString('fr-FR') : 'N/A'}<br>
+              <strong>Type:</strong> ${expenseType}<br>
+              <strong>Montant HT:</strong> ${amountHt.toFixed(2)} €<br>
+              <strong>Taxe:</strong> ${amountTax.toFixed(2)} €<br>
+              <strong>Montant TTC:</strong> ${amountTtc.toFixed(2)} €<br>
               ${invoiceNumber ? `<strong>N° Facture:</strong> ${invoiceNumber}<br>` : ''}
-              ${invoiceDate ? `<strong>Date:</strong> ${new Date(invoiceDate).toLocaleDateString('fr-FR')}<br>` : ''}
             </div>
-
-            <p>Je vous en souhaite bonne réception.</p>
-            <p>Cordialement,<br>
-            <strong>FM</strong></p>
           </div>
 
           <div class="footer">

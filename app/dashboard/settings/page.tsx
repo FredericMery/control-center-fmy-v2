@@ -8,6 +8,12 @@ import { useRouter } from "next/navigation";
 import EmailSettingsForm from "@/components/settings/EmailSettingsForm";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { FULL_ACCESS_USER_IDS } from "@/lib/subscription/accessControl";
+import {
+  DASHBOARD_MODULES,
+  loadEnabledDashboardModules,
+  saveEnabledDashboardModules,
+  type DashboardModuleId,
+} from "@/lib/modules/dashboardModules";
 
 type PlanName = "BASIC" | "PLUS" | "PRO";
 
@@ -73,6 +79,7 @@ export default function SettingsPage() {
   const [memoryActionsDraft, setMemoryActionsDraft] = useState<Record<string, string>>({});
   const [memoryActionsStatus, setMemoryActionsStatus] = useState<string | null>(null);
   const [loadingMemoryActions, setLoadingMemoryActions] = useState(false);
+  const [enabledModules, setEnabledModules] = useState<DashboardModuleId[]>([]);
 
   /* ============================
      FETCH PROFILE SAFE
@@ -192,6 +199,10 @@ export default function SettingsPage() {
 
     loadMemoryActions();
   }, [user]);
+
+  useEffect(() => {
+    setEnabledModules(loadEnabledDashboardModules());
+  }, []);
 
   if (!user) return null;
 
@@ -411,6 +422,16 @@ export default function SettingsPage() {
     }
   };
 
+  const toggleDashboardModule = (moduleId: DashboardModuleId) => {
+    setEnabledModules((prev) => {
+      const hasModule = prev.includes(moduleId);
+      const next = hasModule ? prev.filter((id) => id !== moduleId) : [...prev, moduleId];
+      const safeNext = next.length > 0 ? next : [moduleId];
+      saveEnabledDashboardModules(safeNext);
+      return safeNext;
+    });
+  };
+
   return (
     <div className="text-blue-950 max-w-3xl mx-auto space-y-10 pb-20">
 
@@ -507,6 +528,30 @@ export default function SettingsPage() {
             >
               {t(`language.${lang}`)}
             </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+        <h2 className="font-semibold text-lg">Modules dashboard</h2>
+        <p className="text-sm text-gray-600">
+          Activez les modules visibles sur la page d accueil.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {DASHBOARD_MODULES.map((module) => (
+            <label
+              key={module.id}
+              className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm"
+            >
+              <span>
+                {module.icon} {module.title}
+              </span>
+              <input
+                type="checkbox"
+                checked={enabledModules.includes(module.id)}
+                onChange={() => toggleDashboardModule(module.id)}
+              />
+            </label>
           ))}
         </div>
       </div>

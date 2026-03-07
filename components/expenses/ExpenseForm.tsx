@@ -7,12 +7,32 @@ import { trackApiCall, trackAppUsage } from '@/lib/tracking/analytics';
 import { useI18n } from '@/components/providers/LanguageProvider';
 
 type PaymentMethod = 'cb_perso' | 'cb_pro';
+type ExpenseStep = 'method' | 'reason' | 'scan' | 'review';
+
+const PERSONAL_REASONS = [
+  'Repas',
+  'Transport',
+  'Hotel',
+  'Fournitures',
+  'Logiciel',
+  'Autre',
+];
+
+const PRO_REASONS = [
+  'Client / Prospection',
+  'Deplacement',
+  'Abonnement',
+  'Materiel',
+  'Formation',
+  'Autre',
+];
 
 export default function ExpenseForm() {
   const { t } = useI18n();
   const router = useRouter();
-  const [step, setStep] = useState<'method' | 'scan' | 'review'>('method');
+  const [step, setStep] = useState<ExpenseStep>('method');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [reason, setReason] = useState<string>('');
   const [image, setImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,10 +40,15 @@ export default function ExpenseForm() {
   const [validationCode, setValidationCode] = useState('');
   const [formData, setFormData] = useState({
     vendor: '',
+    category: '',
+    amount_ht: '',
+    amount_tva: '',
     amount_ttc: '',
     invoice_number: '',
     invoice_date: '',
   });
+
+  const reasonOptions = paymentMethod === 'cb_pro' ? PRO_REASONS : PERSONAL_REASONS;
 
   // Récupérer le token Supabase au chargement
   useEffect(() => {
@@ -46,6 +71,12 @@ export default function ExpenseForm() {
 
   const handleMethodSelect = (method: PaymentMethod) => {
     setPaymentMethod(method);
+    setReason('');
+    setStep('reason');
+  };
+
+  const handleReasonSelect = (selectedReason: string) => {
+    setReason(selectedReason);
     setStep('scan');
   };
 
@@ -82,6 +113,7 @@ export default function ExpenseForm() {
         body: JSON.stringify({
           image: base64Image,
           paymentMethod,
+          reason,
           validationCode,
         }),
       });
@@ -107,6 +139,9 @@ export default function ExpenseForm() {
       setStep('review');
       setFormData({
         vendor: data.expense.vendor || '',
+        category: data.expense.category || reason || '',
+        amount_ht: data.expense.amount_ht?.toString() || '',
+        amount_tva: data.expense.amount_tva?.toString() || '',
         amount_ttc: data.expense.amount_ttc?.toString() || '',
         invoice_number: data.expense.invoice_number || '',
         invoice_date: data.expense.invoice_date || '',
@@ -174,7 +209,42 @@ export default function ExpenseForm() {
           </div>
         )}
 
-        {/* ÉTAPE 2 : SCAN FACTURE */}
+        {/* ÉTAPE 2 : CHOIX RAISON */}
+        {step === 'reason' && paymentMethod && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+              <h3 className="text-lg font-semibold text-slate-900">Choix de raison</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                {paymentMethod === 'cb_perso'
+                  ? 'Pourquoi cette depense perso doit etre suivie ce mois-ci ?'
+                  : 'Quel est le contexte de cette depense pro ?'}
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {reasonOptions.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => handleReasonSelect(option)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-4 text-left text-sm font-medium text-slate-900 shadow-sm transition hover:border-blue-300 hover:bg-blue-50"
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setStep('method')}
+              className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-medium text-slate-900 hover:bg-slate-50"
+            >
+              {t('expenses.back')}
+            </button>
+          </div>
+        )}
+
+        {/* ÉTAPE 3 : SCAN FACTURE */}
         {step === 'scan' && (
           <div className="space-y-4">
             {/* Message */}
@@ -184,6 +254,9 @@ export default function ExpenseForm() {
                   ? 'Cette dépense sera ajoutée à votre note de frais du mois'
                   : 'Cette facture sera envoyée à la comptabilité automatiquement'}
               </p>
+              {reason && (
+                <p className="mt-2 text-xs text-blue-800">Raison: <strong>{reason}</strong></p>
+              )}
             </div>
 
             {/* Upload Area */}
@@ -246,7 +319,7 @@ export default function ExpenseForm() {
             <div className="flex gap-3">
               <button
                 onClick={() => {
-                  setStep('method');
+                  setStep('reason');
                   setImage(null);
                   setError(null);
                 }}
@@ -258,7 +331,7 @@ export default function ExpenseForm() {
           </div>
         )}
 
-        {/* ÉTAPE 3 : CONFIRMATION */}
+        {/* ÉTAPE 4 : CONFIRMATION */}
         {step === 'review' && (
           <div className="space-y-4">
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-6 text-center space-y-3">
@@ -281,6 +354,18 @@ export default function ExpenseForm() {
                 <div>
                   <p className="text-xs text-slate-600 uppercase mb-1">Fournisseur</p>
                   <p className="font-semibold text-slate-900">{formData.vendor || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-600 uppercase mb-1">Type</p>
+                  <p className="font-semibold text-slate-900">{formData.category || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-600 uppercase mb-1">Montant HT</p>
+                  <p className="font-semibold text-slate-900">{formData.amount_ht || '-'} €</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-600 uppercase mb-1">Taxe</p>
+                  <p className="font-semibold text-slate-900">{formData.amount_tva || '-'} €</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-600 uppercase mb-1">Montant TTC</p>

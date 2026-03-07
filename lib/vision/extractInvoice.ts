@@ -9,6 +9,7 @@ interface ExtractedInvoiceData {
   vendor: string | null;
   description: string | null;
   category: string | null;
+  expense_type: string | null;
   ndf_eligible: boolean;
   confidence: number | null;
   needs_review: boolean;
@@ -38,6 +39,7 @@ export async function extractInvoiceData(base64Image: string, userId: string): P
       vendor: extractVendor(text),
       description: extractDescription(text),
       category: inferCategory(text),
+      expense_type: inferCategory(text),
       ndf_eligible: true,
       confidence: null,
       needs_review: false,
@@ -52,6 +54,7 @@ export async function extractInvoiceData(base64Image: string, userId: string): P
     const amountTva = parseMaybeNumber(aiParsed.amount_tva) ?? fallback.amount_tva;
 
     const safeCategory = String(aiParsed.category || fallback.category || 'Non catégorisée').slice(0, 80);
+    const safeExpenseType = String(aiParsed.expense_type || safeCategory || 'autre').slice(0, 80);
     const confidence = clampConfidence(aiParsed.confidence);
 
     const ndfEligible =
@@ -71,6 +74,7 @@ export async function extractInvoiceData(base64Image: string, userId: string): P
       vendor: String(aiParsed.vendor || fallback.vendor || '').trim() || null,
       description: String(aiParsed.description || fallback.description || '').trim() || null,
       category: safeCategory,
+      expense_type: safeExpenseType,
       ndf_eligible: ndfEligible,
       confidence,
       needs_review: needsReview,
@@ -92,6 +96,7 @@ function getEmptyResult(): ExtractedInvoiceData {
     vendor: null,
     description: null,
     category: 'Non catégorisée',
+    expense_type: 'autre',
     ndf_eligible: true,
     confidence: null,
     needs_review: true,
@@ -113,6 +118,7 @@ async function parseInvoiceWithGpt(userId: string, rawText: string): Promise<Rec
     '  "vendor": string|null,',
     '  "description": string|null,',
     '  "category": string|null,',
+    '  "expense_type": string|null,',
     '  "ndf_eligible": boolean,',
     '  "confidence": number|null,',
     '  "needs_review": boolean',
@@ -120,7 +126,7 @@ async function parseInvoiceWithGpt(userId: string, rawText: string): Promise<Rec
     '',
     'Regles:',
     '- invoice_date au format YYYY-MM-DD si possible',
-    '- category parmi: repas, transport, hotel, abonnement, fournitures, logiciel, autre',
+    '- category et expense_type parmi: repas, transport, hotel, abonnement, fournitures, logiciel, autre',
     '- ndf_eligible=false si depense manifestement perso/non remboursable',
     '- confidence entre 0 et 1',
     '',

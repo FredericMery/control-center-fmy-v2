@@ -12,7 +12,7 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { image, paymentMethod, validationCode } = await request.json();
+    const { image, paymentMethod, validationCode, reason } = await request.json();
 
     if (!image || !paymentMethod) {
       return NextResponse.json(
@@ -90,9 +90,14 @@ export async function POST(request: NextRequest) {
         ? 'pending_ndf'
         : 'pending';
 
+    const normalizedReason = String(reason || '').trim().slice(0, 80);
+    const expenseType = normalizedReason || invoiceData.expense_type || invoiceData.category || 'autre';
+
     const aiContext = [
       invoiceData.description || '',
+      normalizedReason ? `Reason utilisateur=${normalizedReason}` : '',
       `IA categorie=${invoiceData.category || 'autre'}`,
+      `IA expense_type=${invoiceData.expense_type || 'autre'}`,
       `IA ndf_eligible=${invoiceData.ndf_eligible ? 'true' : 'false'}`,
       `IA confidence=${invoiceData.confidence ?? 'null'}`,
       `IA review=${invoiceData.needs_review ? 'true' : 'false'}`,
@@ -115,7 +120,7 @@ export async function POST(request: NextRequest) {
         amount_ht: invoiceData.amount_ht,
         amount_tva: invoiceData.amount_tva,
         amount_ttc: invoiceData.amount_ttc,
-        category: invoiceData.category || 'Non catégorisée',
+        category: expenseType,
         description: aiContext,
         photo_url: publicUrl,
         status,
@@ -147,9 +152,13 @@ export async function POST(request: NextRequest) {
 
         if (settings?.email) {
           await sendExpenseEmail({
+            userId,
             to: settings.email,
             vendor: invoiceData.vendor || 'Fournisseur',
-            amount: invoiceData.amount_ttc || 0,
+            amountHt: invoiceData.amount_ht || 0,
+            amountTax: invoiceData.amount_tva || 0,
+            amountTtc: invoiceData.amount_ttc || 0,
+            expenseType,
             invoiceNumber: invoiceData.invoice_number || undefined,
             invoiceDate: invoiceData.invoice_date || undefined,
             photoUrl: publicUrl,
@@ -160,6 +169,9 @@ export async function POST(request: NextRequest) {
         // Continuer même si email échoue
       }
     }
+
+    // 8. Mettre a jour le report du mois en cours.
+    await syncCurrentMonthReport(userId);
 
     return NextResponse.json({
       success: true,
@@ -182,5 +194,62 @@ export async function POST(request: NextRequest) {
       { error: error instanceof Error ? error.message : 'Erreur serveur' },
       { status: 500 }
     );
+  }
+}
+
+async function syncCurrentMonthReport(userId: string) {
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  const year = now.getFullYear();
+
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`;
+  const monthEnd = new Date(year, month, 0).toISOString().slice(0, 10) + 'T23:59:59.999Z';
+
+  const { data: monthExpenses } = await supabase
+    .from('expenses')
+    .select('amount_ht, amount_tva, amount_ttc')
+    .eq('user_id', userId)
+    .gte('created_at', monthStart)
+    .lte('created_at', monthEnd);
+
+  const totals = (monthExpenses || []).reduce(
+    (acc, expense) => {
+      acc.ht += Number(expense.amount_ht || 0);
+      acc.tva += Number(expense.amount_tva || 0);
+      acc.ttc += Number(expense.amount_ttc || 0);
+      return acc;
+    },
+    { ht: 0, tva: 0, ttc: 0 }
+  );
+
+  const { data: existing } = await supabase
+    .from('ndf_reports')
+    .select('id, status')
+    .eq('user_id', userId)
+    .eq('month', month)
+    .eq('year', year)
+    .maybeSingle();
+
+  if (existing?.id) {
+    await supabase
+      .from('ndf_reports')
+      .update({
+        total_ht: totals.ht,
+        total_tva: totals.tva,
+        total_ttc: totals.ttc,
+      })
+      .eq('id', existing.id);
+  } else {
+    await supabase
+      .from('ndf_reports')
+      .insert({
+        user_id: userId,
+        month,
+        year,
+        total_ht: totals.ht,
+        total_tva: totals.tva,
+        total_ttc: totals.ttc,
+        status: 'draft',
+      });
   }
 }
