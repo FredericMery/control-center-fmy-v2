@@ -38,6 +38,61 @@ function toFieldKey(label: string): string {
     .replace(/\s+/g, '_');
 }
 
+function normalizeWineYearText(rawText: string): string {
+  // Handle common OCR confusion like 2O19 -> 2019.
+  return rawText.replace(/\b([12])[oO]([0-9]{2})\b/g, '$10$2');
+}
+
+function extractWineVintageYear(rawText: string): string | null {
+  const text = normalizeWineYearText(rawText);
+  const currentYear = new Date().getFullYear();
+  const minYear = 1900;
+  const maxYear = currentYear + 1;
+  const keywords = [
+    'vintage',
+    'millesime',
+    'millesime',
+    'annee',
+    'vendange',
+    'bottled',
+    'mis en bouteille',
+    'appellation',
+    'cuvee',
+    'reserve',
+  ];
+
+  const matches = Array.from(text.matchAll(/\b(19\d{2}|20\d{2})\b/g));
+  if (matches.length === 0) return null;
+
+  const candidates = matches
+    .map((match) => {
+      const value = Number(match[1]);
+      const index = match.index ?? 0;
+      if (!Number.isFinite(value) || value < minYear || value > maxYear) return null;
+
+      const start = Math.max(0, index - 28);
+      const end = Math.min(text.length, index + 32);
+      const context = text.slice(start, end).toLowerCase();
+
+      let score = 0;
+      if (keywords.some((keyword) => context.includes(keyword))) score += 7;
+      if (value >= 1950 && value <= currentYear) score += 3;
+      if (value >= currentYear - 1) score -= 2;
+
+      return {
+        value,
+        index,
+        score,
+      };
+    })
+    .filter((entry): entry is { value: number; index: number; score: number } => Boolean(entry));
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => b.score - a.score || a.index - b.index);
+  return String(candidates[0].value);
+}
+
 export async function parseOcrToTemplateFields(args: {
   userId: string;
   rawText: string;
@@ -115,6 +170,17 @@ export async function parseOcrToTemplateFields(args: {
   for (const key of allowedKeys) {
     const value = parsed[key];
     clean[key] = typeof value === 'string' ? value.trim().slice(0, 600) : '';
+  }
+
+  if (templateId === 'wines') {
+    const extractedYear = extractWineVintageYear(rawText);
+    if (extractedYear) {
+      if (allowedKeys.has('annee')) {
+        clean.annee = extractedYear;
+      } else if (allowedKeys.has('year')) {
+        clean.year = extractedYear;
+      }
+    }
   }
 
   return clean;
