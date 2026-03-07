@@ -40,7 +40,7 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
     icon: '💰',
     bgColor: 'bg-amber-600/10',
     textColor: 'text-amber-400',
-    link: '/expenses',
+    link: '/dashboard/expenses',
   },
 ];
 

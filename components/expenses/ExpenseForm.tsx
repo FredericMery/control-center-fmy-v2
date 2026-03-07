@@ -7,7 +7,14 @@ import { trackApiCall, trackAppUsage } from '@/lib/tracking/analytics';
 import { useI18n } from '@/components/providers/LanguageProvider';
 
 type PaymentMethod = 'cb_perso' | 'cb_pro';
-type ExpenseStep = 'method' | 'reason' | 'scan' | 'review';
+type ExpenseStep = 'method' | 'recipient' | 'reason' | 'scan' | 'review';
+
+type ExpenseRecipient = {
+  id: string;
+  name: string;
+  destination: string;
+  created_at: string;
+};
 
 const PERSONAL_REASONS = [
   'Repas',
@@ -49,6 +56,13 @@ export default function ExpenseForm() {
   const [error, setError] = useState<string | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [validationCode, setValidationCode] = useState('');
+  const [recipients, setRecipients] = useState<ExpenseRecipient[]>([]);
+  const [selectedRecipientId, setSelectedRecipientId] = useState<string>('');
+  const [showAddRecipient, setShowAddRecipient] = useState(false);
+  const [newRecipientName, setNewRecipientName] = useState('');
+  const [newRecipientDestination, setNewRecipientDestination] = useState('');
+  const [recipientsLoading, setRecipientsLoading] = useState(false);
+  const [savingRecipient, setSavingRecipient] = useState(false);
   const [formData, setFormData] = useState({
     vendor: '',
     category: '',
@@ -80,10 +94,18 @@ export default function ExpenseForm() {
     getAuthToken();
   }, []);
 
+  useEffect(() => {
+    if (!authToken) return;
+    loadRecipients(authToken);
+  }, [authToken]);
+
   const handleMethodSelect = (method: PaymentMethod) => {
     setPaymentMethod(method);
     setReason('');
-    setStep('reason');
+    setSelectedRecipientId('');
+    setShowAddRecipient(false);
+    setError(null);
+    setStep(method === 'cb_perso' ? 'recipient' : 'reason');
   };
 
   const handleReasonSelect = (selectedReason: string) => {
@@ -126,6 +148,8 @@ export default function ExpenseForm() {
     setIsLoading(true);
     setError(null);
 
+    const selectedRecipient = recipients.find((recipient) => recipient.id === selectedRecipientId);
+
     try {
       console.log('🚀 Envoi de la facture à l\'API...');
       const response = await fetch('/api/expenses/create', {
@@ -139,6 +163,8 @@ export default function ExpenseForm() {
           paymentMethod,
           reason,
           validationCode,
+          recipientName: selectedRecipient?.name || null,
+          recipientDestination: selectedRecipient?.destination || null,
         }),
       });
 
@@ -173,7 +199,7 @@ export default function ExpenseForm() {
 
       // Rediriger après 2 secondes
       setTimeout(() => {
-        router.push('/dashboard/notifications');
+        router.push('/dashboard/expenses');
       }, 2000);
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : t('expenses.processingError');
@@ -182,6 +208,68 @@ export default function ExpenseForm() {
       console.error('❌ Erreur catch:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadRecipients = async (token: string) => {
+    try {
+      setRecipientsLoading(true);
+      const list = await fetchRecipients(token);
+      setRecipients(list);
+      if (list.length > 0 && !selectedRecipientId) {
+        setSelectedRecipientId(list[0].id);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erreur chargement destinataires';
+      setError(message);
+    } finally {
+      setRecipientsLoading(false);
+    }
+  };
+
+  const handleCreateRecipient = async () => {
+    if (!authToken) {
+      setError('Non authentifie. Veuillez vous reconnecter.');
+      return;
+    }
+
+    const name = newRecipientName.trim();
+    const destination = newRecipientDestination.trim();
+
+    if (!name || !destination) {
+      setError('Nom destinataire et destinataire sont requis');
+      return;
+    }
+
+    try {
+      setSavingRecipient(true);
+      setError(null);
+
+      const response = await fetch('/api/settings/expense-recipients', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ name, destination }),
+      });
+
+      const json = (await response.json()) as { recipient?: ExpenseRecipient; error?: string };
+      if (!response.ok || !json.recipient) {
+        setError(json.error || 'Erreur creation destinataire');
+        return;
+      }
+
+      setRecipients((prev) => [json.recipient!, ...prev]);
+      setSelectedRecipientId(json.recipient.id);
+      setNewRecipientName('');
+      setNewRecipientDestination('');
+      setShowAddRecipient(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erreur creation destinataire';
+      setError(message);
+    } finally {
+      setSavingRecipient(false);
     }
   };
 
@@ -260,11 +348,115 @@ export default function ExpenseForm() {
 
             <button
               type="button"
-              onClick={() => setStep('method')}
+              onClick={() => setStep(paymentMethod === 'cb_perso' ? 'recipient' : 'method')}
               className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-medium text-slate-900 hover:bg-slate-50"
             >
               {t('expenses.back')}
             </button>
+          </div>
+        )}
+
+        {/* ETAPE 2 BIS : DESTINATAIRE CB PERSO */}
+        {step === 'recipient' && paymentMethod === 'cb_perso' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+              <h3 className="text-lg font-semibold text-slate-900">Destinataire de la depense</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Selectionnez l entreprise destinataire avant de scanner la facture.
+              </p>
+            </div>
+
+            {recipientsLoading ? (
+              <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+                Chargement des destinataires...
+              </div>
+            ) : recipients.length === 0 ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                Aucun destinataire enregistre. Ajoutez-en un pour continuer.
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {recipients.map((recipient) => {
+                  const selected = recipient.id === selectedRecipientId;
+                  return (
+                    <button
+                      key={recipient.id}
+                      type="button"
+                      onClick={() => setSelectedRecipientId(recipient.id)}
+                      className={`rounded-xl border px-4 py-4 text-left text-sm transition ${
+                        selected
+                          ? 'border-blue-400 bg-blue-50 text-blue-900'
+                          : 'border-slate-200 bg-white text-slate-900 hover:border-blue-300'
+                      }`}
+                    >
+                      <p className="font-semibold">{recipient.name}</p>
+                      <p className="text-xs text-slate-600 mt-1">{recipient.destination}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowAddRecipient((prev) => !prev)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 hover:bg-slate-50"
+            >
+              + Ajouter un destinataire
+            </button>
+
+            {showAddRecipient && (
+              <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Nom destinataire</label>
+                  <input
+                    type="text"
+                    value={newRecipientName}
+                    onChange={(e) => setNewRecipientName(e.target.value)}
+                    placeholder="Entreprise Alpha"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                    disabled={savingRecipient}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Destinataire</label>
+                  <input
+                    type="text"
+                    value={newRecipientDestination}
+                    onChange={(e) => setNewRecipientDestination(e.target.value)}
+                    placeholder="compta@entreprise.com"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                    disabled={savingRecipient}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCreateRecipient}
+                  disabled={savingRecipient}
+                  className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {savingRecipient ? 'Enregistrement...' : 'Enregistrer destinataire'}
+                </button>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setStep('method')}
+                className="flex-1 rounded-lg border border-slate-300 px-4 py-3 text-sm font-medium text-slate-900 hover:bg-slate-50"
+              >
+                {t('expenses.back')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep('reason')}
+                disabled={!selectedRecipientId}
+                className="flex-1 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                Continuer
+              </button>
+            </div>
           </div>
         )}
 
@@ -280,6 +472,11 @@ export default function ExpenseForm() {
               </p>
               {reason && (
                 <p className="mt-2 text-xs text-blue-800">Raison: <strong>{reason}</strong></p>
+              )}
+              {paymentMethod === 'cb_perso' && selectedRecipientId && (
+                <p className="mt-1 text-xs text-blue-800">
+                  Destinataire: <strong>{recipients.find((r) => r.id === selectedRecipientId)?.name || '-'}</strong>
+                </p>
               )}
             </div>
 
@@ -415,6 +612,22 @@ export default function ExpenseForm() {
     </div>
   );
 }
+
+async function fetchRecipients(token: string): Promise<ExpenseRecipient[]> {
+  const response = await fetch('/api/settings/expense-recipients', {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const json = (await response.json()) as { recipients?: ExpenseRecipient[]; error?: string };
+  if (!response.ok) {
+    throw new Error(json.error || 'Erreur chargement destinataires');
+  }
+
+  return json.recipients || [];
+}
+
 
 async function convertImageToJpegDataUrl(file: File): Promise<string> {
   const objectUrl = URL.createObjectURL(file);

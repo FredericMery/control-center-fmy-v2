@@ -15,6 +15,13 @@ interface EmailSetting {
   email: string;
 }
 
+interface ExpenseRecipient {
+  id: string;
+  name: string;
+  destination: string;
+  created_at: string;
+}
+
 export default function EmailSettingsForm() {
   const { t } = useI18n();
   const [settings, setSettings] = useState<EmailSetting[]>([]);
@@ -30,6 +37,10 @@ export default function EmailSettingsForm() {
   });
   const [contactsSupported, setContactsSupported] = useState(false);
   const [contactsEnabled, setContactsEnabled] = useState(false);
+  const [recipients, setRecipients] = useState<ExpenseRecipient[]>([]);
+  const [recipientsLoading, setRecipientsLoading] = useState(false);
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientDestination, setRecipientDestination] = useState('');
 
   // Récupérer le token Supabase
   useEffect(() => {
@@ -94,6 +105,34 @@ export default function EmailSettingsForm() {
     fetchSettings();
   }, [authToken]);
 
+  useEffect(() => {
+    if (!authToken) return;
+
+    const fetchRecipients = async () => {
+      try {
+        setRecipientsLoading(true);
+        const response = await fetch('/api/settings/expense-recipients', {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Erreur chargement destinataires');
+        }
+
+        setRecipients(data.recipients || []);
+      } catch (err: any) {
+        setError(err?.message || 'Erreur chargement destinataires');
+      } finally {
+        setRecipientsLoading(false);
+      }
+    };
+
+    fetchRecipients();
+  }, [authToken]);
+
   const handleSave = async (type: 'facture' | 'ndf') => {
     const email = formData[type];
 
@@ -143,6 +182,79 @@ export default function EmailSettingsForm() {
     } catch (err: any) {
       console.error('❌ Erreur catch:', err);
       setError(err?.message || 'Erreur lors de la sauvegarde');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAddRecipient = async () => {
+    if (!authToken) {
+      setError('Non authentifie. Veuillez vous reconnecter.');
+      return;
+    }
+
+    const name = recipientName.trim();
+    const destination = recipientDestination.trim();
+    if (!name || !destination) {
+      setError('Nom destinataire et destinataire requis');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      setError(null);
+      const response = await fetch('/api/settings/expense-recipients', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ name, destination }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur creation destinataire');
+      }
+
+      if (data.recipient) {
+        setRecipients((prev) => [data.recipient, ...prev]);
+      }
+      setRecipientName('');
+      setRecipientDestination('');
+      setSuccess('Destinataire ajoute');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err?.message || 'Erreur creation destinataire');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteRecipient = async (id: string) => {
+    if (!authToken) {
+      setError('Non authentifie. Veuillez vous reconnecter.');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      setError(null);
+      const response = await fetch(`/api/settings/expense-recipients?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur suppression destinataire');
+      }
+
+      setRecipients((prev) => prev.filter((recipient) => recipient.id !== id));
+    } catch (err: any) {
+      setError(err?.message || 'Erreur suppression destinataire');
     } finally {
       setIsSaving(false);
     }
@@ -243,6 +355,70 @@ export default function EmailSettingsForm() {
             {isSaving ? t('common.loading') : t('common.save')}
           </button>
         </div>
+      </div>
+
+      {/* Destinataires depenses CB Perso */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="text-2xl">🏢</div>
+          <div>
+            <h3 className="font-semibold text-slate-900">Destinataires depenses CB Perso</h3>
+            <p className="text-xs text-slate-600">
+              Ces destinataires sont proposes dans le workflow depense perso.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <input
+            type="text"
+            placeholder="Nom destinataire (ex: Entreprise ABC)"
+            value={recipientName}
+            onChange={(e) => setRecipientName(e.target.value)}
+            className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+          />
+          <input
+            type="text"
+            placeholder="Destinataire (ex: compta@abc.com)"
+            value={recipientDestination}
+            onChange={(e) => setRecipientDestination(e.target.value)}
+            className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+          />
+        </div>
+
+        <button
+          onClick={handleAddRecipient}
+          disabled={isSaving}
+          className="w-full px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+        >
+          {isSaving ? t('common.loading') : '+ Ajouter un destinataire'}
+        </button>
+
+        {recipientsLoading ? (
+          <p className="text-sm text-slate-600">Chargement des destinataires...</p>
+        ) : recipients.length === 0 ? (
+          <p className="text-sm text-slate-600">Aucun destinataire enregistre.</p>
+        ) : (
+          <div className="space-y-2">
+            {recipients.map((recipient) => (
+              <div
+                key={recipient.id}
+                className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2"
+              >
+                <div>
+                  <p className="text-sm font-medium text-slate-900">{recipient.name}</p>
+                  <p className="text-xs text-slate-600">{recipient.destination}</p>
+                </div>
+                <button
+                  onClick={() => handleDeleteRecipient(recipient.id)}
+                  className="rounded-lg border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
+                >
+                  Supprimer
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Info */}

@@ -12,7 +12,14 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { image, paymentMethod, validationCode, reason } = await request.json();
+    const {
+      image,
+      paymentMethod,
+      validationCode,
+      reason,
+      recipientName,
+      recipientDestination,
+    } = await request.json();
 
     if (!image || !paymentMethod) {
       return NextResponse.json(
@@ -91,11 +98,15 @@ export async function POST(request: NextRequest) {
         : 'pending';
 
     const normalizedReason = String(reason || '').trim().slice(0, 80);
+    const normalizedRecipientName = String(recipientName || '').trim().slice(0, 120);
+    const normalizedRecipientDestination = String(recipientDestination || '').trim().slice(0, 180);
     const expenseType = normalizedReason || invoiceData.expense_type || invoiceData.category || 'autre';
 
     const aiContext = [
       invoiceData.description || '',
       normalizedReason ? `Reason utilisateur=${normalizedReason}` : '',
+      normalizedRecipientName ? `Destinataire nom=${normalizedRecipientName}` : '',
+      normalizedRecipientDestination ? `Destinataire=${normalizedRecipientDestination}` : '',
       `IA categorie=${invoiceData.category || 'autre'}`,
       `IA expense_type=${invoiceData.expense_type || 'autre'}`,
       `IA ndf_eligible=${invoiceData.ndf_eligible ? 'true' : 'false'}`,
