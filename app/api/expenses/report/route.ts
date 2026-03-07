@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     const { data: expenses, error: expensesError } = await supabase
       .from('expenses')
-      .select('id, invoice_date, category, amount_ht, amount_tva, amount_ttc, payment_method, vendor, status, created_at, description')
+      .select('id, invoice_number, invoice_date, category, amount_ht, amount_tva, amount_ttc, payment_method, vendor, photo_url, status, created_at, description')
       .eq('user_id', userId)
       .gte('created_at', start)
       .lte('created_at', end)

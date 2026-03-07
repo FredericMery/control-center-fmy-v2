@@ -7,6 +7,7 @@ import { useI18n } from '@/components/providers/LanguageProvider';
 
 type ExpenseRow = {
   id: string;
+  invoice_number: string | null;
   category: string;
   amount_ht: number;
   amount_tva: number;
@@ -14,6 +15,7 @@ type ExpenseRow = {
   amount_ttc: number;
   invoice_date: string | null;
   payment_method: 'cb_perso' | 'cb_pro';
+  photo_url?: string | null;
   email_sent?: boolean;
   recipient_name?: string | null;
   recipient_destination?: string | null;
@@ -39,6 +41,9 @@ export default function ExpensesListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRecipient, setSelectedRecipient] = useState<string>('all');
+  const [selectedExpense, setSelectedExpense] = useState<ExpenseRow | null>(null);
+  const [isResendingEmail, setIsResendingEmail] = useState(false);
+  const [modalMessage, setModalMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchExpenses();
@@ -104,6 +109,49 @@ export default function ExpensesListPage() {
       { totalHt: 0, totalTax: 0, totalTtc: 0 }
     );
   }, [filteredRows]);
+
+  const closeModal = () => {
+    setSelectedExpense(null);
+    setModalMessage(null);
+  };
+
+  const handleResendEmail = async () => {
+    if (!selectedExpense) return;
+
+    try {
+      setIsResendingEmail(true);
+      setModalMessage(null);
+
+      const response = await fetch('/api/expenses/resend', {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ expenseId: selectedExpense.id }),
+      });
+
+      const json = (await response.json()) as { success?: boolean; error?: string; message?: string };
+      if (!response.ok) {
+        setModalMessage(json.error || 'Erreur renvoi email');
+        return;
+      }
+
+      setModalMessage(json.message || 'Email renvoye avec succes');
+
+      setSelectedExpense((prev) => (prev ? { ...prev, email_sent: true } : prev));
+      setReport((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          rows: prev.rows.map((row) =>
+            row.id === selectedExpense.id ? { ...row, email_sent: true } : row
+          ),
+        };
+      });
+    } catch {
+      setModalMessage('Erreur reseau renvoi email');
+    } finally {
+      setIsResendingEmail(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white">
@@ -196,7 +244,11 @@ export default function ExpensesListPage() {
                   </thead>
                   <tbody>
                     {filteredRows.map((expense) => (
-                      <tr key={expense.id} className="border-t border-slate-800 text-slate-200">
+                      <tr
+                        key={expense.id}
+                        className="cursor-pointer border-t border-slate-800 text-slate-200 transition hover:bg-slate-800/40"
+                        onClick={() => setSelectedExpense(expense)}
+                      >
                         <td className="px-4 py-3">
                           {expense.invoice_date
                             ? new Date(expense.invoice_date).toLocaleDateString(locale)
@@ -247,6 +299,118 @@ export default function ExpensesListPage() {
           </div>
         )}
       </div>
+
+      {selectedExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+            <div className="sticky top-0 flex items-center justify-between border-b border-slate-700 bg-slate-900/95 px-4 py-3">
+              <div>
+                <h3 className="text-base font-semibold text-white">Detail depense</h3>
+                <p className="text-xs text-slate-400">{selectedExpense.vendor || 'Sans fournisseur'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <div className="space-y-4 p-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-slate-700 bg-slate-800/70 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">Date</p>
+                  <p className="text-sm text-slate-100">
+                    {selectedExpense.invoice_date
+                      ? new Date(selectedExpense.invoice_date).toLocaleDateString(locale)
+                      : new Date(selectedExpense.created_at).toLocaleDateString(locale)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-700 bg-slate-800/70 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">No facture</p>
+                  <p className="text-sm text-slate-100">{selectedExpense.invoice_number || '-'}</p>
+                </div>
+                <div className="rounded-lg border border-slate-700 bg-slate-800/70 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">Type</p>
+                  <p className="text-sm text-slate-100">{selectedExpense.category || '-'}</p>
+                </div>
+                <div className="rounded-lg border border-slate-700 bg-slate-800/70 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">Paiement</p>
+                  <p className="text-sm text-slate-100">
+                    {selectedExpense.payment_method === 'cb_pro' ? 'CB PRO' : 'CB PERSO'}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-700 bg-slate-800/70 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">HT / Taxe / TTC</p>
+                  <p className="text-sm text-slate-100">
+                    {Number(selectedExpense.amount_ht || 0).toFixed(2)} / {Number(selectedExpense.amount_tva || 0).toFixed(2)} / {Number(selectedExpense.amount_ttc || 0).toFixed(2)} EUR
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-700 bg-slate-800/70 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">Mail</p>
+                  <p className={`text-sm ${selectedExpense.email_sent ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    {selectedExpense.email_sent ? 'Envoye' : 'Non envoye'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-700 bg-slate-800/70 p-3">
+                <p className="mb-2 text-[11px] uppercase tracking-wide text-slate-400">Photo facture/ticket</p>
+                {selectedExpense.photo_url ? (
+                  <div className="space-y-2">
+                    <img
+                      src={selectedExpense.photo_url}
+                      alt="Photo facture"
+                      className="max-h-80 w-full rounded-lg object-contain bg-slate-900"
+                    />
+                    <a
+                      href={selectedExpense.photo_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block text-xs text-cyan-300 hover:text-cyan-200"
+                    >
+                      Ouvrir la photo en grand
+                    </a>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400">Aucune photo disponible.</p>
+                )}
+              </div>
+
+              {modalMessage && (
+                <div className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100">
+                  {modalMessage}
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleResendEmail}
+                  disabled={selectedExpense.payment_method !== 'cb_pro' || isResendingEmail}
+                  className="flex-1 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isResendingEmail ? 'Renvoi en cours...' : 'Renvoyer email'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+                >
+                  Fermer
+                </button>
+              </div>
+
+              {selectedExpense.payment_method !== 'cb_pro' && (
+                <p className="text-xs text-slate-400">
+                  Le renvoi email est disponible uniquement pour les depenses CB Pro.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
