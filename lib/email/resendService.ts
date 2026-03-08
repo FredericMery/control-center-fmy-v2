@@ -31,6 +31,12 @@ export async function sendExpenseEmail({
   invoiceDate,
   photoUrl,
 }: SendExpenseEmailParams) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY manquant');
+  }
+
+  const fromAddress = process.env.EMAIL_FROM || 'noreply@meetsync-ai.com';
+
   try {
     const aiBody = await generateExpenseEmailBodyWithAi({
       userId,
@@ -43,8 +49,12 @@ export async function sendExpenseEmail({
       invoiceDate,
     });
 
+    const receiptAttachment = photoUrl
+      ? await buildAttachmentFromUrl(photoUrl, 'justificatif')
+      : null;
+
     const response = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'noreply@meetsync-ai.com',
+      from: fromAddress,
       to,
       subject: `Facture - ${vendor}`,
       html: generateExpenseEmailHTML({
@@ -57,14 +67,7 @@ export async function sendExpenseEmail({
         invoiceNumber,
         invoiceDate,
       }),
-      attachments: photoUrl
-        ? [
-            {
-              filename: 'facture.pdf',
-              path: photoUrl,
-            },
-          ]
-        : undefined,
+      attachments: receiptAttachment ? [receiptAttachment] : undefined,
     });
 
     return response;
@@ -72,6 +75,40 @@ export async function sendExpenseEmail({
     console.error('Erreur Resend:', error);
     throw error;
   }
+}
+
+export async function buildAttachmentFromUrl(url: string, baseName: string) {
+  const safeUrl = String(url || '').trim();
+  if (!safeUrl) {
+    throw new Error('URL piece jointe vide');
+  }
+
+  const response = await fetch(safeUrl);
+  if (!response.ok) {
+    throw new Error(`Impossible de telecharger la piece jointe (${response.status})`);
+  }
+
+  const contentType = response.headers.get('content-type') || 'application/octet-stream';
+  const arrayBuffer = await response.arrayBuffer();
+  const extension = inferExtension(contentType, safeUrl);
+
+  return {
+    filename: `${baseName}.${extension}`,
+    content: Buffer.from(arrayBuffer),
+  };
+}
+
+function inferExtension(contentType: string, url: string) {
+  const type = contentType.toLowerCase();
+
+  if (type.includes('pdf')) return 'pdf';
+  if (type.includes('png')) return 'png';
+  if (type.includes('webp')) return 'webp';
+  if (type.includes('jpeg') || type.includes('jpg')) return 'jpg';
+
+  const path = url.split('?')[0] || '';
+  const match = path.match(/\.([a-z0-9]{2,5})$/i);
+  return match?.[1]?.toLowerCase() || 'bin';
 }
 
 async function generateExpenseEmailBodyWithAi(args: {

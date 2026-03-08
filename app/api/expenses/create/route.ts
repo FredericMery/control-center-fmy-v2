@@ -114,6 +114,7 @@ export async function POST(request: NextRequest) {
     const expenseType = normalizedReason || invoiceData.expense_type || invoiceData.category || 'autre';
 
     let emailSent = false;
+    let emailErrorMessage = '';
 
     if (paymentMethod === 'cb_pro') {
       try {
@@ -143,6 +144,7 @@ export async function POST(request: NextRequest) {
       } catch (emailError) {
         console.error('Erreur envoi email:', emailError);
         emailSent = false;
+        emailErrorMessage = emailError instanceof Error ? emailError.message : 'Erreur envoi email';
       }
     }
 
@@ -212,6 +214,11 @@ export async function POST(request: NextRequest) {
           ? 'Dépense IA enregistrée pour la note de frais'
           : 'Dépense IA enregistrée, verification manuelle recommandee'
         : 'Facture analysee par IA et envoyee à la comptabilité',
+      email: {
+        attempted: paymentMethod === 'cb_pro',
+        sent: emailSent,
+        error: emailSent ? null : emailErrorMessage || null,
+      },
     });
   } catch (error: unknown) {
     console.error('❌ Erreur API complète:', error);

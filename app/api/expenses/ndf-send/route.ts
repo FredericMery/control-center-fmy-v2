@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
+import { buildAttachmentFromUrl } from '@/lib/email/resendService';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,6 +14,10 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request: NextRequest) {
   try {
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json({ error: 'RESEND_API_KEY manquant' }, { status: 500 });
+    }
+
     const userId = await getUserIdFromRequest(request);
     if (!userId) {
       return NextResponse.json({ error: 'Non authentifie' }, { status: 401 });
@@ -124,26 +129,29 @@ export async function POST(request: NextRequest) {
       .update({ status: 'submitted' })
       .in('id', rows.map((row) => row.id));
 
-    const photoAttachments = rows
-      .filter((row) => row.photo_url)
-      .map((row, index) => ({
-        filename: `justificatif_${index + 1}${row.photo_url?.toLowerCase().endsWith('.pdf') ? '.pdf' : '.jpg'}`,
-        path: row.photo_url,
-      }));
+    const photoRows = rows.filter((row) => row.photo_url);
+    const photoAttachments = await Promise.all(
+      photoRows.map((row, index) => buildAttachmentFromUrl(String(row.photo_url), `justificatif_${index + 1}`))
+    );
 
-    await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'noreply@meetsync-ai.com',
-      to: toEmail,
-      subject,
-      html: mailboxStyleHtml({ bodyText, month, year, totals, count: rows.length }),
-      attachments: [
-        {
-          filename: `NDF_${String(month).padStart(2, '0')}_${year}.pdf`,
-          content: Buffer.from(pdfBytes),
-        },
-        ...photoAttachments,
-      ],
-    });
+    try {
+      await resend.emails.send({
+        from: process.env.EMAIL_FROM || 'noreply@meetsync-ai.com',
+        to: toEmail,
+        subject,
+        html: mailboxStyleHtml({ bodyText, month, year, totals, count: rows.length }),
+        attachments: [
+          {
+            filename: `NDF_${String(month).padStart(2, '0')}_${year}.pdf`,
+            content: Buffer.from(pdfBytes),
+          },
+          ...photoAttachments,
+        ],
+      });
+    } catch (emailError) {
+      const message = emailError instanceof Error ? emailError.message : 'Erreur envoi mail NDF';
+      return NextResponse.json({ error: `Envoi email NDF echoue: ${message}` }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,
