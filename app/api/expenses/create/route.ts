@@ -142,6 +142,9 @@ export async function POST(request: NextRequest) {
         ? 'pending_ndf'
         : 'pending';
 
+    // Certains tickets PDF n'exposent pas de vendeur exploitable; on force une valeur pour respecter la contrainte DB.
+    const safeVendor = String(invoiceData.vendor || '').trim() || (isPdf ? 'Fournisseur PDF' : 'Fournisseur inconnu');
+
     const normalizedReason = String(payload.reason || '').trim().slice(0, 80);
     const normalizedRecipientName = String(payload.recipientName || '').trim().slice(0, 120);
     const normalizedRecipientDestination = String(payload.recipientDestination || '').trim().slice(0, 180);
@@ -208,7 +211,7 @@ export async function POST(request: NextRequest) {
         payment_method: payload.paymentMethod,
         invoice_number: invoiceData.invoice_number,
         invoice_date: invoiceData.invoice_date,
-        vendor: invoiceData.vendor,
+        vendor: safeVendor,
         amount_ht: invoiceData.amount_ht,
         amount_tva: invoiceData.amount_tva,
         amount_ttc: invoiceData.amount_ttc,
