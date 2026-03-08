@@ -133,8 +133,14 @@ export default function ExpenseForm() {
       const isPdf = mimeType === 'application/pdf';
 
       if (isPdf) {
-        setImage(null);
-        handleScan(file, 'application/pdf');
+        try {
+          const pdfPreviewImage = await convertPdfFirstPageToJpegDataUrl(file);
+          setImage(pdfPreviewImage);
+          handleScan(file, 'application/pdf', pdfPreviewImage);
+        } catch {
+          setImage(null);
+          handleScan(file, 'application/pdf');
+        }
         return;
       }
 
@@ -173,7 +179,7 @@ export default function ExpenseForm() {
     }
   };
 
-  const handleScan = async (uploadFile: File, sourceMime?: string) => {
+  const handleScan = async (uploadFile: File, sourceMime?: string, pdfPreviewImage?: string) => {
     if (!authToken) {
       setError('Authentication required. Please sign in again.');
       return;
@@ -195,6 +201,9 @@ export default function ExpenseForm() {
       payload.append('recipientDestination', selectedRecipient?.destination || '');
       if (sourceMime) {
         payload.append('sourceMime', sourceMime);
+      }
+      if (pdfPreviewImage) {
+        payload.append('pdfPreviewImage', pdfPreviewImage);
       }
 
       const response = await fetch('/api/expenses/create', {
@@ -719,6 +728,42 @@ function inferMimeType(file: File): string {
   if (name.endsWith('.webp')) return 'image/webp';
   if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
   return '';
+}
+
+async function convertPdfFirstPageToJpegDataUrl(file: File): Promise<string> {
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const buffer = await file.arrayBuffer();
+
+  const loadingTask = getDocument({
+    data: buffer,
+    disableWorker: true,
+  } as any);
+
+  const pdf = await loadingTask.promise;
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({ scale: 2 });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.floor(viewport.width));
+  canvas.height = Math.max(1, Math.floor(viewport.height));
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Canvas context unavailable for PDF preview');
+  }
+
+  await page.render({
+    canvasContext: context,
+    viewport,
+    canvas,
+  } as any).promise;
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  if ((pdf as any).destroy) {
+    await (pdf as any).destroy();
+  }
+
+  return dataUrl;
 }
 
 function mapUploadError(message: string): string {
