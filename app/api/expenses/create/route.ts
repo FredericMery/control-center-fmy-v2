@@ -21,17 +21,9 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get('file');
-    const paymentMethod = String(formData.get('paymentMethod') || '').trim();
-    const validationCode = String(formData.get('validationCode') || '').trim();
-    const reason = String(formData.get('reason') || '').trim();
-    const recipientName = String(formData.get('recipientName') || '').trim();
-    const recipientDestination = String(formData.get('recipientDestination') || '').trim();
-    const sourceMimeRaw = String(formData.get('sourceMime') || '').trim();
-    const sourceMime = sourceMimeRaw ? normalizeMimeType(sourceMimeRaw) : '';
+    const payload = await parseUploadPayload(request);
 
-    if (!(file instanceof File) || !paymentMethod) {
+    if (!payload.paymentMethod) {
       return NextResponse.json(
         { error: 'Fichier et méthode de paiement requis' },
         { status: 400 }
@@ -48,40 +40,34 @@ export async function POST(request: NextRequest) {
     }
 
     // Ce module utilise l'IA (Vision + GPT), donc code obligatoire.
-    requireValidationCode(validationCode);
+    requireValidationCode(payload.validationCode);
 
-    const fallbackMime = inferMimeTypeFromFilename(file.name);
-    const detectedMime = normalizeMimeType(file.type || fallbackMime);
+    console.log('FILE TYPE:', payload.detectedMime);
+    console.log('FILE SIZE:', payload.fileSize);
+    console.log('BUFFER LENGTH:', payload.buffer.length);
 
-    console.log('FILE TYPE:', detectedMime);
-    console.log('FILE SIZE:', file.size);
-
-    if (!ALLOWED_TYPES.has(detectedMime)) {
+    if (!ALLOWED_TYPES.has(payload.detectedMime)) {
       return NextResponse.json(
         { error: 'Format non supporte. Utilisez JPG/PNG/WEBP/HEIC/HEIF ou PDF.' },
         { status: 400 }
       );
     }
 
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    console.log('BUFFER LENGTH:', buffer.length);
-
-    if (!buffer.length) {
+    if (!payload.buffer.length) {
       return NextResponse.json(
         { error: 'Fichier vide ou corrompu' },
         { status: 400 }
       );
     }
 
-    const isPdf = sourceMime === 'application/pdf' || detectedMime === 'application/pdf';
-    const base64Payload = buffer.toString('base64');
-    const imageDataUrl = `data:${detectedMime};base64,${base64Payload}`;
+    const isPdf = payload.sourceMime === 'application/pdf' || payload.detectedMime === 'application/pdf';
+    const base64Payload = payload.buffer.toString('base64');
+    const imageDataUrl = `data:${payload.detectedMime};base64,${base64Payload}`;
 
     // 1. Pipeline IA: OCR/PDF -> Analyse GPT -> Donnees structurees
     console.log('📄 Extraction IA des données de la facture...');
     const invoiceData = isPdf
-      ? detectedMime === 'application/pdf'
+      ? payload.detectedMime === 'application/pdf'
         ? await extractInvoiceDataFromPdf(base64Payload, userId)
         : await extractInvoiceData(imageDataUrl, userId)
       : await extractInvoiceData(imageDataUrl, userId);
@@ -91,19 +77,19 @@ export async function POST(request: NextRequest) {
     const expenseId = crypto.randomUUID();
     const timestamp = Date.now();
     const safeShortId = expenseId.substring(0, 8);
-    const extension = getExtensionForMime(detectedMime);
+    const extension = getExtensionForMime(payload.detectedMime);
     const filename = `${userId}/${timestamp}-${safeShortId}.${extension}`;
 
     // 3. Uploader l'image dans Supabase Storage
-    console.log(`📤 Upload de l'image vers Supabase Storage... (${buffer.length} bytes, filename: ${filename})`);
+    console.log(`📤 Upload de l'image vers Supabase Storage... (${payload.buffer.length} bytes, filename: ${filename})`);
     
     let publicUrl: string | null = null;
     let uploadWarning = '';
 
     const primaryUpload = await supabase.storage
       .from('expense-receipts')
-      .upload(filename, buffer, {
-        contentType: detectedMime,
+      .upload(filename, payload.buffer, {
+        contentType: payload.detectedMime,
         upsert: false,
       });
 
@@ -114,7 +100,7 @@ export async function POST(request: NextRequest) {
       const fallbackName = `${userId}/${timestamp}-${safeShortId}.bin`;
       const fallbackUpload = await supabase.storage
         .from('expense-receipts')
-        .upload(fallbackName, buffer, {
+        .upload(fallbackName, payload.buffer, {
           contentType: 'application/octet-stream',
           upsert: false,
         });
@@ -143,19 +129,19 @@ export async function POST(request: NextRequest) {
 
     // 5. Déterminer le statut selon méthode + eligibilite NDF detectee par IA
     const status =
-      paymentMethod === 'cb_perso' && invoiceData.ndf_eligible
+      payload.paymentMethod === 'cb_perso' && invoiceData.ndf_eligible
         ? 'pending_ndf'
         : 'pending';
 
-    const normalizedReason = String(reason || '').trim().slice(0, 80);
-    const normalizedRecipientName = String(recipientName || '').trim().slice(0, 120);
-    const normalizedRecipientDestination = String(recipientDestination || '').trim().slice(0, 180);
+    const normalizedReason = String(payload.reason || '').trim().slice(0, 80);
+    const normalizedRecipientName = String(payload.recipientName || '').trim().slice(0, 120);
+    const normalizedRecipientDestination = String(payload.recipientDestination || '').trim().slice(0, 180);
     const expenseType = normalizedReason || invoiceData.expense_type || invoiceData.category || 'autre';
 
     let emailSent = false;
     let emailErrorMessage = '';
 
-    if (paymentMethod === 'cb_pro') {
+    if (payload.paymentMethod === 'cb_pro') {
       try {
         // Récupérer l'email du destinataire depuis email_settings
         const { data: settings } = await supabase
@@ -210,7 +196,7 @@ export async function POST(request: NextRequest) {
       .insert({
         id: expenseId,
         user_id: userId,
-        payment_method: paymentMethod,
+        payment_method: payload.paymentMethod,
         invoice_number: invoiceData.invoice_number,
         invoice_date: invoiceData.invoice_date,
         vendor: invoiceData.vendor,
@@ -248,13 +234,13 @@ export async function POST(request: NextRequest) {
         confidence: invoiceData.confidence,
         needs_review: invoiceData.needs_review,
       },
-      message: paymentMethod === 'cb_perso' 
+      message: payload.paymentMethod === 'cb_perso' 
         ? invoiceData.ndf_eligible
           ? 'Dépense IA enregistrée pour la note de frais'
           : 'Dépense IA enregistrée, verification manuelle recommandee'
         : 'Facture analysee par IA et envoyee à la comptabilité',
       email: {
-        attempted: paymentMethod === 'cb_pro',
+        attempted: payload.paymentMethod === 'cb_pro',
         sent: emailSent,
         error: emailSent ? null : emailErrorMessage || null,
       },
@@ -274,6 +260,68 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+type ParsedUploadPayload = {
+  buffer: Buffer;
+  detectedMime: string;
+  sourceMime: string;
+  fileSize: number;
+  paymentMethod: string;
+  validationCode: string;
+  reason: string;
+  recipientName: string;
+  recipientDestination: string;
+};
+
+async function parseUploadPayload(request: NextRequest): Promise<ParsedUploadPayload> {
+  const contentType = String(request.headers.get('content-type') || '').toLowerCase();
+
+  if (contentType.includes('multipart/form-data')) {
+    const formData = await request.formData();
+    const file = formData.get('file');
+    if (!(file instanceof File)) {
+      throw new Error('Fichier manquant dans la requete');
+    }
+
+    const detectedMime = normalizeMimeType(file.type || inferMimeTypeFromFilename(file.name));
+    const sourceMimeRaw = String(formData.get('sourceMime') || '').trim();
+    const sourceMime = sourceMimeRaw ? normalizeMimeType(sourceMimeRaw) : '';
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+
+    return {
+      buffer,
+      detectedMime,
+      sourceMime,
+      fileSize: Number(file.size || buffer.length || 0),
+      paymentMethod: String(formData.get('paymentMethod') || '').trim(),
+      validationCode: String(formData.get('validationCode') || '').trim(),
+      reason: String(formData.get('reason') || '').trim(),
+      recipientName: String(formData.get('recipientName') || '').trim(),
+      recipientDestination: String(formData.get('recipientDestination') || '').trim(),
+    };
+  }
+
+  // Compatibilite PWA/cache: accepte encore l'ancien payload JSON pour ne pas casser les clients iPhone non rafraichis.
+  const legacy = await request.json();
+  const image = String(legacy?.image || '').trim();
+  const [header, payload = ''] = image.split(',');
+  const mimeMatch = header.match(/^data:([^;]+);base64$/i);
+  const detectedMime = normalizeMimeType(mimeMatch?.[1] || 'image/jpeg');
+  const buffer = Buffer.from(payload || image, 'base64');
+
+  return {
+    buffer,
+    detectedMime,
+    sourceMime: '',
+    fileSize: Number(buffer.length || 0),
+    paymentMethod: String(legacy?.paymentMethod || '').trim(),
+    validationCode: String(legacy?.validationCode || '').trim(),
+    reason: String(legacy?.reason || '').trim(),
+    recipientName: String(legacy?.recipientName || '').trim(),
+    recipientDestination: String(legacy?.recipientDestination || '').trim(),
+  };
 }
 
 function toUserFacingExpenseError(message: string): string {

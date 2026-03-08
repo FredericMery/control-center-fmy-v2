@@ -133,13 +133,8 @@ export default function ExpenseForm() {
       const isPdf = mimeType === 'application/pdf';
 
       if (isPdf) {
-        const firstPageImageDataUrl = await convertPdfFirstPageToJpegDataUrl(file);
-        const convertedPdfImageFile = dataUrlToFile(
-          firstPageImageDataUrl,
-          toJpegName(file.name || 'ticket.pdf')
-        );
-        setImage(firstPageImageDataUrl);
-        handleScan(convertedPdfImageFile, 'application/pdf');
+        setImage(null);
+        handleScan(file, 'application/pdf');
         return;
       }
 
@@ -153,10 +148,17 @@ export default function ExpenseForm() {
 
       // HEIC/HEIF (iPhone) sont convertis en JPEG pour compatibilite OCR/API.
       if (CONVERT_TO_JPEG_TYPES.has(mimeType) || mimeType.startsWith('image/')) {
-        const jpegDataUrl = await convertImageToJpegDataUrl(file);
-        const convertedImageFile = dataUrlToFile(jpegDataUrl, toJpegName(file.name || 'capture.heic'));
-        setImage(jpegDataUrl);
-        handleScan(convertedImageFile);
+        try {
+          const jpegDataUrl = await convertImageToJpegDataUrl(file);
+          const convertedImageFile = dataUrlToFile(jpegDataUrl, toJpegName(file.name || 'capture.heic'));
+          setImage(jpegDataUrl);
+          handleScan(convertedImageFile);
+        } catch {
+          // Fallback: ne pas bloquer une image valide si conversion impossible.
+          const fallbackDataUrl = await readFileAsDataUrl(file);
+          setImage(fallbackDataUrl);
+          handleScan(file, mimeType);
+        }
         return;
       }
 
@@ -694,42 +696,6 @@ function inferMimeType(file: File): string {
   if (name.endsWith('.webp')) return 'image/webp';
   if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
   return '';
-}
-
-async function convertPdfFirstPageToJpegDataUrl(file: File): Promise<string> {
-  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const buffer = await file.arrayBuffer();
-
-  const loadingTask = getDocument({
-    data: buffer,
-    disableWorker: true,
-  } as any);
-
-  const pdf = await loadingTask.promise;
-  const page = await pdf.getPage(1);
-
-  const viewport = page.getViewport({ scale: 2 });
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.floor(viewport.width));
-  canvas.height = Math.max(1, Math.floor(viewport.height));
-
-  const context = canvas.getContext('2d');
-  if (!context) {
-    throw new Error('Canvas context unavailable for PDF');
-  }
-
-  await page.render({
-    canvasContext: context,
-    viewport,
-    canvas,
-  } as any).promise;
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-
-  if ((pdf as any).destroy) {
-    await (pdf as any).destroy();
-  }
-
-  return dataUrl;
 }
 
 function mapUploadError(message: string): string {
