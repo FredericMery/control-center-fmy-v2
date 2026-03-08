@@ -41,6 +41,7 @@ const SUPPORTED_IMAGE_TYPES = new Set([
   'image/webp',
   'image/heic',
   'image/heif',
+  'application/pdf',
 ]);
 
 const MAX_IMAGE_DIMENSION = 2200;
@@ -127,6 +128,15 @@ export default function ExpenseForm() {
     setError(null);
 
     try {
+      const isPdf = mimeType === 'application/pdf';
+
+      if (isPdf) {
+        const pdfDataUrl = await readFileAsDataUrl(file);
+        setImage(pdfDataUrl);
+        handleScan(pdfDataUrl);
+        return;
+      }
+
       // Convertit systematiquement l image en JPEG pour assurer la compatibilite Vision/API.
       const jpegDataUrl = await convertImageToJpegDataUrl(file);
       setImage(jpegDataUrl);
@@ -134,7 +144,7 @@ export default function ExpenseForm() {
     } catch {
       setImage(null);
       setError(
-        'Impossible de lire cette photo iPhone. Reessayez ou exportez-la en JPG depuis Photos.'
+        'Impossible de lire ce fichier. Reessayez avec une photo ou un PDF valide.'
       );
     }
   };
@@ -500,7 +510,7 @@ export default function ExpenseForm() {
                 <>
                   <input
                     type="file"
-                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
                     onChange={handleImageUpload}
                     className="hidden"
                     id="photo-input"
@@ -514,8 +524,8 @@ export default function ExpenseForm() {
                   >
                     <div className="text-5xl">📷</div>
                     <div>
-                      <h3 className="font-semibold text-slate-900">{t('expenses.choosePhoto')}</h3>
-                      <p className="text-sm text-slate-600">{t('expenses.orDrop')}</p>
+                      <h3 className="font-semibold text-slate-900">Choisir une photo ou un PDF</h3>
+                      <p className="text-sm text-slate-600">Formats: image et PDF</p>
                     </div>
                   </label>
                 </>
@@ -611,6 +621,15 @@ export default function ExpenseForm() {
       </div>
     </div>
   );
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('File read failed'));
+    reader.readAsDataURL(file);
+  });
 }
 
 async function fetchRecipients(token: string): Promise<ExpenseRecipient[]> {

@@ -1,4 +1,5 @@
 import { callGoogleVision, callOpenAi } from '@/lib/ai/client';
+import { PDFParse } from 'pdf-parse';
 
 interface ExtractedInvoiceData {
   invoice_number: string | null;
@@ -25,65 +26,83 @@ interface ExtractedInvoiceData {
 export async function extractInvoiceData(base64Image: string, userId: string): Promise<ExtractedInvoiceData> {
   try {
     const rawText = await callGoogleVision(userId, base64Image);
-    if (!rawText) {
-      return getEmptyResult();
-    }
-
-    const text = rawText.toLowerCase();
-    const fallback = {
-      invoice_number: extractInvoiceNumber(text),
-      invoice_date: extractInvoiceDate(text),
-      amount_ht: extractAmountHT(text),
-      amount_tva: extractAmountTVA(text),
-      amount_ttc: extractAmountTTC(text),
-      vendor: extractVendor(text),
-      description: extractDescription(text),
-      category: inferCategory(text),
-      expense_type: inferCategory(text),
-      ndf_eligible: true,
-      confidence: null,
-      needs_review: false,
-      raw_text: rawText,
-    };
-
-    const aiParsed = await parseInvoiceWithGpt(userId, rawText);
-
-    const invoiceDate = normalizeIsoDate(aiParsed.invoice_date || fallback.invoice_date);
-    const amountTtc = parseMaybeNumber(aiParsed.amount_ttc) ?? fallback.amount_ttc;
-    const amountHt = parseMaybeNumber(aiParsed.amount_ht) ?? fallback.amount_ht;
-    const amountTva = parseMaybeNumber(aiParsed.amount_tva) ?? fallback.amount_tva;
-
-    const safeCategory = String(aiParsed.category || fallback.category || 'Non catégorisée').slice(0, 80);
-    const safeExpenseType = String(aiParsed.expense_type || safeCategory || 'autre').slice(0, 80);
-    const confidence = clampConfidence(aiParsed.confidence);
-
-    const ndfEligible =
-      typeof aiParsed.ndf_eligible === 'boolean' ? aiParsed.ndf_eligible : fallback.ndf_eligible;
-
-    const needsReview =
-      typeof aiParsed.needs_review === 'boolean'
-        ? aiParsed.needs_review
-        : confidence !== null && confidence < 0.6;
-
-    return {
-      invoice_number: String(aiParsed.invoice_number || fallback.invoice_number || '').trim() || null,
-      invoice_date: invoiceDate,
-      amount_ht: amountHt,
-      amount_tva: amountTva,
-      amount_ttc: amountTtc,
-      vendor: String(aiParsed.vendor || fallback.vendor || '').trim() || null,
-      description: String(aiParsed.description || fallback.description || '').trim() || null,
-      category: safeCategory,
-      expense_type: safeExpenseType,
-      ndf_eligible: ndfEligible,
-      confidence,
-      needs_review: needsReview,
-      raw_text: rawText,
-    };
+    return parseInvoiceFromRawText(rawText, userId);
   } catch (error) {
     console.error('Erreur pipeline OCR + IA:', error);
     return getEmptyResult();
   }
+}
+
+export async function extractInvoiceDataFromPdf(base64Pdf: string, userId: string): Promise<ExtractedInvoiceData> {
+  try {
+    const buffer = Buffer.from(base64Pdf, 'base64');
+    const parser = new PDFParse({ data: buffer });
+    const pdfTextResult = await parser.getText();
+    const rawText = String(pdfTextResult?.text || '').trim();
+    await parser.destroy();
+    return parseInvoiceFromRawText(rawText, userId);
+  } catch (error) {
+    console.error('Erreur extraction PDF + IA:', error);
+    return getEmptyResult();
+  }
+}
+
+async function parseInvoiceFromRawText(rawText: string, userId: string): Promise<ExtractedInvoiceData> {
+  if (!rawText) {
+    return getEmptyResult();
+  }
+
+  const text = rawText.toLowerCase();
+  const fallback = {
+    invoice_number: extractInvoiceNumber(text),
+    invoice_date: extractInvoiceDate(text),
+    amount_ht: extractAmountHT(text),
+    amount_tva: extractAmountTVA(text),
+    amount_ttc: extractAmountTTC(text),
+    vendor: extractVendor(text),
+    description: extractDescription(text),
+    category: inferCategory(text),
+    expense_type: inferCategory(text),
+    ndf_eligible: true,
+    confidence: null,
+    needs_review: false,
+    raw_text: rawText,
+  };
+
+  const aiParsed = await parseInvoiceWithGpt(userId, rawText);
+
+  const invoiceDate = normalizeIsoDate(aiParsed.invoice_date || fallback.invoice_date);
+  const amountTtc = parseMaybeNumber(aiParsed.amount_ttc) ?? fallback.amount_ttc;
+  const amountHt = parseMaybeNumber(aiParsed.amount_ht) ?? fallback.amount_ht;
+  const amountTva = parseMaybeNumber(aiParsed.amount_tva) ?? fallback.amount_tva;
+
+  const safeCategory = String(aiParsed.category || fallback.category || 'Non catégorisée').slice(0, 80);
+  const safeExpenseType = String(aiParsed.expense_type || safeCategory || 'autre').slice(0, 80);
+  const confidence = clampConfidence(aiParsed.confidence);
+
+  const ndfEligible =
+    typeof aiParsed.ndf_eligible === 'boolean' ? aiParsed.ndf_eligible : fallback.ndf_eligible;
+
+  const needsReview =
+    typeof aiParsed.needs_review === 'boolean'
+      ? aiParsed.needs_review
+      : confidence !== null && confidence < 0.6;
+
+  return {
+    invoice_number: String(aiParsed.invoice_number || fallback.invoice_number || '').trim() || null,
+    invoice_date: invoiceDate,
+    amount_ht: amountHt,
+    amount_tva: amountTva,
+    amount_ttc: amountTtc,
+    vendor: String(aiParsed.vendor || fallback.vendor || '').trim() || null,
+    description: String(aiParsed.description || fallback.description || '').trim() || null,
+    category: safeCategory,
+    expense_type: safeExpenseType,
+    ndf_eligible: ndfEligible,
+    confidence,
+    needs_review: needsReview,
+    raw_text: rawText,
+  };
 }
 
 function getEmptyResult(): ExtractedInvoiceData {

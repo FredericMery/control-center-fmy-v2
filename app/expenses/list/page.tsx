@@ -37,24 +37,37 @@ type ExpenseReportResponse = {
 
 export default function ExpensesListPage() {
   const { t, language } = useI18n();
+  const now = new Date();
   const [report, setReport] = useState<ExpenseReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRecipient, setSelectedRecipient] = useState<string>('all');
+  const [selectedCardType, setSelectedCardType] = useState<'all' | 'cb_perso' | 'cb_pro'>('all');
+  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
   const [selectedExpense, setSelectedExpense] = useState<ExpenseRow | null>(null);
   const [isResendingEmail, setIsResendingEmail] = useState(false);
   const [modalMessage, setModalMessage] = useState<string | null>(null);
+  const [showNdfModal, setShowNdfModal] = useState(false);
+  const [ndfToEmail, setNdfToEmail] = useState('');
+  const [ndfSubject, setNdfSubject] = useState('');
+  const [ndfBody, setNdfBody] = useState('');
+  const [ndfPreviewExpenses, setNdfPreviewExpenses] = useState<ExpenseRow[]>([]);
+  const [ndfPreviewTotals, setNdfPreviewTotals] = useState<{ totalHt: number; totalTax: number; totalTtc: number } | null>(null);
+  const [isPreviewingNdf, setIsPreviewingNdf] = useState(false);
+  const [isSendingNdf, setIsSendingNdf] = useState(false);
+  const [ndfMessage, setNdfMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchExpenses();
-  }, []);
+  }, [selectedMonth, selectedYear]);
 
   const fetchExpenses = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('/api/expenses/report', {
+      const response = await fetch(`/api/expenses/report?month=${selectedMonth}&year=${selectedYear}`, {
         headers: await getAuthHeaders(false),
       });
 
@@ -94,9 +107,13 @@ export default function ExpensesListPage() {
 
   const filteredRows = useMemo(() => {
     const rows = report?.rows || [];
-    if (selectedRecipient === 'all') return rows;
-    return rows.filter((row) => (row.recipient_name || '').trim() === selectedRecipient);
-  }, [report, selectedRecipient]);
+    return rows.filter((row) => {
+      const recipientOk =
+        selectedRecipient === 'all' || (row.recipient_name || '').trim() === selectedRecipient;
+      const cardOk = selectedCardType === 'all' || row.payment_method === selectedCardType;
+      return recipientOk && cardOk;
+    });
+  }, [report, selectedRecipient, selectedCardType]);
 
   const filteredTotals = useMemo(() => {
     return filteredRows.reduce(
@@ -153,6 +170,83 @@ export default function ExpensesListPage() {
     }
   };
 
+  const previewNdf = async () => {
+    try {
+      setIsPreviewingNdf(true);
+      setNdfMessage(null);
+      const response = await fetch('/api/expenses/ndf-preview', {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({
+          month: selectedMonth,
+          year: selectedYear,
+          email: ndfToEmail,
+        }),
+      });
+
+      const json = (await response.json()) as {
+        success?: boolean;
+        error?: string;
+        draft?: { to: string; subject: string; bodyText: string };
+        expenses?: ExpenseRow[];
+        totals?: { totalHt: number; totalTax: number; totalTtc: number };
+      };
+
+      if (!response.ok || !json.draft) {
+        setNdfMessage(json.error || 'Erreur preview NDF');
+        return;
+      }
+
+      setNdfToEmail(json.draft.to || ndfToEmail);
+      setNdfSubject(json.draft.subject || '');
+      setNdfBody(json.draft.bodyText || '');
+      setNdfPreviewExpenses(json.expenses || []);
+      setNdfPreviewTotals(json.totals || null);
+      setNdfMessage('PDF prepare. Verifiez le mail puis envoyez.');
+    } catch {
+      setNdfMessage('Erreur reseau preview NDF');
+    } finally {
+      setIsPreviewingNdf(false);
+    }
+  };
+
+  const sendNdf = async () => {
+    try {
+      setIsSendingNdf(true);
+      setNdfMessage(null);
+
+      const response = await fetch('/api/expenses/ndf-send', {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({
+          month: selectedMonth,
+          year: selectedYear,
+          email: ndfToEmail,
+          subject: ndfSubject,
+          bodyText: ndfBody,
+        }),
+      });
+
+      const json = (await response.json()) as { success?: boolean; error?: string; message?: string };
+      if (!response.ok) {
+        setNdfMessage(json.error || 'Erreur envoi NDF');
+        return;
+      }
+
+      setNdfMessage(json.message || 'NDF envoyee');
+      await fetchExpenses();
+    } catch {
+      setNdfMessage('Erreur reseau envoi NDF');
+    } finally {
+      setIsSendingNdf(false);
+    }
+  };
+
+  const yearOptions = useMemo(() => {
+    const current = now.getFullYear();
+    return [current - 1, current, current + 1];
+  }, [now]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white">
       {/* Header */}
@@ -197,21 +291,79 @@ export default function ExpensesListPage() {
         ) : (
           <div className="space-y-4">
             <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm font-medium text-slate-200">Filtre destinataire</p>
-                <select
-                  value={selectedRecipient}
-                  onChange={(e) => setSelectedRecipient(e.target.value)}
-                  className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
-                >
-                  <option value="all">Tous les destinataires</option>
-                  {recipientOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid gap-3 md:grid-cols-4">
+                <div>
+                  <p className="mb-1 text-xs font-medium text-slate-300">Type de carte</p>
+                  <select
+                    value={selectedCardType}
+                    onChange={(e) => setSelectedCardType(e.target.value as 'all' | 'cb_perso' | 'cb_pro')}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                  >
+                    <option value="all">Toutes</option>
+                    <option value="cb_perso">CB PERSO</option>
+                    <option value="cb_pro">CB PRO</option>
+                  </select>
+                </div>
+                <div>
+                  <p className="mb-1 text-xs font-medium text-slate-300">Destinataire</p>
+                  <select
+                    value={selectedRecipient}
+                    onChange={(e) => setSelectedRecipient(e.target.value)}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                  >
+                    <option value="all">Tous</option>
+                    {recipientOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <p className="mb-1 text-xs font-medium text-slate-300">Mois</p>
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                  >
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                      <option key={m} value={m}>
+                        {String(m).padStart(2, '0')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <p className="mb-1 text-xs font-medium text-slate-300">Annee</p>
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                  >
+                    {yearOptions.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNdfModal(true);
+                  setNdfMessage(null);
+                  if (!ndfSubject) {
+                    setNdfSubject(`Note de frais ${String(selectedMonth).padStart(2, '0')}/${selectedYear}`);
+                  }
+                }}
+                className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+              >
+                Creer ma NDF
+              </button>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
@@ -407,6 +559,120 @@ export default function ExpensesListPage() {
                   Le renvoi email est disponible uniquement pour les depenses CB Pro.
                 </p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNdfModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+            <div className="sticky top-0 flex items-center justify-between border-b border-slate-700 bg-slate-900/95 px-4 py-3">
+              <h3 className="text-base font-semibold text-white">Creation NDF</h3>
+              <button
+                type="button"
+                onClick={() => setShowNdfModal(false)}
+                className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <div className="space-y-4 p-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs text-slate-300">Mois</label>
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100"
+                  >
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                      <option key={m} value={m}>
+                        {String(m).padStart(2, '0')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-300">Annee</label>
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100"
+                  >
+                    {yearOptions.map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={previewNdf}
+                    disabled={isPreviewingNdf}
+                    className="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-60"
+                  >
+                    {isPreviewingNdf ? 'Preparation...' : 'Creer le PDF'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-700 bg-slate-800/70 p-4 space-y-3">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Boite mail - brouillon</p>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-300">A</label>
+                  <input
+                    value={ndfToEmail}
+                    onChange={(e) => setNdfToEmail(e.target.value)}
+                    placeholder="destinataire@entreprise.com"
+                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-300">Objet</label>
+                  <input
+                    value={ndfSubject}
+                    onChange={(e) => setNdfSubject(e.target.value)}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-300">Message</label>
+                  <textarea
+                    value={ndfBody}
+                    onChange={(e) => setNdfBody(e.target.value)}
+                    rows={8}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                  />
+                </div>
+
+                <div className="rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs text-slate-300">
+                  <p>Pieces jointes prevues:</p>
+                  <p>- PDF NDF (${String(selectedMonth).padStart(2, '0')}/${selectedYear})</p>
+                  <p>- ${ndfPreviewExpenses.length} justificatif(s) photo/PDF</p>
+                  {ndfPreviewTotals && (
+                    <p className="mt-2">
+                      Totaux: HT {ndfPreviewTotals.totalHt.toFixed(2)} / Taxe {ndfPreviewTotals.totalTax.toFixed(2)} / TTC {ndfPreviewTotals.totalTtc.toFixed(2)} EUR
+                    </p>
+                  )}
+                </div>
+
+                {ndfMessage && (
+                  <div className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100">
+                    {ndfMessage}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={sendNdf}
+                  disabled={isSendingNdf}
+                  className="w-full rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+                >
+                  {isSendingNdf ? 'Envoi en cours...' : 'Envoyer'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

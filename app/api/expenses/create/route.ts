@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { extractInvoiceData } from '@/lib/vision/extractInvoice';
+import { extractInvoiceData, extractInvoiceDataFromPdf } from '@/lib/vision/extractInvoice';
 import { sendExpenseEmail } from '@/lib/email/resendService';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 import { requireValidationCode } from '@/lib/ai/client';
@@ -40,15 +40,26 @@ export async function POST(request: NextRequest) {
     // Ce module utilise l'IA (Vision + GPT), donc code obligatoire.
     requireValidationCode(validationCode);
 
-    // 1. Pipeline IA: OCR Vision -> Analyse GPT -> Donnees structurees
+    const mimeTypeMatch = String(image).match(/^data:([^;]+);base64,/i);
+    const mimeType = (mimeTypeMatch?.[1] || 'image/jpeg').toLowerCase();
+    const isPdf = mimeType === 'application/pdf';
+
+    // 1. Pipeline IA: OCR/PDF -> Analyse GPT -> Donnees structurees
     console.log('📄 Extraction IA des données de la facture...');
-    const invoiceData = await extractInvoiceData(image, userId);
+    let normalizedBase64 = image;
+    if (String(image).includes(',')) {
+      normalizedBase64 = String(image).split(',')[1];
+    }
+
+    const invoiceData = isPdf
+      ? await extractInvoiceDataFromPdf(normalizedBase64, userId)
+      : await extractInvoiceData(image, userId);
     console.log('✅ Données IA extraites:', invoiceData);
 
     // 2. Générer un ID unique pour la dépense
     const expenseId = crypto.randomUUID();
     const timestamp = Date.now();
-    const filename = `${userId}_${timestamp}_${expenseId.substring(0, 8)}.jpg`;
+    const filename = `${userId}_${timestamp}_${expenseId.substring(0, 8)}.${isPdf ? 'pdf' : 'jpg'}`;
 
     // 3. Uploader l'image dans Supabase Storage
     let base64Data = image;
@@ -72,7 +83,7 @@ export async function POST(request: NextRequest) {
     const { error: uploadError } = await supabase.storage
       .from('expense-receipts')
       .upload(filename, buffer, {
-        contentType: 'image/jpeg',
+        contentType: isPdf ? 'application/pdf' : 'image/jpeg',
         upsert: false,
       });
 
@@ -229,7 +240,7 @@ function toUserFacingExpenseError(message: string): string {
     lower.includes('did not match the expected pattern') ||
     lower.includes('expected pattern')
   ) {
-    return 'Format d image non reconnu. Utilisez une photo JPG, PNG ou WEBP.';
+    return 'Format non reconnu. Utilisez une photo (JPG, PNG, WEBP, HEIC) ou un PDF.';
   }
 
   if (lower.includes('google vision') || lower.includes('vision')) {
