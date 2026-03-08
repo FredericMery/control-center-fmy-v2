@@ -21,18 +21,19 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const {
-      image,
-      paymentMethod,
-      validationCode,
-      reason,
-      recipientName,
-      recipientDestination,
-    } = await request.json();
+    const formData = await request.formData();
+    const file = formData.get('file');
+    const paymentMethod = String(formData.get('paymentMethod') || '').trim();
+    const validationCode = String(formData.get('validationCode') || '').trim();
+    const reason = String(formData.get('reason') || '').trim();
+    const recipientName = String(formData.get('recipientName') || '').trim();
+    const recipientDestination = String(formData.get('recipientDestination') || '').trim();
+    const sourceMimeRaw = String(formData.get('sourceMime') || '').trim();
+    const sourceMime = sourceMimeRaw ? normalizeMimeType(sourceMimeRaw) : '';
 
-    if (!image || !paymentMethod) {
+    if (!(file instanceof File) || !paymentMethod) {
       return NextResponse.json(
-        { error: 'Image et méthode de paiement requises' },
+        { error: 'Fichier et méthode de paiement requis' },
         { status: 400 }
       );
     }
@@ -49,53 +50,51 @@ export async function POST(request: NextRequest) {
     // Ce module utilise l'IA (Vision + GPT), donc code obligatoire.
     requireValidationCode(validationCode);
 
-    const mimeTypeMatch = String(image).match(/^data:([^;]+);base64,/i);
-    const mimeType = normalizeMimeType(mimeTypeMatch?.[1]);
+    const fallbackMime = inferMimeTypeFromFilename(file.name);
+    const detectedMime = normalizeMimeType(file.type || fallbackMime);
 
-    if (!ALLOWED_TYPES.has(mimeType)) {
+    console.log('FILE TYPE:', detectedMime);
+    console.log('FILE SIZE:', file.size);
+
+    if (!ALLOWED_TYPES.has(detectedMime)) {
       return NextResponse.json(
         { error: 'Format non supporte. Utilisez JPG/PNG/WEBP/HEIC/HEIF ou PDF.' },
         { status: 400 }
       );
     }
 
-    const isPdf = mimeType === 'application/pdf';
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    console.log('BUFFER LENGTH:', buffer.length);
+
+    if (!buffer.length) {
+      return NextResponse.json(
+        { error: 'Fichier vide ou corrompu' },
+        { status: 400 }
+      );
+    }
+
+    const isPdf = sourceMime === 'application/pdf' || detectedMime === 'application/pdf';
+    const base64Payload = buffer.toString('base64');
+    const imageDataUrl = `data:${detectedMime};base64,${base64Payload}`;
 
     // 1. Pipeline IA: OCR/PDF -> Analyse GPT -> Donnees structurees
     console.log('📄 Extraction IA des données de la facture...');
-    let normalizedBase64 = image;
-    if (String(image).includes(',')) {
-      normalizedBase64 = String(image).split(',')[1];
-    }
-
     const invoiceData = isPdf
-      ? await extractInvoiceDataFromPdf(normalizedBase64, userId)
-      : await extractInvoiceData(image, userId);
+      ? detectedMime === 'application/pdf'
+        ? await extractInvoiceDataFromPdf(base64Payload, userId)
+        : await extractInvoiceData(imageDataUrl, userId)
+      : await extractInvoiceData(imageDataUrl, userId);
     console.log('✅ Données IA extraites:', invoiceData);
 
     // 2. Générer un ID unique pour la dépense
     const expenseId = crypto.randomUUID();
     const timestamp = Date.now();
     const safeShortId = expenseId.substring(0, 8);
-    const filename = `${userId}/${timestamp}-${safeShortId}.${isPdf ? 'pdf' : 'jpg'}`;
+    const extension = getExtensionForMime(detectedMime);
+    const filename = `${userId}/${timestamp}-${safeShortId}.${extension}`;
 
     // 3. Uploader l'image dans Supabase Storage
-    let base64Data = image;
-    
-    // Nettoyer le base64
-    if (image.includes(',')) {
-      base64Data = image.split(',')[1];
-    }
-    
-    // Vérifier que c'est du base64 valide
-    if (!base64Data || base64Data.length < 100) {
-      return NextResponse.json(
-        { error: 'Image invalide ou trop petite' },
-        { status: 400 }
-      );
-    }
-    
-    const buffer = Buffer.from(base64Data, 'base64');
     console.log(`📤 Upload de l'image vers Supabase Storage... (${buffer.length} bytes, filename: ${filename})`);
     
     let publicUrl: string | null = null;
@@ -104,7 +103,7 @@ export async function POST(request: NextRequest) {
     const primaryUpload = await supabase.storage
       .from('expense-receipts')
       .upload(filename, buffer, {
-        contentType: isPdf ? 'application/pdf' : 'image/jpeg',
+        contentType: detectedMime,
         upsert: false,
       });
 
@@ -315,9 +314,30 @@ function toUserFacingExpenseError(message: string): string {
 }
 
 function normalizeMimeType(mimeType: unknown): string {
-  const raw = String(mimeType || 'image/jpeg').toLowerCase().trim();
+  const raw = String(mimeType || '').toLowerCase().trim();
   if (raw === 'image/jpg') return 'image/jpeg';
+  if (raw === 'application/x-pdf') return 'application/pdf';
   return raw;
+}
+
+function inferMimeTypeFromFilename(name: string): string {
+  const lower = String(name || '').toLowerCase().trim();
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.heic')) return 'image/heic';
+  if (lower.endsWith('.heif')) return 'image/heif';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  return '';
+}
+
+function getExtensionForMime(mime: string): string {
+  if (mime === 'application/pdf') return 'pdf';
+  if (mime === 'image/png') return 'png';
+  if (mime === 'image/webp') return 'webp';
+  if (mime === 'image/heic') return 'heic';
+  if (mime === 'image/heif') return 'heif';
+  return 'jpg';
 }
 
 async function syncCurrentMonthReport(userId: string) {

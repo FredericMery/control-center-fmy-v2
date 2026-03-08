@@ -134,8 +134,12 @@ export default function ExpenseForm() {
 
       if (isPdf) {
         const firstPageImageDataUrl = await convertPdfFirstPageToJpegDataUrl(file);
+        const convertedPdfImageFile = dataUrlToFile(
+          firstPageImageDataUrl,
+          toJpegName(file.name || 'ticket.pdf')
+        );
         setImage(firstPageImageDataUrl);
-        handleScan(firstPageImageDataUrl);
+        handleScan(convertedPdfImageFile, 'application/pdf');
         return;
       }
 
@@ -143,21 +147,22 @@ export default function ExpenseForm() {
       if (DIRECT_READ_IMAGE_TYPES.has(mimeType)) {
         const imageDataUrl = await readFileAsDataUrl(file);
         setImage(imageDataUrl);
-        handleScan(imageDataUrl);
+        handleScan(file);
         return;
       }
 
       // HEIC/HEIF (iPhone) sont convertis en JPEG pour compatibilite OCR/API.
       if (CONVERT_TO_JPEG_TYPES.has(mimeType) || mimeType.startsWith('image/')) {
         const jpegDataUrl = await convertImageToJpegDataUrl(file);
+        const convertedImageFile = dataUrlToFile(jpegDataUrl, toJpegName(file.name || 'capture.heic'));
         setImage(jpegDataUrl);
-        handleScan(jpegDataUrl);
+        handleScan(convertedImageFile);
         return;
       }
 
       const fallbackDataUrl = await readFileAsDataUrl(file);
       setImage(fallbackDataUrl);
-      handleScan(fallbackDataUrl);
+      handleScan(file);
     } catch {
       setImage(null);
       setError(
@@ -166,7 +171,7 @@ export default function ExpenseForm() {
     }
   };
 
-  const handleScan = async (base64Image: string) => {
+  const handleScan = async (uploadFile: File, sourceMime?: string) => {
     if (!authToken) {
       setError('Authentication required. Please sign in again.');
       return;
@@ -179,20 +184,23 @@ export default function ExpenseForm() {
 
     try {
       console.log('🚀 Envoi de la facture à l\'API...');
+      const payload = new FormData();
+      payload.append('file', uploadFile);
+      payload.append('paymentMethod', String(paymentMethod || ''));
+      payload.append('validationCode', validationCode);
+      payload.append('reason', reason || '');
+      payload.append('recipientName', selectedRecipient?.name || '');
+      payload.append('recipientDestination', selectedRecipient?.destination || '');
+      if (sourceMime) {
+        payload.append('sourceMime', sourceMime);
+      }
+
       const response = await fetch('/api/expenses/create', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({
-          image: base64Image,
-          paymentMethod,
-          reason,
-          validationCode,
-          recipientName: selectedRecipient?.name || null,
-          recipientDestination: selectedRecipient?.destination || null,
-        }),
+        body: payload,
       });
 
       const data = await response.json();
@@ -647,6 +655,30 @@ function readFileAsDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(new Error('File read failed'));
     reader.readAsDataURL(file);
   });
+}
+
+function dataUrlToFile(dataUrl: string, filename: string): File {
+  const [header, body = ''] = String(dataUrl || '').split(',');
+  const mimeMatch = header.match(/^data:([^;]+);base64$/i);
+  const mimeType = (mimeMatch?.[1] || 'image/jpeg').toLowerCase();
+  const binary = atob(body);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return new File([bytes], filename, {
+    type: mimeType,
+    lastModified: Date.now(),
+  });
+}
+
+function toJpegName(originalName: string): string {
+  const name = String(originalName || 'capture').trim();
+  const dot = name.lastIndexOf('.');
+  if (dot < 0) return `${name}.jpg`;
+  return `${name.slice(0, dot)}.jpg`;
 }
 
 function inferMimeType(file: File): string {
