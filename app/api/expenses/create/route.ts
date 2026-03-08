@@ -59,7 +59,8 @@ export async function POST(request: NextRequest) {
     // 2. Générer un ID unique pour la dépense
     const expenseId = crypto.randomUUID();
     const timestamp = Date.now();
-    const filename = `${userId}_${timestamp}_${expenseId.substring(0, 8)}.${isPdf ? 'pdf' : 'jpg'}`;
+    const safeShortId = expenseId.substring(0, 8);
+    const filename = `${userId}/${timestamp}-${safeShortId}.${isPdf ? 'pdf' : 'jpg'}`;
 
     // 3. Uploader l'image dans Supabase Storage
     let base64Data = image;
@@ -80,7 +81,9 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(base64Data, 'base64');
     console.log(`📤 Upload de l'image vers Supabase Storage... (${buffer.length} bytes, filename: ${filename})`);
     
-    let finalStoragePath = filename;
+    let publicUrl: string | null = null;
+    let uploadWarning = '';
+
     const primaryUpload = await supabase.storage
       .from('expense-receipts')
       .upload(filename, buffer, {
@@ -91,16 +94,8 @@ export async function POST(request: NextRequest) {
     if (primaryUpload.error) {
       console.error('❌ Erreur upload primaire:', primaryUpload.error);
 
-      const maybePatternError = isPatternError(primaryUpload.error.message);
-      if (!maybePatternError) {
-        return NextResponse.json(
-          { error: toUserFacingExpenseError(primaryUpload.error.message) },
-          { status: 500 }
-        );
-      }
-
-      // Fallback iPhone/webview: certains fichiers sont rejetes avec contentType strict.
-      const fallbackName = `${userId}_${timestamp}_${expenseId.substring(0, 8)}.bin`;
+      // Fallback iPhone/webview: chemin + type ultra permissifs.
+      const fallbackName = `${userId}/${timestamp}-${safeShortId}.bin`;
       const fallbackUpload = await supabase.storage
         .from('expense-receipts')
         .upload(fallbackName, buffer, {
@@ -110,21 +105,25 @@ export async function POST(request: NextRequest) {
 
       if (fallbackUpload.error) {
         console.error('❌ Erreur upload fallback:', fallbackUpload.error);
-        return NextResponse.json(
-          { error: toUserFacingExpenseError(fallbackUpload.error.message) },
-          { status: 500 }
-        );
+        uploadWarning = toUserFacingExpenseError(fallbackUpload.error.message);
+      } else {
+        const {
+          data: { publicUrl: fallbackPublicUrl },
+        } = supabase.storage.from('expense-receipts').getPublicUrl(fallbackName);
+        publicUrl = fallbackPublicUrl;
       }
-
-      finalStoragePath = fallbackName;
+    } else {
+      const {
+        data: { publicUrl: uploadedPublicUrl },
+      } = supabase.storage.from('expense-receipts').getPublicUrl(filename);
+      publicUrl = uploadedPublicUrl;
     }
 
-    console.log('✅ Image uploadée avec succès');
-
-    // 4. Récupérer l'URL de l'image
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from('expense-receipts').getPublicUrl(finalStoragePath);
+    if (publicUrl) {
+      console.log('✅ Image uploadée avec succès');
+    } else {
+      console.warn('⚠️ Upload photo ignore, creation depense continue');
+    }
 
     // 5. Déterminer le statut selon méthode + eligibilite NDF detectee par IA
     const status =
@@ -161,7 +160,7 @@ export async function POST(request: NextRequest) {
             expenseType,
             invoiceNumber: invoiceData.invoice_number || undefined,
             invoiceDate: invoiceData.invoice_date || undefined,
-            photoUrl: publicUrl,
+            photoUrl: publicUrl || undefined,
           });
           emailSent = true;
         }
@@ -243,6 +242,10 @@ export async function POST(request: NextRequest) {
         sent: emailSent,
         error: emailSent ? null : emailErrorMessage || null,
       },
+      upload: {
+        photoStored: Boolean(publicUrl),
+        warning: uploadWarning || null,
+      },
     });
   } catch (error: unknown) {
     console.error('❌ Erreur API complète:', error);
@@ -292,15 +295,6 @@ function toUserFacingExpenseError(message: string): string {
   }
 
   return raw;
-}
-
-function isPatternError(message: string): boolean {
-  const lower = String(message || '').toLowerCase();
-  return (
-    lower.includes('did not match the expected pattern') ||
-    lower.includes('expected pattern') ||
-    lower.includes('string did not match')
-  );
 }
 
 async function syncCurrentMonthReport(userId: string) {
