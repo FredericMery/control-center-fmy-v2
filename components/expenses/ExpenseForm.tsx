@@ -205,14 +205,37 @@ export default function ExpenseForm() {
         body: payload,
       });
 
-      const data = await response.json();
-      console.log('📦 Réponse API:', data);
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+      const rawBody = await response.text();
+      let data: Record<string, any> = {};
+
+      if (rawBody && contentType.includes('application/json')) {
+        try {
+          data = JSON.parse(rawBody);
+        } catch {
+          data = {};
+        }
+      }
+
+      console.log('📦 Réponse API:', {
+        status: response.status,
+        contentType,
+        data,
+        raw: rawBody.slice(0, 300),
+      });
 
       if (!response.ok) {
-        const errorMsg = mapUploadError(data.error || t('expenses.scanError'));
+        const fallbackError = rawBody || `Erreur HTTP ${response.status}`;
+        const errorMsg = mapUploadError(String(data.error || fallbackError || t('expenses.scanError')));
         console.error('❌ Erreur API:', errorMsg);
         setError(errorMsg);
         setImage(null); // Reset l'image pour permettre un nouveau scan
+        return;
+      }
+
+      if (!data.expense) {
+        setError('Réponse serveur invalide. Merci de réessayer.');
+        setImage(null);
         return;
       }
 

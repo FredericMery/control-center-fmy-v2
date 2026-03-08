@@ -19,6 +19,15 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const payload = await parseUploadPayload(request);
@@ -251,13 +260,14 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     console.error('❌ Erreur API complète:', error);
+    const status = error instanceof ApiError ? error.status : 500;
     return NextResponse.json(
       {
         error: toUserFacingExpenseError(
           error instanceof Error ? error.message : 'Erreur serveur'
         ),
       },
-      { status: 500 }
+      { status }
     );
   }
 }
@@ -278,10 +288,16 @@ async function parseUploadPayload(request: NextRequest): Promise<ParsedUploadPay
   const contentType = String(request.headers.get('content-type') || '').toLowerCase();
 
   if (contentType.includes('multipart/form-data')) {
-    const formData = await request.formData();
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch (error) {
+      throw new ApiError('Upload multipart invalide ou corrompu', 400);
+    }
+
     const file = formData.get('file');
-    if (!(file instanceof File)) {
-      throw new Error('Fichier manquant dans la requete');
+    if (!isFileLike(file)) {
+      throw new ApiError('Fichier manquant dans la requete', 400);
     }
 
     const detectedMime = normalizeMimeType(file.type || inferMimeTypeFromFilename(file.name));
@@ -304,8 +320,18 @@ async function parseUploadPayload(request: NextRequest): Promise<ParsedUploadPay
   }
 
   // Compatibilite PWA/cache: accepte encore l'ancien payload JSON pour ne pas casser les clients iPhone non rafraichis.
-  const legacy = await request.json();
+  let legacy: any;
+  try {
+    legacy = await request.json();
+  } catch {
+    throw new ApiError('Payload non reconnu. Rechargez la page puis reessayez.', 400);
+  }
+
   const image = String(legacy?.image || '').trim();
+  if (!image) {
+    throw new ApiError('Image manquante dans la requete', 400);
+  }
+
   const [header, payload = ''] = image.split(',');
   const mimeMatch = header.match(/^data:([^;]+);base64$/i);
   const detectedMime = normalizeMimeType(mimeMatch?.[1] || 'image/jpeg');
@@ -322,6 +348,18 @@ async function parseUploadPayload(request: NextRequest): Promise<ParsedUploadPay
     recipientName: String(legacy?.recipientName || '').trim(),
     recipientDestination: String(legacy?.recipientDestination || '').trim(),
   };
+}
+
+function isFileLike(value: FormDataEntryValue | null): value is File {
+  if (!value) return false;
+  if (typeof value === 'string') return false;
+
+  const candidate = value as Partial<File>;
+  return (
+    typeof candidate.arrayBuffer === 'function' &&
+    typeof candidate.name === 'string' &&
+    typeof candidate.type === 'string'
+  );
 }
 
 function toUserFacingExpenseError(message: string): string {
