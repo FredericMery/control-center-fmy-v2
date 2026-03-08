@@ -1,5 +1,4 @@
 import { callGoogleVision, callOpenAi } from '@/lib/ai/client';
-import { PDFParse } from 'pdf-parse';
 
 interface ExtractedInvoiceData {
   invoice_number: string | null;
@@ -35,6 +34,7 @@ export async function extractInvoiceData(base64Image: string, userId: string): P
 
 export async function extractInvoiceDataFromPdf(base64Pdf: string, userId: string): Promise<ExtractedInvoiceData> {
   try {
+    const { PDFParse } = await import('pdf-parse');
     const buffer = Buffer.from(base64Pdf, 'base64');
     const parser = new PDFParse({ data: buffer });
     const pdfTextResult = await parser.getText();
