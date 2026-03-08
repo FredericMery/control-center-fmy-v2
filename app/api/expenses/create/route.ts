@@ -72,19 +72,13 @@ export async function POST(request: NextRequest) {
     const isPdf = payload.sourceMime === 'application/pdf' || payload.detectedMime === 'application/pdf';
     const base64Payload = payload.buffer.toString('base64');
     const imageDataUrl = `data:${payload.detectedMime};base64,${base64Payload}`;
-    const hasPdfPreviewImage =
-      isPdf &&
-      payload.pdfPreviewImage.startsWith('data:image/') &&
-      payload.pdfPreviewImage.includes(',');
 
     // 1. Pipeline IA: OCR/PDF -> Analyse GPT -> Donnees structurees
     console.log('📄 Extraction IA des données de la facture...');
     const invoiceData = isPdf
-      ? hasPdfPreviewImage
-        ? await extractInvoiceData(payload.pdfPreviewImage, userId)
-        : payload.detectedMime === 'application/pdf'
-          ? await extractInvoiceDataFromPdf(base64Payload, userId)
-          : await extractInvoiceData(imageDataUrl, userId)
+      ? payload.detectedMime === 'application/pdf'
+        ? await extractInvoiceDataFromPdf(base64Payload, userId)
+        : await extractInvoiceData(imageDataUrl, userId)
       : await extractInvoiceData(imageDataUrl, userId);
     console.log('✅ Données IA extraites:', invoiceData);
 
@@ -283,7 +277,6 @@ type ParsedUploadPayload = {
   detectedMime: string;
   sourceMime: string;
   fileSize: number;
-  pdfPreviewImage: string;
   paymentMethod: string;
   validationCode: string;
   reason: string;
@@ -310,7 +303,6 @@ async function parseUploadPayload(request: NextRequest): Promise<ParsedUploadPay
     const detectedMime = normalizeMimeType(file.type || inferMimeTypeFromFilename(file.name));
     const sourceMimeRaw = String(formData.get('sourceMime') || '').trim();
     const sourceMime = sourceMimeRaw ? normalizeMimeType(sourceMimeRaw) : '';
-    const pdfPreviewImage = String(formData.get('pdfPreviewImage') || '').trim();
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
@@ -319,7 +311,6 @@ async function parseUploadPayload(request: NextRequest): Promise<ParsedUploadPay
       detectedMime,
       sourceMime,
       fileSize: Number(file.size || buffer.length || 0),
-      pdfPreviewImage,
       paymentMethod: String(formData.get('paymentMethod') || '').trim(),
       validationCode: String(formData.get('validationCode') || '').trim(),
       reason: String(formData.get('reason') || '').trim(),
@@ -351,7 +342,6 @@ async function parseUploadPayload(request: NextRequest): Promise<ParsedUploadPay
     detectedMime,
     sourceMime: '',
     fileSize: Number(buffer.length || 0),
-    pdfPreviewImage: '',
     paymentMethod: String(legacy?.paymentMethod || '').trim(),
     validationCode: String(legacy?.validationCode || '').trim(),
     reason: String(legacy?.reason || '').trim(),

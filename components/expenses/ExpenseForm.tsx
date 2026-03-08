@@ -56,6 +56,7 @@ export default function ExpenseForm() {
   const [reason, setReason] = useState<string>('');
   const [image, setImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [validationCode, setValidationCode] = useState('');
@@ -133,14 +134,8 @@ export default function ExpenseForm() {
       const isPdf = mimeType === 'application/pdf';
 
       if (isPdf) {
-        try {
-          const pdfPreviewImage = await convertPdfFirstPageToJpegDataUrl(file);
-          setImage(pdfPreviewImage);
-          handleScan(file, 'application/pdf', pdfPreviewImage);
-        } catch {
-          setImage(null);
-          handleScan(file, 'application/pdf');
-        }
+        setImage(null);
+        handleScan(file, 'application/pdf');
         return;
       }
 
@@ -179,14 +174,23 @@ export default function ExpenseForm() {
     }
   };
 
-  const handleScan = async (uploadFile: File, sourceMime?: string, pdfPreviewImage?: string) => {
+  const handleScan = async (uploadFile: File, sourceMime?: string) => {
     if (!authToken) {
       setError('Authentication required. Please sign in again.');
       return;
     }
 
     setIsLoading(true);
+    setScanProgress(8);
     setError(null);
+
+    // Barre de progression visuelle pendant les étapes backend (upload + OCR + IA + insert).
+    let progressTimer: ReturnType<typeof setInterval> | null = setInterval(() => {
+      setScanProgress((current) => {
+        if (current >= 88) return current;
+        return current + 4;
+      });
+    }, 320);
 
     const selectedRecipient = recipients.find((recipient) => recipient.id === selectedRecipientId);
 
@@ -201,9 +205,6 @@ export default function ExpenseForm() {
       payload.append('recipientDestination', selectedRecipient?.destination || '');
       if (sourceMime) {
         payload.append('sourceMime', sourceMime);
-      }
-      if (pdfPreviewImage) {
-        payload.append('pdfPreviewImage', pdfPreviewImage);
       }
 
       const response = await fetch('/api/expenses/create', {
@@ -234,6 +235,11 @@ export default function ExpenseForm() {
       });
 
       if (!response.ok) {
+        if (progressTimer) {
+          clearInterval(progressTimer);
+          progressTimer = null;
+        }
+        setScanProgress(0);
         const fallbackError = rawBody || `Erreur HTTP ${response.status}`;
         const errorMsg = mapUploadError(String(data.error || fallbackError || t('expenses.scanError')));
         console.error('❌ Erreur API:', errorMsg);
@@ -243,10 +249,21 @@ export default function ExpenseForm() {
       }
 
       if (!data.expense) {
+        if (progressTimer) {
+          clearInterval(progressTimer);
+          progressTimer = null;
+        }
+        setScanProgress(0);
         setError('Réponse serveur invalide. Merci de réessayer.');
         setImage(null);
         return;
       }
+
+      if (progressTimer) {
+        clearInterval(progressTimer);
+        progressTimer = null;
+      }
+      setScanProgress(100);
 
       // Succès - tracker les événements
       console.log('✅ Dépense créée avec succès');
@@ -268,14 +285,23 @@ export default function ExpenseForm() {
 
       // Rediriger après 2 secondes
       setTimeout(() => {
+        setScanProgress(0);
         router.push('/dashboard/expenses');
       }, 2000);
     } catch (err: unknown) {
+      if (progressTimer) {
+        clearInterval(progressTimer);
+        progressTimer = null;
+      }
+      setScanProgress(0);
       const errorMsg = mapUploadError(err instanceof Error ? err.message : t('expenses.processingError'));
       setError(errorMsg);
       setImage(null); // Reset l'image pour permettre un nouveau scan
       console.error('❌ Erreur catch:', err);
     } finally {
+      if (progressTimer) {
+        clearInterval(progressTimer);
+      }
       setIsLoading(false);
     }
   };
@@ -596,6 +622,21 @@ export default function ExpenseForm() {
                   </p>
                 </div>
               )}
+
+              {isLoading && (
+                <div className="mt-6 max-w-md mx-auto">
+                  <div className="flex items-center justify-between text-xs text-slate-600 mb-2">
+                    <span>Analyse du justificatif...</span>
+                    <span>{scanProgress}%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                    <div
+                      className="h-full bg-blue-600 transition-all duration-300"
+                      style={{ width: `${scanProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Error */}
@@ -728,42 +769,6 @@ function inferMimeType(file: File): string {
   if (name.endsWith('.webp')) return 'image/webp';
   if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
   return '';
-}
-
-async function convertPdfFirstPageToJpegDataUrl(file: File): Promise<string> {
-  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const buffer = await file.arrayBuffer();
-
-  const loadingTask = getDocument({
-    data: buffer,
-    disableWorker: true,
-  } as any);
-
-  const pdf = await loadingTask.promise;
-  const page = await pdf.getPage(1);
-  const viewport = page.getViewport({ scale: 2 });
-
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.floor(viewport.width));
-  canvas.height = Math.max(1, Math.floor(viewport.height));
-
-  const context = canvas.getContext('2d');
-  if (!context) {
-    throw new Error('Canvas context unavailable for PDF preview');
-  }
-
-  await page.render({
-    canvasContext: context,
-    viewport,
-    canvas,
-  } as any).promise;
-
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-  if ((pdf as any).destroy) {
-    await (pdf as any).destroy();
-  }
-
-  return dataUrl;
 }
 
 function mapUploadError(message: string): string {
