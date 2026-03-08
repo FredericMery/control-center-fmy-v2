@@ -149,6 +149,15 @@ export async function POST(request: NextRequest) {
     const normalizedRecipientName = String(payload.recipientName || '').trim().slice(0, 120);
     const normalizedRecipientDestination = String(payload.recipientDestination || '').trim().slice(0, 180);
     const expenseType = normalizedReason || invoiceData.expense_type || invoiceData.category || 'autre';
+    const normalizedAmounts = normalizeExpenseAmounts({
+      amountHt: invoiceData.amount_ht,
+      amountTva: invoiceData.amount_tva,
+      amountTtc: invoiceData.amount_ttc,
+    });
+
+    if (normalizedAmounts.amountTtc === null) {
+      throw new ApiError('Aucun montant detecte sur le justificatif. Verifiez le PDF puis reessayez.', 400);
+    }
 
     let emailSent = false;
     let emailErrorMessage = '';
@@ -168,9 +177,9 @@ export async function POST(request: NextRequest) {
             userId,
             to: settings.email,
             vendor: invoiceData.vendor || 'Fournisseur',
-            amountHt: invoiceData.amount_ht || 0,
-            amountTax: invoiceData.amount_tva || 0,
-            amountTtc: invoiceData.amount_ttc || 0,
+            amountHt: normalizedAmounts.amountHt || 0,
+            amountTax: normalizedAmounts.amountTva || 0,
+            amountTtc: normalizedAmounts.amountTtc || 0,
             expenseType,
             invoiceNumber: invoiceData.invoice_number || undefined,
             invoiceDate: invoiceData.invoice_date || undefined,
@@ -212,9 +221,9 @@ export async function POST(request: NextRequest) {
         invoice_number: invoiceData.invoice_number,
         invoice_date: invoiceData.invoice_date,
         vendor: safeVendor,
-        amount_ht: invoiceData.amount_ht,
-        amount_tva: invoiceData.amount_tva,
-        amount_ttc: invoiceData.amount_ttc,
+        amount_ht: normalizedAmounts.amountHt,
+        amount_tva: normalizedAmounts.amountTva,
+        amount_ttc: normalizedAmounts.amountTtc,
         category: expenseType,
         description: aiContext,
         photo_url: publicUrl,
@@ -363,6 +372,51 @@ function isFileLike(value: FormDataEntryValue | null): value is File {
     typeof candidate.name === 'string' &&
     typeof candidate.type === 'string'
   );
+}
+
+function normalizeExpenseAmounts(input: {
+  amountHt: number | null;
+  amountTva: number | null;
+  amountTtc: number | null;
+}): {
+  amountHt: number | null;
+  amountTva: number | null;
+  amountTtc: number | null;
+} {
+  let amountHt = toNullableAmount(input.amountHt);
+  let amountTva = toNullableAmount(input.amountTva);
+  let amountTtc = toNullableAmount(input.amountTtc);
+
+  // Regle metier: si un seul montant est trouve, on le considere comme TTC.
+  if (amountTtc === null) {
+    if (amountHt !== null && amountTva !== null) {
+      amountTtc = roundMoney(amountHt + amountTva);
+    } else if (amountHt !== null) {
+      amountTtc = amountHt;
+    } else if (amountTva !== null) {
+      amountTtc = amountTva;
+    }
+  }
+
+  if (amountTtc !== null && amountHt === null && amountTva === null) {
+    amountHt = amountTtc;
+    amountTva = 0;
+  } else if (amountTtc !== null && amountHt !== null && amountTva === null) {
+    amountTva = Math.max(0, roundMoney(amountTtc - amountHt));
+  } else if (amountTtc !== null && amountHt === null && amountTva !== null) {
+    amountHt = Math.max(0, roundMoney(amountTtc - amountTva));
+  }
+
+  return { amountHt, amountTva, amountTtc };
+}
+
+function toNullableAmount(value: number | null): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return roundMoney(value);
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function toUserFacingExpenseError(message: string): string {
