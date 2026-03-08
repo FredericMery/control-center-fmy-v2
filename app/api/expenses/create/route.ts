@@ -5,6 +5,15 @@ import { sendExpenseEmail } from '@/lib/email/resendService';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 import { requireValidationCode } from '@/lib/ai/client';
 
+const ALLOWED_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'application/pdf',
+]);
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -41,7 +50,15 @@ export async function POST(request: NextRequest) {
     requireValidationCode(validationCode);
 
     const mimeTypeMatch = String(image).match(/^data:([^;]+);base64,/i);
-    const mimeType = (mimeTypeMatch?.[1] || 'image/jpeg').toLowerCase();
+    const mimeType = normalizeMimeType(mimeTypeMatch?.[1]);
+
+    if (!ALLOWED_TYPES.has(mimeType)) {
+      return NextResponse.json(
+        { error: 'Format non supporte. Utilisez JPG/PNG/WEBP/HEIC/HEIF ou PDF.' },
+        { status: 400 }
+      );
+    }
+
     const isPdf = mimeType === 'application/pdf';
 
     // 1. Pipeline IA: OCR/PDF -> Analyse GPT -> Donnees structurees
@@ -275,7 +292,7 @@ function toUserFacingExpenseError(message: string): string {
     lower.includes('expected pattern') ||
     lower.includes('string did not match')
   ) {
-    return 'Format non reconnu. Utilisez une photo (JPG, PNG, WEBP, HEIC) ou un PDF.';
+    return 'Format non reconnu. Utilisez une photo (JPG, PNG, WEBP, HEIC/HEIF) ou un PDF.';
   }
 
   if (lower.includes('invalid') && (lower.includes('image') || lower.includes('content'))) {
@@ -294,6 +311,12 @@ function toUserFacingExpenseError(message: string): string {
     return 'Erreur upload de la photo. Reessayez avec une image plus legere.';
   }
 
+  return raw;
+}
+
+function normalizeMimeType(mimeType: unknown): string {
+  const raw = String(mimeType || 'image/jpeg').toLowerCase().trim();
+  if (raw === 'image/jpg') return 'image/jpeg';
   return raw;
 }
 

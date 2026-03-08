@@ -34,15 +34,14 @@ const PRO_REASONS = [
   'Autre',
 ];
 
-const SUPPORTED_IMAGE_TYPES = new Set([
+const ALLOWED_TYPES = [
   'image/jpeg',
-  'image/jpg',
   'image/png',
   'image/webp',
   'image/heic',
   'image/heif',
   'application/pdf',
-]);
+];
 
 const DIRECT_READ_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 const CONVERT_TO_JPEG_TYPES = new Set(['image/heic', 'image/heif']);
@@ -122,7 +121,7 @@ export default function ExpenseForm() {
     if (!file) return;
 
     const mimeType = inferMimeType(file);
-    if (mimeType && !SUPPORTED_IMAGE_TYPES.has(mimeType)) {
+    if (!ALLOWED_TYPES.includes(mimeType)) {
       setError('Format non pris en charge. Utilisez une photo iPhone/Android (JPG, PNG, WEBP, HEIC/HEIF) ou un PDF.');
       setImage(null);
       return;
@@ -134,9 +133,9 @@ export default function ExpenseForm() {
       const isPdf = mimeType === 'application/pdf';
 
       if (isPdf) {
-        const pdfDataUrl = await readFileAsDataUrl(file);
-        setImage(pdfDataUrl);
-        handleScan(pdfDataUrl);
+        const firstPageImageDataUrl = await convertPdfFirstPageToJpegDataUrl(file);
+        setImage(firstPageImageDataUrl);
+        handleScan(firstPageImageDataUrl);
         return;
       }
 
@@ -652,6 +651,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 function inferMimeType(file: File): string {
   const raw = String(file.type || '').toLowerCase().trim();
+  if (raw === 'image/jpg') return 'image/jpeg';
   if (raw) return raw;
 
   const name = String(file.name || '').toLowerCase();
@@ -664,6 +664,42 @@ function inferMimeType(file: File): string {
   return '';
 }
 
+async function convertPdfFirstPageToJpegDataUrl(file: File): Promise<string> {
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const buffer = await file.arrayBuffer();
+
+  const loadingTask = getDocument({
+    data: buffer,
+    disableWorker: true,
+  } as any);
+
+  const pdf = await loadingTask.promise;
+  const page = await pdf.getPage(1);
+
+  const viewport = page.getViewport({ scale: 2 });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.floor(viewport.width));
+  canvas.height = Math.max(1, Math.floor(viewport.height));
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Canvas context unavailable for PDF');
+  }
+
+  await page.render({
+    canvasContext: context,
+    viewport,
+    canvas,
+  } as any).promise;
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+
+  if ((pdf as any).destroy) {
+    await (pdf as any).destroy();
+  }
+
+  return dataUrl;
+}
+
 function mapUploadError(message: string): string {
   const raw = String(message || '').trim();
   const lower = raw.toLowerCase();
@@ -671,7 +707,7 @@ function mapUploadError(message: string): string {
   if (!raw) return 'Erreur lors du traitement du fichier.';
 
   if (lower.includes('expected pattern') || lower.includes('did not match the expected pattern')) {
-    return 'Fichier recu mais non interpretable. Reessayez en JPG/PNG/WEBP/HEIC ou PDF.';
+    return 'Fichier recu mais non interpretable. Reessayez en JPG/PNG/WEBP/HEIC/HEIF ou PDF.';
   }
 
   if (lower.includes('invalid image') || lower.includes('image invalide')) {
