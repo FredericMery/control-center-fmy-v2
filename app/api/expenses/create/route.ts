@@ -80,19 +80,43 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(base64Data, 'base64');
     console.log(`📤 Upload de l'image vers Supabase Storage... (${buffer.length} bytes, filename: ${filename})`);
     
-    const { error: uploadError } = await supabase.storage
+    let finalStoragePath = filename;
+    const primaryUpload = await supabase.storage
       .from('expense-receipts')
       .upload(filename, buffer, {
         contentType: isPdf ? 'application/pdf' : 'image/jpeg',
         upsert: false,
       });
 
-    if (uploadError) {
-      console.error('❌ Erreur upload:', uploadError);
-      return NextResponse.json(
-        { error: toUserFacingExpenseError(uploadError?.message) },
-        { status: 500 }
-      );
+    if (primaryUpload.error) {
+      console.error('❌ Erreur upload primaire:', primaryUpload.error);
+
+      const maybePatternError = isPatternError(primaryUpload.error.message);
+      if (!maybePatternError) {
+        return NextResponse.json(
+          { error: toUserFacingExpenseError(primaryUpload.error.message) },
+          { status: 500 }
+        );
+      }
+
+      // Fallback iPhone/webview: certains fichiers sont rejetes avec contentType strict.
+      const fallbackName = `${userId}_${timestamp}_${expenseId.substring(0, 8)}.bin`;
+      const fallbackUpload = await supabase.storage
+        .from('expense-receipts')
+        .upload(fallbackName, buffer, {
+          contentType: 'application/octet-stream',
+          upsert: false,
+        });
+
+      if (fallbackUpload.error) {
+        console.error('❌ Erreur upload fallback:', fallbackUpload.error);
+        return NextResponse.json(
+          { error: toUserFacingExpenseError(fallbackUpload.error.message) },
+          { status: 500 }
+        );
+      }
+
+      finalStoragePath = fallbackName;
     }
 
     console.log('✅ Image uploadée avec succès');
@@ -100,7 +124,7 @@ export async function POST(request: NextRequest) {
     // 4. Récupérer l'URL de l'image
     const {
       data: { publicUrl },
-    } = supabase.storage.from('expense-receipts').getPublicUrl(filename);
+    } = supabase.storage.from('expense-receipts').getPublicUrl(finalStoragePath);
 
     // 5. Déterminer le statut selon méthode + eligibilite NDF detectee par IA
     const status =
@@ -268,6 +292,15 @@ function toUserFacingExpenseError(message: string): string {
   }
 
   return raw;
+}
+
+function isPatternError(message: string): boolean {
+  const lower = String(message || '').toLowerCase();
+  return (
+    lower.includes('did not match the expected pattern') ||
+    lower.includes('expected pattern') ||
+    lower.includes('string did not match')
+  );
 }
 
 async function syncCurrentMonthReport(userId: string) {

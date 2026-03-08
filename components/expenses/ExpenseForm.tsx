@@ -123,7 +123,7 @@ export default function ExpenseForm() {
 
     const mimeType = inferMimeType(file);
     if (mimeType && !SUPPORTED_IMAGE_TYPES.has(mimeType)) {
-      setError('Format non pris en charge. Utilisez JPG, PNG, WEBP, HEIC/HEIF ou PDF.');
+      setError('Format non pris en charge. Utilisez une photo iPhone/Android (JPG, PNG, WEBP, HEIC/HEIF) ou un PDF.');
       setImage(null);
       return;
     }
@@ -671,7 +671,7 @@ function mapUploadError(message: string): string {
   if (!raw) return 'Erreur lors du traitement du fichier.';
 
   if (lower.includes('expected pattern') || lower.includes('did not match the expected pattern')) {
-    return 'Format de fichier non reconnu. Essayez JPG, PNG, WEBP, HEIC/HEIF ou PDF.';
+    return 'Fichier recu mais non interpretable. Reessayez en JPG/PNG/WEBP/HEIC ou PDF.';
   }
 
   if (lower.includes('invalid image') || lower.includes('image invalide')) {
