@@ -245,9 +245,14 @@ function toUserFacingExpenseError(message: string): string {
 
   if (
     lower.includes('did not match the expected pattern') ||
-    lower.includes('expected pattern')
+    lower.includes('expected pattern') ||
+    lower.includes('string did not match')
   ) {
     return 'Format non reconnu. Utilisez une photo (JPG, PNG, WEBP, HEIC) ou un PDF.';
+  }
+
+  if (lower.includes('invalid') && (lower.includes('image') || lower.includes('content'))) {
+    return 'Le fichier fourni ne peut pas etre traite. Reessayez avec un fichier image/PDF valide.';
   }
 
   if (lower.includes('google vision') || lower.includes('vision')) {

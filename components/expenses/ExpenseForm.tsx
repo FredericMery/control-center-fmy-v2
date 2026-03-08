@@ -44,6 +44,9 @@ const SUPPORTED_IMAGE_TYPES = new Set([
   'application/pdf',
 ]);
 
+const DIRECT_READ_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+const CONVERT_TO_JPEG_TYPES = new Set(['image/heic', 'image/heif']);
+
 const MAX_IMAGE_DIMENSION = 2200;
 
 export default function ExpenseForm() {
@@ -118,9 +121,9 @@ export default function ExpenseForm() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const mimeType = file.type?.toLowerCase() || '';
+    const mimeType = inferMimeType(file);
     if (mimeType && !SUPPORTED_IMAGE_TYPES.has(mimeType)) {
-      setError('Format image non pris en charge. Utilisez JPG, PNG, WEBP ou HEIC (iPhone).');
+      setError('Format non pris en charge. Utilisez JPG, PNG, WEBP, HEIC/HEIF ou PDF.');
       setImage(null);
       return;
     }
@@ -137,14 +140,29 @@ export default function ExpenseForm() {
         return;
       }
 
-      // Convertit systematiquement l image en JPEG pour assurer la compatibilite Vision/API.
-      const jpegDataUrl = await convertImageToJpegDataUrl(file);
-      setImage(jpegDataUrl);
-      handleScan(jpegDataUrl);
+      // JPEG/PNG/WEBP sont utilises tels quels pour eviter les transformations inutiles.
+      if (DIRECT_READ_IMAGE_TYPES.has(mimeType)) {
+        const imageDataUrl = await readFileAsDataUrl(file);
+        setImage(imageDataUrl);
+        handleScan(imageDataUrl);
+        return;
+      }
+
+      // HEIC/HEIF (iPhone) sont convertis en JPEG pour compatibilite OCR/API.
+      if (CONVERT_TO_JPEG_TYPES.has(mimeType) || mimeType.startsWith('image/')) {
+        const jpegDataUrl = await convertImageToJpegDataUrl(file);
+        setImage(jpegDataUrl);
+        handleScan(jpegDataUrl);
+        return;
+      }
+
+      const fallbackDataUrl = await readFileAsDataUrl(file);
+      setImage(fallbackDataUrl);
+      handleScan(fallbackDataUrl);
     } catch {
       setImage(null);
       setError(
-        'Impossible de lire ce fichier. Reessayez avec une photo ou un PDF valide.'
+        'Impossible de lire ce fichier. Reessayez avec une photo (JPG/PNG/WEBP/HEIC) ou un PDF.'
       );
     }
   };
@@ -182,7 +200,7 @@ export default function ExpenseForm() {
       console.log('📦 Réponse API:', data);
 
       if (!response.ok) {
-        const errorMsg = data.error || t('expenses.scanError');
+        const errorMsg = mapUploadError(data.error || t('expenses.scanError'));
         console.error('❌ Erreur API:', errorMsg);
         setError(errorMsg);
         setImage(null); // Reset l'image pour permettre un nouveau scan
@@ -212,7 +230,7 @@ export default function ExpenseForm() {
         router.push('/dashboard/expenses');
       }, 2000);
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : t('expenses.processingError');
+      const errorMsg = mapUploadError(err instanceof Error ? err.message : t('expenses.processingError'));
       setError(errorMsg);
       setImage(null); // Reset l'image pour permettre un nouveau scan
       console.error('❌ Erreur catch:', err);
@@ -630,6 +648,37 @@ function readFileAsDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(new Error('File read failed'));
     reader.readAsDataURL(file);
   });
+}
+
+function inferMimeType(file: File): string {
+  const raw = String(file.type || '').toLowerCase().trim();
+  if (raw) return raw;
+
+  const name = String(file.name || '').toLowerCase();
+  if (name.endsWith('.pdf')) return 'application/pdf';
+  if (name.endsWith('.heic')) return 'image/heic';
+  if (name.endsWith('.heif')) return 'image/heif';
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.webp')) return 'image/webp';
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  return '';
+}
+
+function mapUploadError(message: string): string {
+  const raw = String(message || '').trim();
+  const lower = raw.toLowerCase();
+
+  if (!raw) return 'Erreur lors du traitement du fichier.';
+
+  if (lower.includes('expected pattern') || lower.includes('did not match the expected pattern')) {
+    return 'Format de fichier non reconnu. Essayez JPG, PNG, WEBP, HEIC/HEIF ou PDF.';
+  }
+
+  if (lower.includes('invalid image') || lower.includes('image invalide')) {
+    return 'Le fichier ne peut pas etre traite comme justificatif valide.';
+  }
+
+  return raw;
 }
 
 async function fetchRecipients(token: string): Promise<ExpenseRecipient[]> {
