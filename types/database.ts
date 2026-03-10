@@ -195,6 +195,70 @@ export type Database = {
           updated_at?: string;
         };
       };
+      user_email_aliases: {
+        Row: {
+          id: string;
+          user_id: string;
+          email_alias: string;
+          label: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          email_alias: string;
+          label?: string | null;
+          is_active?: boolean;
+        };
+        Update: {
+          email_alias?: string;
+          label?: string | null;
+          is_active?: boolean;
+          updated_at?: string;
+        };
+      };
+      inbound_alias_requests: {
+        Row: {
+          id: string;
+          user_id: string;
+          sender_email: string;
+          sender_name: string | null;
+          original_subject: string | null;
+          original_body: string | null;
+          inferred_title: string;
+          inferred_deadline: string;
+          status: string;
+          review_note: string | null;
+          reviewed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          sender_email: string;
+          sender_name?: string | null;
+          original_subject?: string | null;
+          original_body?: string | null;
+          inferred_title: string;
+          inferred_deadline: string;
+          status?: string;
+          review_note?: string | null;
+          reviewed_at?: string | null;
+        };
+        Update: {
+          sender_email?: string;
+          sender_name?: string | null;
+          original_subject?: string | null;
+          original_body?: string | null;
+          inferred_title?: string;
+          inferred_deadline?: string;
+          status?: string;
+          review_note?: string | null;
+          reviewed_at?: string | null;
+          updated_at?: string;
+        };
+      };
     };
   };
 };

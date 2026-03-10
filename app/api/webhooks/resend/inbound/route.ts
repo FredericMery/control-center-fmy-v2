@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { callOpenAi } from '@/lib/ai/client';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { Resend } from 'resend';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const DEFAULT_TASK_INBOUND_ADDRESS = 'taskpro@control.meetsync-ai.com';
 
@@ -55,16 +57,71 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Expediteur introuvable' }, { status: 400 });
     }
 
-    const userId = await findUserIdByEmail(senderEmail);
-    if (!userId) {
-      // On accuse reception sans erreur pour eviter les retries webhook infinis.
-      return NextResponse.json({ ok: true, skipped: 'unknown-sender', senderEmail });
-    }
-
     const subject = normalizeText(eventData.subject);
     const plainText = normalizeText(eventData.text || eventData.text_body || eventData.snippet);
     const htmlText = normalizeText(eventData.html);
     const bodyForAi = plainText || htmlText;
+
+    const userMatch = await findUserMatchForInboundEmail({
+      senderEmail,
+      senderRaw: eventData.from,
+      subject,
+      body: bodyForAi,
+    });
+    const userId = userMatch?.id || null;
+    if (!userId) {
+      const titleForPending = buildTaskTitle(subject, bodyForAi);
+      const fallbackDeadline = resolveTaskDeadline(null, eventData.date || eventData.created_at);
+      const senderName = extractSenderName(eventData.from);
+
+      const reviewCandidate = await findPotentialUserForAliasReview({
+        senderEmail,
+        senderRaw: eventData.from,
+        subject,
+        body: bodyForAi,
+      });
+
+      if (reviewCandidate && reviewCandidate.score >= 50) {
+        const requestId = await createInboundAliasReviewRequest({
+          userId: reviewCandidate.id,
+          senderEmail,
+          senderName,
+          subject,
+          body: bodyForAi,
+          inferredTitle: titleForPending,
+          inferredDeadline: fallbackDeadline,
+        });
+
+        if (requestId) {
+          await createAliasReviewNotification({
+            userId: reviewCandidate.id,
+            requestId,
+            senderEmail,
+            subject,
+          });
+        }
+
+        return NextResponse.json({
+          ok: true,
+          skipped: 'pending-alias-review',
+          senderEmail,
+          requestId,
+          candidateScore: reviewCandidate.score,
+        });
+      }
+
+      await sendAliasGuidanceEmail({
+        senderEmail,
+        targetName: senderName || null,
+      });
+
+      // On accuse reception sans erreur pour eviter les retries webhook infinis.
+      return NextResponse.json({
+        ok: true,
+        skipped: 'unknown-sender-guidance-sent',
+        senderEmail,
+      });
+    }
 
     const analysis = await analyzeTaskEmail({
       userId,
@@ -100,6 +157,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       task: inserted,
+      matchedUser: {
+        score: userMatch?.score || null,
+        reason: userMatch?.reason || null,
+      },
       inferred: {
         deadline,
         usedDefaultDeadline: !analysis.deadlineIso,
@@ -440,4 +501,447 @@ async function findUserIdByEmail(email: string): Promise<string | null> {
   }
 
   return null;
+}
+
+async function findUserIdByAliasEmail(email: string): Promise<string | null> {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+
+  const { data, error } = await supabase
+    .from('user_email_aliases')
+    .select('user_id')
+    .eq('email_alias', normalized)
+    .eq('is_active', true)
+    .limit(2);
+
+  if (error) {
+    console.error('find alias user failed', error);
+    return null;
+  }
+
+  if (!data?.length) return null;
+  if (data.length > 1) {
+    console.warn('resend inbound -> duplicate active aliases detected', {
+      email: normalized,
+      count: data.length,
+    });
+    return null;
+  }
+
+  return String(data[0]?.user_id || '') || null;
+}
+
+type InboundUserMatch = {
+  id: string;
+  score: number;
+  reason: string;
+};
+
+async function findUserMatchForInboundEmail(args: {
+  senderEmail: string;
+  senderRaw: unknown;
+  subject: string;
+  body: string;
+}): Promise<InboundUserMatch | null> {
+  const normalizedSender = normalizeEmail(args.senderEmail);
+  if (!normalizedSender) return null;
+
+  const aliasUserId = await findUserIdByAliasEmail(normalizedSender);
+  if (aliasUserId) {
+    return {
+      id: aliasUserId,
+      score: 150,
+      reason: 'email-alias-exact',
+    };
+  }
+
+  const directUserId = await findUserIdByEmail(normalizedSender);
+  if (directUserId) {
+    return {
+      id: directUserId,
+      score: 120,
+      reason: 'exact-email',
+    };
+  }
+
+  const ranked = await rankUserCandidates({
+    senderEmail: normalizedSender,
+    senderRaw: args.senderRaw,
+    subject: args.subject,
+    body: args.body,
+  });
+
+  const best = ranked[0];
+  const second = ranked[1];
+  if (!best || best.score < 80) {
+    return null;
+  }
+
+  if (second && best.score - second.score < 15) {
+    console.warn('resend inbound -> ambiguous user match', {
+      senderEmail: normalizedSender,
+      best,
+      second,
+    });
+    return null;
+  }
+
+  return best;
+}
+
+async function findPotentialUserForAliasReview(args: {
+  senderEmail: string;
+  senderRaw: unknown;
+  subject: string;
+  body: string;
+}): Promise<InboundUserMatch | null> {
+  const normalizedSender = normalizeEmail(args.senderEmail);
+  if (!normalizedSender) return null;
+
+  const ranked = await rankUserCandidates({
+    senderEmail: normalizedSender,
+    senderRaw: args.senderRaw,
+    subject: args.subject,
+    body: args.body,
+  });
+
+  const best = ranked[0];
+  if (!best) return null;
+  return best;
+}
+
+async function rankUserCandidates(args: {
+  senderEmail: string;
+  senderRaw: unknown;
+  subject: string;
+  body: string;
+}): Promise<InboundUserMatch[]> {
+  const users = await listAllAuthUsers();
+  if (!users.length) return [];
+
+  const senderName = extractSenderName(args.senderRaw);
+  const signatureWindow = `${args.subject}\n${args.body}`.slice(0, 5000);
+
+  return users
+    .map((user) => {
+      const scoreResult = scoreUserCandidate({
+        senderEmail: args.senderEmail,
+        senderName,
+        signatureWindow,
+        user,
+      });
+
+      return {
+        id: user.id,
+        score: scoreResult.score,
+        reason: scoreResult.reason,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+async function createInboundAliasReviewRequest(args: {
+  userId: string;
+  senderEmail: string;
+  senderName: string;
+  subject: string;
+  body: string;
+  inferredTitle: string;
+  inferredDeadline: string;
+}): Promise<string | null> {
+  const normalizedSender = normalizeEmail(args.senderEmail);
+  if (!normalizedSender) return null;
+
+  const { data, error } = await supabase
+    .from('inbound_alias_requests')
+    .insert({
+      user_id: args.userId,
+      sender_email: normalizedSender,
+      sender_name: truncate(normalizeText(args.senderName), 160) || null,
+      original_subject: truncate(normalizeText(args.subject), 300) || null,
+      original_body: truncate(normalizeText(args.body), 5000) || null,
+      inferred_title: truncate(normalizeText(args.inferredTitle), 180) || 'Tache depuis email',
+      inferred_deadline: args.inferredDeadline,
+      status: 'pending',
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('create inbound alias request failed', error);
+    return null;
+  }
+
+  return String(data?.id || '') || null;
+}
+
+async function createAliasReviewNotification(args: {
+  userId: string;
+  requestId: string;
+  senderEmail: string;
+  subject: string;
+}): Promise<void> {
+  const subjectPart = truncate(normalizeText(args.subject), 90);
+  const message = subjectPart
+    ? `Expediteur inconnu: ${args.senderEmail}. Objet: ${subjectPart}. Valider cet expediteur comme alias ?`
+    : `Expediteur inconnu: ${args.senderEmail}. Valider cet expediteur comme alias ?`;
+
+  const { error } = await supabase.from('notifications').insert({
+    user_id: args.userId,
+    type: 'alias_review',
+    ref_key: `alias-review-${args.requestId}`,
+    title: 'Validation expediteur requis',
+    message,
+    read: false,
+  });
+
+  if (error) {
+    console.error('create alias review notification failed', error);
+  }
+}
+
+async function sendAliasGuidanceEmail(args: {
+  senderEmail: string;
+  targetName: string | null;
+}): Promise<void> {
+  const normalizedSender = normalizeEmail(args.senderEmail);
+  if (!normalizedSender || !process.env.RESEND_API_KEY) return;
+
+  const fromAddress = String(process.env.EMAIL_FROM || 'noreply@meetsync-ai.com').trim();
+  const greeting = args.targetName ? `Bonjour ${args.targetName},` : 'Bonjour,';
+
+  try {
+    await resend.emails.send({
+      from: fromAddress,
+      to: normalizedSender,
+      subject: 'Action requise: preciser le destinataire de la tache',
+      text: [
+        greeting,
+        '',
+        'Nous avons bien recu votre email vers taskpro@, mais nous ne pouvons pas identifier le destinataire dans l\'application.',
+        'Merci de repondre en indiquant le prenom + nom de la personne a qui attribuer la tache.',
+        '',
+        'Exemple: "Attribuer a: Prenom Nom"',
+        '',
+        'Merci.',
+      ].join('\n'),
+    });
+  } catch (error) {
+    console.error('send alias guidance email failed', error);
+  }
+}
+
+async function listAllAuthUsers(): Promise<
+  Array<{
+    id: string;
+    email?: string;
+    user_metadata?: Record<string, unknown>;
+  }>
+> {
+  const allUsers: Array<{
+    id: string;
+    email?: string;
+    user_metadata?: Record<string, unknown>;
+  }> = [];
+
+  let page = 1;
+  const perPage = 200;
+
+  while (page <= 20) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      console.error('listUsers failed', error);
+      return [];
+    }
+
+    const users = data?.users || [];
+    allUsers.push(
+      ...users.map((user) => ({
+        id: user.id,
+        email: user.email || undefined,
+        user_metadata:
+          user.user_metadata && typeof user.user_metadata === 'object'
+            ? (user.user_metadata as Record<string, unknown>)
+            : undefined,
+      }))
+    );
+
+    if (users.length < perPage) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return allUsers;
+}
+
+function scoreUserCandidate(args: {
+  senderEmail: string;
+  senderName: string;
+  signatureWindow: string;
+  user: {
+    id: string;
+    email?: string;
+    user_metadata?: Record<string, unknown>;
+  };
+}): { score: number; reason: string } {
+  const userEmail = normalizeEmail(args.user.email);
+  if (!userEmail) return { score: 0, reason: 'missing-user-email' };
+
+  const senderParts = splitEmailParts(args.senderEmail);
+  const userParts = splitEmailParts(userEmail);
+
+  let score = 0;
+  const reasons: string[] = [];
+
+  if (senderParts.localCanonical === userParts.localCanonical) {
+    score += 85;
+    reasons.push('local-match');
+  }
+
+  const localSimilarity = similarityRatio(senderParts.localLoose, userParts.localLoose);
+  if (localSimilarity >= 0.92) {
+    score += 15;
+    reasons.push('local-similar');
+  }
+
+  if (senderParts.domain === userParts.domain) {
+    score += 5;
+    reasons.push('same-domain');
+  }
+
+  const displayName = extractUserDisplayName(args.user.user_metadata, userEmail);
+  if (displayName) {
+    const nameTokens = tokenizeWords(displayName);
+    const senderNameTokens = tokenizeWords(args.senderName);
+    const overlap = countIntersection(nameTokens, senderNameTokens);
+    if (overlap >= 2) {
+      score += 20;
+      reasons.push('sender-name-overlap');
+    } else if (overlap === 1) {
+      score += 8;
+      reasons.push('sender-name-partial');
+    }
+
+    const normalizedSignature = normalizeComparableText(args.signatureWindow);
+    if (normalizedSignature.includes(normalizeComparableText(displayName))) {
+      score += 12;
+      reasons.push('signature-name-match');
+    }
+  }
+
+  return {
+    score,
+    reason: reasons.join('+') || 'no-strong-signal',
+  };
+}
+
+function splitEmailParts(email: string): {
+  localCanonical: string;
+  localLoose: string;
+  domain: string;
+} {
+  const normalized = normalizeEmail(email) || '';
+  const [localRaw = '', domainRaw = ''] = normalized.split('@');
+  const localCanonical = localRaw.split('+')[0];
+  const localLoose = localCanonical.replace(/[^a-z0-9]/g, '');
+  const domain = domainRaw.trim();
+  return { localCanonical, localLoose, domain };
+}
+
+function extractSenderName(input: unknown): string {
+  if (!input) return '';
+
+  if (typeof input === 'object') {
+    const record = input as Record<string, unknown>;
+    const fromName = normalizeText(record.name);
+    if (fromName) return fromName;
+  }
+
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+
+  const match = raw.match(/^"?([^<"]+)"?\s*</);
+  if (match?.[1]) {
+    return normalizeText(match[1]);
+  }
+
+  return '';
+}
+
+function extractUserDisplayName(
+  metadata: Record<string, unknown> | undefined,
+  fallbackEmail: string
+): string {
+  const candidates = [
+    metadata?.full_name,
+    metadata?.name,
+    metadata?.display_name,
+    [metadata?.first_name, metadata?.last_name].filter(Boolean).join(' '),
+  ];
+
+  for (const value of candidates) {
+    const normalized = normalizeText(value);
+    if (normalized) return normalized;
+  }
+
+  const local = splitEmailParts(fallbackEmail).localCanonical.replace(/[._-]+/g, ' ').trim();
+  return normalizeText(local);
+}
+
+function tokenizeWords(input: string): string[] {
+  return normalizeComparableText(input)
+    .split(' ')
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 2);
+}
+
+function normalizeComparableText(input: string): string {
+  return String(input || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function countIntersection(a: string[], b: string[]): number {
+  const setA = new Set(a);
+  const setB = new Set(b);
+  let count = 0;
+  for (const token of setA) {
+    if (setB.has(token)) count += 1;
+  }
+  return count;
+}
+
+function similarityRatio(a: string, b: string): number {
+  if (!a && !b) return 1;
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+
+  const setA = buildBigrams(a);
+  const setB = buildBigrams(b);
+  if (!setA.size || !setB.size) return 0;
+
+  let intersection = 0;
+  for (const gram of setA) {
+    if (setB.has(gram)) intersection += 1;
+  }
+
+  return (2 * intersection) / (setA.size + setB.size);
+}
+
+function buildBigrams(input: string): Set<string> {
+  const normalized = String(input || '').trim();
+  const grams = new Set<string>();
+  if (normalized.length < 2) {
+    if (normalized) grams.add(normalized);
+    return grams;
+  }
+  for (let i = 0; i < normalized.length - 1; i += 1) {
+    grams.add(normalized.slice(i, i + 2));
+  }
+  return grams;
 }

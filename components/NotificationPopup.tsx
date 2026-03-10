@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useAuthStore } from "@/store/authStore";
+import { supabase } from "@/lib/supabase/client";
 
 export default function NotificationPopup() {
   const { 
@@ -17,6 +18,7 @@ export default function NotificationPopup() {
 
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(true);
+  const [processingIds, setProcessingIds] = useState<Record<string, boolean>>({});
 
   // Show only unread notifications in the popup
   const unreadNotifications = notifications.filter((n) => !n.read);
@@ -49,6 +51,62 @@ export default function NotificationPopup() {
   }, [user, fetchNotifications, subscribeRealtime, unsubscribeRealtime]);
 
   if (!user) return null;
+
+  const handleAliasDecision = async (notifId: string, approve: boolean) => {
+    const notif = notifications.find((n) => n.id === notifId);
+    if (!notif?.ref_key?.startsWith("alias-review-")) {
+      await markAsRead(notifId);
+      return;
+    }
+
+    const requestId = notif.ref_key.replace("alias-review-", "").trim();
+    if (!requestId) {
+      await markAsRead(notifId);
+      return;
+    }
+
+    setProcessingIds((prev) => ({ ...prev, [notifId]: true }));
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        console.error("No auth token for alias decision");
+        return;
+      }
+
+      const response = await fetch("/api/settings/email-aliases/resolve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          requestId,
+          action: approve ? "approve" : "reject",
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        console.error("Alias decision failed", payload);
+        return;
+      }
+
+      await markAsRead(notifId);
+      await fetchNotifications();
+    } catch (error) {
+      console.error("Alias decision error", error);
+    } finally {
+      setProcessingIds((prev) => {
+        const copy = { ...prev };
+        delete copy[notifId];
+        return copy;
+      });
+    }
+  };
 
   return (
     <>
@@ -127,6 +185,30 @@ export default function NotificationPopup() {
                     <div className="text-gray-300 text-xs mt-1 line-clamp-2">
                       {notif.message}
                     </div>
+                    {notif.type === "alias_review" && (
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleAliasDecision(notif.id, true);
+                          }}
+                          disabled={Boolean(processingIds[notif.id])}
+                          className="px-2 py-1 rounded-md text-[11px] bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-60"
+                        >
+                          Valider
+                        </button>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleAliasDecision(notif.id, false);
+                          }}
+                          disabled={Boolean(processingIds[notif.id])}
+                          className="px-2 py-1 rounded-md text-[11px] bg-zinc-700 text-white hover:bg-zinc-600 disabled:opacity-60"
+                        >
+                          Refuser
+                        </button>
+                      </div>
+                    )}
                     <div className="text-gray-500 text-[10px] mt-2">
                       {formatTimestamp(notif.created_at)}
                     </div>
@@ -187,6 +269,8 @@ export default function NotificationPopup() {
 
 function getNotificationIcon(type: string): string {
   switch (type) {
+    case "alias_review":
+      return "✉️";
     case "deadline":
       return "⏰";
     case "summary":
