@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { callOpenAi } from '@/lib/ai/client';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,11 +12,21 @@ const DEFAULT_TASK_INBOUND_ADDRESS = 'taskpro@control.meetsync-ai.com';
 
 export async function POST(request: NextRequest) {
   try {
-    if (!isWebhookAuthorized(request)) {
+    const rawBody = await request.text();
+
+    if (!isWebhookAuthorized(request, rawBody)) {
       return NextResponse.json({ error: 'Non autorise' }, { status: 401 });
     }
 
-    const payload = await request.json().catch(() => null);
+    const payload = rawBody
+      ? ((() => {
+          try {
+            return JSON.parse(rawBody) as unknown;
+          } catch {
+            return null;
+          }
+        })())
+      : null;
     if (!payload || typeof payload !== 'object') {
       return NextResponse.json({ error: 'Payload invalide' }, { status: 400 });
     }
@@ -101,7 +112,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function isWebhookAuthorized(request: NextRequest): boolean {
+function isWebhookAuthorized(request: NextRequest, rawBody: string): boolean {
   const configuredToken = String(process.env.RESEND_INBOUND_WEBHOOK_TOKEN || '').trim();
   if (!configuredToken) {
     return true;
@@ -109,8 +120,82 @@ function isWebhookAuthorized(request: NextRequest): boolean {
 
   const fromHeader = String(request.headers.get('x-inbound-token') || '').trim();
   const fromQuery = String(request.nextUrl.searchParams.get('token') || '').trim();
+  const authorization = String(request.headers.get('authorization') || '').trim();
+  const bearerMatch = authorization.match(/^Bearer\s+(.+)$/i);
+  const fromBearer = String(bearerMatch?.[1] || '').trim();
 
-  return fromHeader === configuredToken || fromQuery === configuredToken;
+  if (
+    fromHeader === configuredToken ||
+    fromQuery === configuredToken ||
+    fromBearer === configuredToken
+  ) {
+    return true;
+  }
+
+  return verifySvixSignature({
+    secret: configuredToken,
+    rawBody,
+    svixId: request.headers.get('svix-id'),
+    svixTimestamp: request.headers.get('svix-timestamp'),
+    svixSignature: request.headers.get('svix-signature'),
+  });
+}
+
+function verifySvixSignature(args: {
+  secret: string;
+  rawBody: string;
+  svixId: string | null;
+  svixTimestamp: string | null;
+  svixSignature: string | null;
+}): boolean {
+  const svixId = String(args.svixId || '').trim();
+  const svixTimestamp = String(args.svixTimestamp || '').trim();
+  const svixSignature = String(args.svixSignature || '').trim();
+
+  if (!svixId || !svixTimestamp || !svixSignature || !args.rawBody) {
+    return false;
+  }
+
+  const secretValue = args.secret.startsWith('whsec_')
+    ? args.secret.slice('whsec_'.length)
+    : args.secret;
+
+  let key: Buffer;
+  try {
+    key = Buffer.from(secretValue, 'base64');
+    if (!key.length) {
+      key = Buffer.from(secretValue, 'utf8');
+    }
+  } catch {
+    key = Buffer.from(secretValue, 'utf8');
+  }
+
+  const signedContent = `${svixId}.${svixTimestamp}.${args.rawBody}`;
+  const expected = createHmac('sha256', key).update(signedContent).digest('base64');
+
+  const signatures = svixSignature
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const comma = part.indexOf(',');
+      if (comma === -1) return { version: '', value: '' };
+      return {
+        version: part.slice(0, comma),
+        value: part.slice(comma + 1),
+      };
+    })
+    .filter((entry) => entry.version === 'v1' && entry.value);
+
+  const expectedBuf = Buffer.from(expected);
+
+  return signatures.some((entry) => {
+    const receivedBuf = Buffer.from(entry.value);
+    if (receivedBuf.length !== expectedBuf.length) {
+      return false;
+    }
+    return timingSafeEqual(receivedBuf, expectedBuf);
+  });
 }
 
 function normalizeEventData(payload: Record<string, unknown>): Record<string, unknown> {
