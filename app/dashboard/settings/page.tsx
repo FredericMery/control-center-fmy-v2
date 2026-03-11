@@ -762,6 +762,15 @@ export default function SettingsPage() {
                     🔔 {t("settings.notifications")}
                   </button>
 
+                  <a
+                    href="/docs/notice-utilisation-control-center.pdf"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-h-11 rounded-xl border border-cyan-300/30 bg-cyan-500/15 px-4 py-2 text-sm font-medium text-cyan-100 transition hover:bg-cyan-500/25"
+                  >
+                    {t("settings.documentation")}
+                  </a>
+
         </div>
 
       </div>
