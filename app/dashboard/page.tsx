@@ -6,12 +6,28 @@ import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import { getMonthNameFr } from "@/lib/monthHelper";
 import { supabase } from "@/lib/supabase/client";
+import { getAuthHeaders } from "@/lib/auth/clientSession";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import {
   DASHBOARD_MODULES,
   loadEnabledDashboardModules,
   type DashboardModuleId,
 } from "@/lib/modules/dashboardModules";
+
+type AssistantConversation = {
+  id: string;
+  title: string | null;
+  allow_internet: boolean;
+  status: string;
+  last_message_at: string;
+};
+
+type AssistantMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  created_at: string;
+};
 
 export default function DashboardPage() {
   const { t, language } = useI18n();
@@ -30,10 +46,22 @@ export default function DashboardPage() {
   const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
   const [armedDeleteId, setArmedDeleteId] = useState<string | null>(null);
   const swipeStartRef = useRef<{ id: string; x: number } | null>(null);
+  const [assistantQuestion, setAssistantQuestion] = useState("");
+  const [assistantAllowInternet, setAssistantAllowInternet] = useState(false);
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantConversations, setAssistantConversations] = useState<AssistantConversation[]>([]);
+  const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([]);
+  const [assistantConversationId, setAssistantConversationId] = useState<string | null>(null);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
+  const [assistantSummary, setAssistantSummary] = useState<string | null>(null);
+  const [assistantFinalizing, setAssistantFinalizing] = useState(false);
+  const [assistantListening, setAssistantListening] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const recognitionRef = useRef<any>(null);
   const monthName =
-    language === 'fr'
+    language === "fr"
       ? getMonthNameFr()
-      : new Intl.DateTimeFormat(language, { month: 'long' }).format(new Date());
+      : new Intl.DateTimeFormat(language, { month: "long" }).format(new Date());
 
   useEffect(() => {
     if (user) {
@@ -44,6 +72,59 @@ export default function DashboardPage() {
   useEffect(() => {
     setEnabledModules(loadEnabledDashboardModules());
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadConversations = async () => {
+      try {
+        const response = await fetch("/api/dashboard/assistant", {
+          headers: await getAuthHeaders(false),
+        });
+        const json = await response.json();
+        if (!response.ok) return;
+
+        const conversations = (json.conversations || []) as AssistantConversation[];
+        setAssistantConversations(conversations);
+        if (conversations.length > 0 && !assistantConversationId) {
+          const first = conversations[0];
+          setAssistantConversationId(first.id);
+          setAssistantAllowInternet(Boolean(first.allow_internet));
+        }
+      } catch {
+        // Non bloquant
+      }
+    };
+
+    loadConversations();
+  }, [user]);
+
+  useEffect(() => {
+    if (!assistantConversationId || !user) return;
+
+    const loadMessages = async () => {
+      try {
+        const response = await fetch(`/api/dashboard/assistant?conversationId=${assistantConversationId}`, {
+          headers: await getAuthHeaders(false),
+        });
+        const json = await response.json();
+        if (!response.ok) return;
+
+        setAssistantMessages((json.messages || []) as AssistantMessage[]);
+        if (json.conversation) {
+          setAssistantAllowInternet(Boolean(json.conversation.allow_internet));
+        }
+      } catch {
+        // Non bloquant
+      }
+    };
+
+    loadMessages();
+  }, [assistantConversationId, user]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [assistantMessages.length]);
 
   useEffect(() => {
     const fetchMonthlyStats = async () => {
@@ -155,6 +236,14 @@ export default function DashboardPage() {
     return selected.length > 0 ? selected : DASHBOARD_MODULES;
   }, [enabledModules]);
 
+  const displayName = useMemo(() => {
+    const mail = user?.email || "";
+    const local = mail.split("@")[0] || "";
+    if (!local) return "Pose ta question";
+    const pretty = local.replace(/[._-]+/g, " ").trim();
+    return `${pretty.charAt(0).toUpperCase()}${pretty.slice(1)} pose ta question...`;
+  }, [user?.email]);
+
   const formatRelativeDate = (value: string) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
@@ -218,29 +307,257 @@ export default function DashboardPage() {
     setArmedDeleteId(null);
   };
 
+  const speakText = (text: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = language === "en" ? "en-US" : language === "es" ? "es-ES" : "fr-FR";
+    utterance.rate = 1;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const startVoiceInput = () => {
+    if (typeof window === "undefined") return;
+    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!Ctor) {
+      setAssistantError("La reconnaissance vocale n est pas disponible sur cet appareil.");
+      return;
+    }
+
+    const recognition = new Ctor();
+    recognition.lang = language === "en" ? "en-US" : language === "es" ? "es-ES" : "fr-FR";
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognitionRef.current = recognition;
+
+    recognition.onstart = () => setAssistantListening(true);
+    recognition.onend = () => setAssistantListening(false);
+    recognition.onerror = () => setAssistantListening(false);
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i += 1) {
+        transcript += event.results[i][0].transcript;
+      }
+      setAssistantQuestion(transcript.trim());
+    };
+
+    recognition.start();
+  };
+
+  const stopVoiceInput = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setAssistantListening(false);
+  };
+
+  const askAssistant = async () => {
+    const question = assistantQuestion.trim();
+    if (!question || assistantLoading) return;
+
+    setAssistantError(null);
+    setAssistantSummary(null);
+    setAssistantLoading(true);
+
+    try {
+      const response = await fetch("/api/dashboard/assistant", {
+        method: "POST",
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({
+          action: "ask",
+          question,
+          allowInternet: assistantAllowInternet,
+          conversationId: assistantConversationId,
+        }),
+      });
+
+      const json = await response.json();
+      if (!response.ok) {
+        setAssistantError(json?.error || "Erreur assistant.");
+        return;
+      }
+
+      setAssistantConversationId(json.conversationId || null);
+      setAssistantMessages((json.messages || []) as AssistantMessage[]);
+      setAssistantQuestion("");
+
+      const listResponse = await fetch("/api/dashboard/assistant", {
+        headers: await getAuthHeaders(false),
+      });
+      const listJson = await listResponse.json();
+      if (listResponse.ok) {
+        setAssistantConversations((listJson.conversations || []) as AssistantConversation[]);
+      }
+    } catch {
+      setAssistantError("Erreur reseau assistant.");
+    } finally {
+      setAssistantLoading(false);
+    }
+  };
+
+  const finalizeConversation = async () => {
+    if (!assistantConversationId || assistantFinalizing) return;
+
+    setAssistantFinalizing(true);
+    setAssistantError(null);
+    try {
+      const response = await fetch("/api/dashboard/assistant", {
+        method: "POST",
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({
+          action: "finalize",
+          conversationId: assistantConversationId,
+        }),
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        setAssistantError(json?.error || "Finalisation impossible.");
+        return;
+      }
+
+      setAssistantSummary(json.summary || "");
+    } catch {
+      setAssistantError("Erreur reseau pendant la synthese.");
+    } finally {
+      setAssistantFinalizing(false);
+    }
+  };
+
+  const startNewConversation = () => {
+    stopVoiceInput();
+    setAssistantConversationId(null);
+    setAssistantMessages([]);
+    setAssistantSummary(null);
+    setAssistantError(null);
+    setAssistantQuestion("");
+  };
+
   return (
     <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-6">
       <div className="mx-auto w-full max-w-6xl space-y-5">
         <section className="overflow-hidden rounded-2xl border border-cyan-200/10 bg-gradient-to-r from-slate-900/80 via-slate-900/70 to-cyan-950/50 p-4 shadow-[0_30px_70px_-40px_rgba(8,145,178,0.9)] sm:rounded-3xl sm:p-5">
           <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/80">{t('dashboard.overview')}</p>
           <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">Control Center</h1>
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400">{t('dashboard.proToLaunch')}</p>
-              <p className="text-xl font-semibold text-cyan-200">{proTodoCount}</p>
+          <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/45 p-3 sm:p-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs uppercase tracking-[0.16em] text-slate-300">Assistant conversationnel</p>
+              {assistantConversationId && (
+                <button
+                  type="button"
+                  onClick={finalizeConversation}
+                  disabled={assistantFinalizing}
+                  className="rounded-lg border border-cyan-300/30 bg-cyan-500/15 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 disabled:opacity-60"
+                >
+                  {assistantFinalizing ? "Synthese..." : "Clore et memoriser"}
+                </button>
+              )}
             </div>
-            <div className="rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400">{t('dashboard.persoToLaunch')}</p>
-              <p className="text-xl font-semibold text-blue-200">{persoTodoCount}</p>
+
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={startNewConversation}
+                className="rounded-full border border-emerald-300/30 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/25"
+              >
+                Nouvelle discussion
+              </button>
+
+              <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/65 px-3 py-1.5 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={assistantAllowInternet}
+                  onChange={(event) => setAssistantAllowInternet(event.target.checked)}
+                  className="h-3.5 w-3.5 accent-cyan-400"
+                />
+                Autoriser recherche internet
+              </label>
+
+              {assistantConversations.slice(0, 4).map((conversation) => (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  onClick={() => setAssistantConversationId(conversation.id)}
+                  className={`rounded-full px-3 py-1 text-[11px] ${
+                    assistantConversationId === conversation.id
+                      ? 'bg-cyan-500/25 text-cyan-100'
+                      : 'bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  {(conversation.title || 'Discussion').slice(0, 26)}
+                </button>
+              ))}
             </div>
-            <div className="rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400">{t('dashboard.closedToday')}</p>
-              <p className="text-xl font-semibold text-emerald-200">{todayDoneCount}</p>
+
+            <div className="max-h-52 space-y-2 overflow-y-auto rounded-xl border border-white/10 bg-slate-900/55 p-2.5 sm:max-h-64">
+              {assistantMessages.length === 0 ? (
+                <p className="text-sm text-slate-300">{displayName}</p>
+              ) : (
+                assistantMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`rounded-lg px-3 py-2 text-sm ${
+                      message.role === 'assistant'
+                        ? 'bg-cyan-500/10 text-cyan-50'
+                        : 'bg-slate-800/90 text-slate-100'
+                    }`}
+                  >
+                    <p className="mb-1 text-[10px] uppercase tracking-wide opacity-70">
+                      {message.role === 'assistant' ? 'IA' : 'Vous'}
+                    </p>
+                    <p className="whitespace-pre-wrap">{message.content}</p>
+                    {message.role === 'assistant' && (
+                      <button
+                        type="button"
+                        onClick={() => speakText(message.content)}
+                        className="mt-2 rounded-md border border-cyan-300/30 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-100"
+                      >
+                        Lire la reponse
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+              <div ref={messagesEndRef} />
             </div>
-            <div className="rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400">{t('dashboard.visionCalls', { month: monthName })}</p>
-              <p className="text-xl font-semibold text-amber-100">{visionCountMonth}</p>
+
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <input
+                value={assistantQuestion}
+                onChange={(event) => setAssistantQuestion(event.target.value)}
+                placeholder={displayName}
+                className="min-h-11 flex-1 rounded-xl border border-white/10 bg-slate-900 px-3 text-sm text-white outline-none focus:border-cyan-300"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={assistantListening ? stopVoiceInput : startVoiceInput}
+                  className={`min-h-11 rounded-xl px-3 text-xs font-semibold ${
+                    assistantListening
+                      ? 'bg-rose-500 text-white'
+                      : 'border border-white/15 bg-slate-800 text-slate-100'
+                  }`}
+                >
+                  {assistantListening ? 'Stop micro' : 'Micro'}
+                </button>
+                <button
+                  type="button"
+                  onClick={askAssistant}
+                  disabled={assistantLoading || !assistantQuestion.trim()}
+                  className="min-h-11 rounded-xl bg-cyan-400 px-4 text-sm font-semibold text-slate-950 disabled:opacity-50"
+                >
+                  {assistantLoading ? 'Analyse...' : 'Envoyer'}
+                </button>
+              </div>
             </div>
+
+            {assistantError && <p className="mt-2 text-xs text-rose-300">{assistantError}</p>}
+            {assistantSummary && (
+              <div className="mt-2 rounded-lg border border-emerald-300/20 bg-emerald-500/10 p-2.5 text-xs text-emerald-100">
+                <p className="mb-1 font-semibold">Discussion synthetisee et enregistree en memoire (type discussion)</p>
+                <p>{assistantSummary}</p>
+              </div>
+            )}
           </div>
         </section>
 
