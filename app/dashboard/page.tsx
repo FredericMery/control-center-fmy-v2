@@ -56,6 +56,8 @@ export default function DashboardPage() {
   const [assistantSummary, setAssistantSummary] = useState<string | null>(null);
   const [assistantFinalizing, setAssistantFinalizing] = useState(false);
   const [assistantListening, setAssistantListening] = useState(false);
+  const [assistantModalOpen, setAssistantModalOpen] = useState(false);
+  const [assistantName, setAssistantName] = useState('Assistant');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const monthName =
@@ -97,6 +99,23 @@ export default function DashboardPage() {
     };
 
     loadConversations();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadAssistantName = async () => {
+      const { data } = await supabase
+        .from('user_ai_settings')
+        .select('assistant_name')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      const name = String(data?.assistant_name || 'Assistant').trim();
+      setAssistantName(name || 'Assistant');
+    };
+
+    loadAssistantName();
   }, [user]);
 
   useEffect(() => {
@@ -244,6 +263,13 @@ export default function DashboardPage() {
     return `${pretty.charAt(0).toUpperCase()}${pretty.slice(1)} pose ta question...`;
   }, [user?.email]);
 
+  const userLabel = useMemo(() => {
+    const mail = user?.email || "";
+    const local = mail.split("@")[0] || "user";
+    const pretty = local.replace(/[._-]+/g, " ").trim() || "user";
+    return `[${pretty}]`;
+  }, [user?.email]);
+
   const formatRelativeDate = (value: string) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
@@ -352,6 +378,11 @@ export default function DashboardPage() {
     setAssistantListening(false);
   };
 
+  const closeAssistantModal = () => {
+    stopVoiceInput();
+    setAssistantModalOpen(false);
+  };
+
   const askAssistant = async () => {
     const question = assistantQuestion.trim();
     if (!question || assistantLoading) return;
@@ -439,127 +470,166 @@ export default function DashboardPage() {
         <section className="overflow-hidden rounded-2xl border border-cyan-200/10 bg-gradient-to-r from-slate-900/80 via-slate-900/70 to-cyan-950/50 p-4 shadow-[0_30px_70px_-40px_rgba(8,145,178,0.9)] sm:rounded-3xl sm:p-5">
           <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/80">{t('dashboard.overview')}</p>
           <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">Control Center</h1>
-          <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/45 p-3 sm:p-4">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-300">Assistant conversationnel</p>
-              {assistantConversationId && (
-                <button
-                  type="button"
-                  onClick={finalizeConversation}
-                  disabled={assistantFinalizing}
-                  className="rounded-lg border border-cyan-300/30 bg-cyan-500/15 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 disabled:opacity-60"
-                >
-                  {assistantFinalizing ? "Synthese..." : "Clore et memoriser"}
-                </button>
-              )}
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/45 p-3 sm:p-4">
+            <div className="min-w-0">
+              <p className="text-xs uppercase tracking-[0.16em] text-slate-300">Mon assistant</p>
+              <p className="mt-1 truncate text-sm text-cyan-100">{assistantName} est pret a repondre a tes questions</p>
             </div>
-
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={startNewConversation}
-                className="rounded-full border border-emerald-300/30 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/25"
-              >
-                Nouvelle discussion
-              </button>
-
-              <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/65 px-3 py-1.5 text-xs text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={assistantAllowInternet}
-                  onChange={(event) => setAssistantAllowInternet(event.target.checked)}
-                  className="h-3.5 w-3.5 accent-cyan-400"
-                />
-                Autoriser recherche internet
-              </label>
-
-              {assistantConversations.slice(0, 4).map((conversation) => (
-                <button
-                  key={conversation.id}
-                  type="button"
-                  onClick={() => setAssistantConversationId(conversation.id)}
-                  className={`rounded-full px-3 py-1 text-[11px] ${
-                    assistantConversationId === conversation.id
-                      ? 'bg-cyan-500/25 text-cyan-100'
-                      : 'bg-slate-800 text-slate-300'
-                  }`}
-                >
-                  {(conversation.title || 'Discussion').slice(0, 26)}
-                </button>
-              ))}
-            </div>
-
-            <div className="max-h-52 space-y-2 overflow-y-auto rounded-xl border border-white/10 bg-slate-900/55 p-2.5 sm:max-h-64">
-              {assistantMessages.length === 0 ? (
-                <p className="text-sm text-slate-300">{displayName}</p>
-              ) : (
-                assistantMessages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`rounded-lg px-3 py-2 text-sm ${
-                      message.role === 'assistant'
-                        ? 'bg-cyan-500/10 text-cyan-50'
-                        : 'bg-slate-800/90 text-slate-100'
-                    }`}
-                  >
-                    <p className="mb-1 text-[10px] uppercase tracking-wide opacity-70">
-                      {message.role === 'assistant' ? 'IA' : 'Vous'}
-                    </p>
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                    {message.role === 'assistant' && (
-                      <button
-                        type="button"
-                        onClick={() => speakText(message.content)}
-                        className="mt-2 rounded-md border border-cyan-300/30 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-100"
-                      >
-                        Lire la reponse
-                      </button>
-                    )}
-                  </div>
-                ))
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-              <input
-                value={assistantQuestion}
-                onChange={(event) => setAssistantQuestion(event.target.value)}
-                placeholder={displayName}
-                className="min-h-11 flex-1 rounded-xl border border-white/10 bg-slate-900 px-3 text-sm text-white outline-none focus:border-cyan-300"
-              />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={assistantListening ? stopVoiceInput : startVoiceInput}
-                  className={`min-h-11 rounded-xl px-3 text-xs font-semibold ${
-                    assistantListening
-                      ? 'bg-rose-500 text-white'
-                      : 'border border-white/15 bg-slate-800 text-slate-100'
-                  }`}
-                >
-                  {assistantListening ? 'Stop micro' : 'Micro'}
-                </button>
-                <button
-                  type="button"
-                  onClick={askAssistant}
-                  disabled={assistantLoading || !assistantQuestion.trim()}
-                  className="min-h-11 rounded-xl bg-cyan-400 px-4 text-sm font-semibold text-slate-950 disabled:opacity-50"
-                >
-                  {assistantLoading ? 'Analyse...' : 'Envoyer'}
-                </button>
-              </div>
-            </div>
-
-            {assistantError && <p className="mt-2 text-xs text-rose-300">{assistantError}</p>}
-            {assistantSummary && (
-              <div className="mt-2 rounded-lg border border-emerald-300/20 bg-emerald-500/10 p-2.5 text-xs text-emerald-100">
-                <p className="mb-1 font-semibold">Discussion synthetisee et enregistree en memoire (type discussion)</p>
-                <p>{assistantSummary}</p>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => setAssistantModalOpen(true)}
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-cyan-300/40 bg-cyan-500/15 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/25"
+            >
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-cyan-300/30 to-blue-400/30 text-base">
+                ✨
+              </span>
+              Ouvrir
+            </button>
           </div>
         </section>
+
+        {assistantModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/70 p-3 sm:p-6" onClick={closeAssistantModal}>
+            <div
+              className="mx-auto flex h-[96vh] w-full max-w-3xl flex-col rounded-2xl border border-white/10 bg-slate-900 shadow-2xl shadow-black/40"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 sm:px-4">
+                <div>
+                  <p className="text-sm font-semibold text-cyan-100">{assistantName}</p>
+                  <p className="text-[11px] text-slate-400">Assistant conversationnel</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {assistantConversationId && (
+                    <button
+                      type="button"
+                      onClick={finalizeConversation}
+                      disabled={assistantFinalizing}
+                      className="rounded-lg border border-cyan-300/30 bg-cyan-500/15 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 disabled:opacity-60"
+                    >
+                      {assistantFinalizing ? 'Synthese...' : 'Clore et memoriser'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={closeAssistantModal}
+                    className="rounded-lg border border-white/15 px-2.5 py-1.5 text-xs text-slate-200"
+                  >
+                    Fermer
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-b border-white/10 px-3 py-2 sm:px-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={startNewConversation}
+                    className="rounded-full border border-emerald-300/30 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/25"
+                  >
+                    Nouvelle discussion
+                  </button>
+
+                  <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/65 px-3 py-1.5 text-xs text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={assistantAllowInternet}
+                      onChange={(event) => setAssistantAllowInternet(event.target.checked)}
+                      className="h-3.5 w-3.5 accent-cyan-400"
+                    />
+                    Autoriser recherche internet
+                  </label>
+
+                  {assistantConversations.slice(0, 4).map((conversation) => (
+                    <button
+                      key={conversation.id}
+                      type="button"
+                      onClick={() => setAssistantConversationId(conversation.id)}
+                      className={`rounded-full px-3 py-1 text-[11px] ${
+                        assistantConversationId === conversation.id
+                          ? 'bg-cyan-500/25 text-cyan-100'
+                          : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {(conversation.title || 'Discussion').slice(0, 26)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex-1 space-y-2 overflow-y-auto bg-slate-950/35 px-3 py-3 sm:px-4">
+                {assistantMessages.length === 0 ? (
+                  <p className="text-sm text-slate-300">{displayName}</p>
+                ) : (
+                  assistantMessages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`max-w-[92%] rounded-2xl px-3 py-2 text-sm ${
+                        message.role === 'assistant'
+                          ? 'mr-auto border border-cyan-300/20 bg-cyan-500/10 text-cyan-50'
+                          : 'ml-auto border border-white/10 bg-slate-800/95 text-slate-100'
+                      }`}
+                    >
+                      <p className="mb-1 text-[10px] uppercase tracking-wide opacity-70">
+                        {message.role === 'assistant' ? assistantName : userLabel}
+                      </p>
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                      {message.role === 'assistant' && (
+                        <button
+                          type="button"
+                          onClick={() => speakText(message.content)}
+                          className="mt-2 rounded-md border border-cyan-300/30 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-100"
+                        >
+                          Lire
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              <div className="border-t border-white/10 bg-slate-900/95 px-3 py-3 sm:px-4">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    value={assistantQuestion}
+                    onChange={(event) => setAssistantQuestion(event.target.value)}
+                    placeholder={displayName}
+                    className="min-h-11 flex-1 rounded-xl border border-white/10 bg-slate-900 px-3 text-sm text-white outline-none focus:border-cyan-300"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={assistantListening ? stopVoiceInput : startVoiceInput}
+                      className={`min-h-11 rounded-xl px-3 text-xs font-semibold ${
+                        assistantListening
+                          ? 'bg-rose-500 text-white'
+                          : 'border border-white/15 bg-slate-800 text-slate-100'
+                      }`}
+                    >
+                      {assistantListening ? 'Stop micro' : 'Micro'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={askAssistant}
+                      disabled={assistantLoading || !assistantQuestion.trim()}
+                      className="min-h-11 rounded-xl bg-cyan-400 px-4 text-sm font-semibold text-slate-950 disabled:opacity-50"
+                    >
+                      {assistantLoading ? 'Analyse...' : 'Envoyer'}
+                    </button>
+                  </div>
+                </div>
+                {assistantError && <p className="mt-2 text-xs text-rose-300">{assistantError}</p>}
+                {assistantSummary && (
+                  <div className="mt-2 rounded-lg border border-emerald-300/20 bg-emerald-500/10 p-2.5 text-xs text-emerald-100">
+                    <p className="mb-1 font-semibold">Discussion synthetisee et enregistree en memoire (type discussion)</p>
+                    <p>{assistantSummary}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <section className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
           {cards.map((card) => {

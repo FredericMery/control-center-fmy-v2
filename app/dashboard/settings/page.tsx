@@ -80,6 +80,9 @@ export default function SettingsPage() {
   const [memoryActionsStatus, setMemoryActionsStatus] = useState<string | null>(null);
   const [loadingMemoryActions, setLoadingMemoryActions] = useState(false);
   const [enabledModules, setEnabledModules] = useState<DashboardModuleId[]>([]);
+  const [assistantName, setAssistantName] = useState('Assistant');
+  const [assistantNameDraft, setAssistantNameDraft] = useState('Assistant');
+  const [assistantNameStatus, setAssistantNameStatus] = useState<string | null>(null);
 
   /* ============================
      FETCH PROFILE SAFE
@@ -203,6 +206,29 @@ export default function SettingsPage() {
   useEffect(() => {
     setEnabledModules(loadEnabledDashboardModules());
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadAssistantSettings = async () => {
+      const { data, error } = await supabase
+        .from('user_ai_settings')
+        .select('assistant_name')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('assistant settings load error', error);
+        return;
+      }
+
+      const name = String(data?.assistant_name || 'Assistant').trim();
+      setAssistantName(name || 'Assistant');
+      setAssistantNameDraft(name || 'Assistant');
+    };
+
+    loadAssistantSettings();
+  }, [user]);
 
   if (!user) return null;
 
@@ -432,6 +458,30 @@ export default function SettingsPage() {
     });
   };
 
+  const saveAssistantName = async () => {
+    if (!user) return;
+
+    const name = assistantNameDraft.trim() || 'Assistant';
+    setAssistantNameStatus(null);
+
+    const { error } = await supabase
+      .from('user_ai_settings')
+      .upsert({
+        user_id: user.id,
+        assistant_name: name,
+        updated_at: new Date().toISOString(),
+      });
+
+    if (error) {
+      setAssistantNameStatus('Erreur sauvegarde nom IA');
+      return;
+    }
+
+    setAssistantName(name);
+    setAssistantNameDraft(name);
+    setAssistantNameStatus('Nom IA sauvegarde');
+  };
+
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-3 pb-20 text-slate-100 sm:space-y-6 sm:px-0">
       <section className="rounded-3xl border border-cyan-200/10 bg-gradient-to-r from-slate-900/80 via-slate-900/75 to-cyan-950/60 p-4 sm:p-6">
@@ -530,6 +580,37 @@ export default function SettingsPage() {
               {t(`language.${lang}`)}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl shadow-slate-950/40 backdrop-blur space-y-4 sm:p-6">
+        <h2 className="text-lg font-semibold text-white">{t('settings.myAi.title')}</h2>
+        <p className="text-sm text-slate-300">{t('settings.myAi.subtitle')}</p>
+
+        <div className="rounded-xl border border-white/10 bg-slate-950/35 p-3">
+          <label className="mb-2 block text-xs uppercase tracking-wide text-slate-400">
+            {t('settings.myAi.nameLabel')}
+          </label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              value={assistantNameDraft}
+              onChange={(event) => setAssistantNameDraft(event.target.value)}
+              placeholder="Assistant"
+              className="min-h-11 flex-1 rounded-xl border border-white/10 bg-slate-900 px-3 text-sm text-white outline-none focus:border-cyan-300"
+            />
+            <button
+              type="button"
+              onClick={saveAssistantName}
+              className="min-h-11 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950"
+            >
+              {t('common.save')}
+            </button>
+          </div>
+
+          <p className="mt-2 text-xs text-slate-300">
+            {t('settings.myAi.currentName')}: <span className="font-semibold text-cyan-100">{assistantName}</span>
+          </p>
+          {assistantNameStatus && <p className="mt-1 text-xs text-emerald-300">{assistantNameStatus}</p>}
         </div>
       </div>
 

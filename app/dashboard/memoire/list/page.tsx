@@ -46,6 +46,7 @@ type EnrichedMemory = Memory & {
   effectiveRating: number;
   wineYear: string;
   wineColor: string;
+  movieWatchStatusLabel: string | null;
 };
 
 type MemoryCategory = {
@@ -95,6 +96,12 @@ const DETECTED_THEME_LABELS: Record<string, { fr: string; en: string; es: string
   product: { fr: 'Produit', en: 'Product', es: 'Producto' },
   note: { fr: 'Note', en: 'Note', es: 'Nota' },
   unknown: { fr: 'General', en: 'General', es: 'General' },
+};
+
+const MOVIE_WATCH_STATUS_LABELS: Record<'fr' | 'en' | 'es', { watched: string; toWatch: string }> = {
+  fr: { watched: 'Film vu', toWatch: 'Film a voir' },
+  en: { watched: 'Watched', toWatch: 'To watch' },
+  es: { watched: 'Ya visto', toWatch: 'Por ver' },
 };
 
 function safeString(value: unknown): string {
@@ -175,6 +182,18 @@ function getWineColor(memory: Memory): string {
   }
 
   return '-';
+}
+
+function getMovieWatchStatusLabel(args: {
+  categoryId: string;
+  effectiveRating: number;
+  language: 'fr' | 'en' | 'es';
+}): string | null {
+  const { categoryId, effectiveRating, language } = args;
+  if (categoryId !== 'movies') return null;
+
+  const labels = MOVIE_WATCH_STATUS_LABELS[language] || MOVIE_WATCH_STATUS_LABELS.fr;
+  return effectiveRating > 0 ? labels.watched : labels.toWatch;
 }
 
 function toFieldKey(label: string): string {
@@ -444,6 +463,11 @@ export default function MemoryListPage() {
       const effectiveRating = getEffectiveRating(memory);
       const wineYear = getWineYear(memory);
       const wineColor = getWineColor(memory);
+      const movieWatchStatusLabel = getMovieWatchStatusLabel({
+        categoryId,
+        effectiveRating,
+        language,
+      });
 
       return {
         ...memory,
@@ -457,6 +481,7 @@ export default function MemoryListPage() {
         effectiveRating,
         wineYear,
         wineColor,
+        movieWatchStatusLabel,
       };
     });
   }, [items, language]);
@@ -1105,6 +1130,11 @@ export default function MemoryListPage() {
                             </div>
                           </div>
                           <p className="mt-1 text-xs text-slate-400">{memory.relevanceScore.toFixed(3)}</p>
+                          {memory.movieWatchStatusLabel && (
+                            <p className="mt-1 inline-flex rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-200">
+                              {memory.movieWatchStatusLabel}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1202,9 +1232,16 @@ export default function MemoryListPage() {
                           </div>
                         </div>
                       ) : (
-                        <p className="line-clamp-3 text-xs text-slate-300">
-                          {memory.scanDetail || t('memory.list.noScanDetail')}
-                        </p>
+                        <div className="space-y-1">
+                          {memory.movieWatchStatusLabel && (
+                            <p className="inline-flex rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-200">
+                              {memory.movieWatchStatusLabel}
+                            </p>
+                          )}
+                          <p className="line-clamp-3 text-xs text-slate-300">
+                            {memory.scanDetail || t('memory.list.noScanDetail')}
+                          </p>
+                        </div>
                       )}
                       <div className="flex items-center justify-between text-[11px] text-slate-400">
                         <span>{formatDate(memory.created_at, locale)}</span>
@@ -1261,6 +1298,11 @@ export default function MemoryListPage() {
                   <p className="mt-1 text-xs text-emerald-300">
                     {t('memory.list.relevanceScore')}: {selectedMemory.relevanceScore.toFixed(3)}
                   </p>
+                  {selectedMemory.movieWatchStatusLabel && (
+                    <p className="mt-2 inline-flex rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-200">
+                      {selectedMemory.movieWatchStatusLabel}
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"
