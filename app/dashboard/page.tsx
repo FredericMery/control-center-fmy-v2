@@ -19,6 +19,9 @@ type AssistantConversation = {
   title: string | null;
   allow_internet: boolean;
   status: string;
+  summary: string | null;
+  liked: boolean | null;
+  ended_at: string | null;
   last_message_at: string;
 };
 
@@ -53,11 +56,13 @@ export default function DashboardPage() {
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([]);
   const [assistantConversationId, setAssistantConversationId] = useState<string | null>(null);
   const [assistantError, setAssistantError] = useState<string | null>(null);
-  const [assistantSummary, setAssistantSummary] = useState<string | null>(null);
   const [assistantFinalizing, setAssistantFinalizing] = useState(false);
+  const [assistantRatingLoading, setAssistantRatingLoading] = useState(false);
   const [assistantListening, setAssistantListening] = useState(false);
   const [assistantModalOpen, setAssistantModalOpen] = useState(false);
   const [assistantName, setAssistantName] = useState('Assistant');
+  const [assistantSummaryModalOpen, setAssistantSummaryModalOpen] = useState(false);
+  const [assistantSummaryPreview, setAssistantSummaryPreview] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const monthName =
@@ -88,11 +93,6 @@ export default function DashboardPage() {
 
         const conversations = (json.conversations || []) as AssistantConversation[];
         setAssistantConversations(conversations);
-        if (conversations.length > 0 && !assistantConversationId) {
-          const first = conversations[0];
-          setAssistantConversationId(first.id);
-          setAssistantAllowInternet(Boolean(first.allow_internet));
-        }
       } catch {
         // Non bloquant
       }
@@ -270,6 +270,11 @@ export default function DashboardPage() {
     return `[${pretty}]`;
   }, [user?.email]);
 
+  const selectedConversation = useMemo(() => {
+    if (!assistantConversationId) return null;
+    return assistantConversations.find((entry) => entry.id === assistantConversationId) || null;
+  }, [assistantConversations, assistantConversationId]);
+
   const formatRelativeDate = (value: string) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
@@ -350,15 +355,35 @@ export default function DashboardPage() {
       return;
     }
 
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {
+        // Ignore stale recognition instance cleanup errors.
+      }
+      recognitionRef.current = null;
+    }
+
     const recognition = new Ctor();
     recognition.lang = language === "en" ? "en-US" : language === "es" ? "es-ES" : "fr-FR";
     recognition.interimResults = true;
+    recognition.continuous = true;
     recognition.maxAlternatives = 1;
     recognitionRef.current = recognition;
 
-    recognition.onstart = () => setAssistantListening(true);
-    recognition.onend = () => setAssistantListening(false);
-    recognition.onerror = () => setAssistantListening(false);
+    recognition.onstart = () => {
+      setAssistantError(null);
+      setAssistantListening(true);
+    };
+    recognition.onend = () => {
+      setAssistantListening(false);
+      recognitionRef.current = null;
+    };
+    recognition.onerror = (event: any) => {
+      setAssistantListening(false);
+      setAssistantError(`Micro indisponible: ${event?.error || 'erreur inconnue'}.`);
+      recognitionRef.current = null;
+    };
     recognition.onresult = (event: any) => {
       let transcript = "";
       for (let i = 0; i < event.results.length; i += 1) {
@@ -367,7 +392,13 @@ export default function DashboardPage() {
       setAssistantQuestion(transcript.trim());
     };
 
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      setAssistantListening(false);
+      setAssistantError('Impossible de lancer le micro. Autorise la permission microphone et reessaie.');
+      recognitionRef.current = null;
+    }
   };
 
   const stopVoiceInput = () => {
@@ -381,14 +412,39 @@ export default function DashboardPage() {
   const closeAssistantModal = () => {
     stopVoiceInput();
     setAssistantModalOpen(false);
+    setAssistantSummaryModalOpen(false);
+    setAssistantSummaryPreview(null);
+  };
+
+  const openAssistantModal = () => {
+    setAssistantModalOpen(true);
+    setAssistantConversationId(null);
+    setAssistantMessages([]);
+    setAssistantQuestion('');
+    setAssistantError(null);
+    setAssistantSummaryModalOpen(false);
+    setAssistantSummaryPreview(null);
+  };
+
+  const openConversation = (conversation: AssistantConversation) => {
+    setAssistantConversationId(conversation.id);
+    setAssistantAllowInternet(Boolean(conversation.allow_internet));
+    setAssistantError(null);
+    if (conversation.summary) {
+      setAssistantSummaryPreview(conversation.summary);
+      setAssistantSummaryModalOpen(true);
+    } else {
+      setAssistantSummaryPreview(null);
+      setAssistantSummaryModalOpen(false);
+    }
   };
 
   const askAssistant = async () => {
     const question = assistantQuestion.trim();
     if (!question || assistantLoading) return;
+    const targetConversationId = selectedConversation?.status === 'closed' ? null : assistantConversationId;
 
     setAssistantError(null);
-    setAssistantSummary(null);
     setAssistantLoading(true);
 
     try {
@@ -399,7 +455,7 @@ export default function DashboardPage() {
           action: "ask",
           question,
           allowInternet: assistantAllowInternet,
-          conversationId: assistantConversationId,
+          conversationId: targetConversationId,
         }),
       });
 
@@ -427,7 +483,7 @@ export default function DashboardPage() {
     }
   };
 
-  const finalizeConversation = async () => {
+  const closeConversation = async () => {
     if (!assistantConversationId || assistantFinalizing) return;
 
     setAssistantFinalizing(true);
@@ -437,21 +493,69 @@ export default function DashboardPage() {
         method: "POST",
         headers: await getAuthHeaders(),
         body: JSON.stringify({
-          action: "finalize",
+          action: "close",
           conversationId: assistantConversationId,
         }),
       });
       const json = await response.json();
       if (!response.ok) {
-        setAssistantError(json?.error || "Finalisation impossible.");
+        setAssistantError(json?.error || "Cloture impossible.");
         return;
       }
 
-      setAssistantSummary(json.summary || "");
+      const listResponse = await fetch('/api/dashboard/assistant', {
+        headers: await getAuthHeaders(false),
+      });
+      const listJson = await listResponse.json();
+      if (listResponse.ok) {
+        setAssistantConversations((listJson.conversations || []) as AssistantConversation[]);
+      }
     } catch {
-      setAssistantError("Erreur reseau pendant la synthese.");
+      setAssistantError("Erreur reseau pendant la cloture.");
     } finally {
       setAssistantFinalizing(false);
+    }
+  };
+
+  const rateConversation = async (liked: boolean) => {
+    if (!assistantConversationId || assistantRatingLoading) return;
+
+    setAssistantRatingLoading(true);
+    setAssistantError(null);
+
+    try {
+      const response = await fetch('/api/dashboard/assistant', {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({
+          action: 'rate',
+          conversationId: assistantConversationId,
+          liked,
+        }),
+      });
+
+      const json = await response.json();
+      if (!response.ok) {
+        setAssistantError(json?.error || 'Evaluation impossible.');
+        return;
+      }
+
+      if (liked && json?.summary) {
+        setAssistantSummaryPreview(String(json.summary));
+        setAssistantSummaryModalOpen(true);
+      }
+
+      const listResponse = await fetch('/api/dashboard/assistant', {
+        headers: await getAuthHeaders(false),
+      });
+      const listJson = await listResponse.json();
+      if (listResponse.ok) {
+        setAssistantConversations((listJson.conversations || []) as AssistantConversation[]);
+      }
+    } catch {
+      setAssistantError('Erreur reseau pendant le feedback.');
+    } finally {
+      setAssistantRatingLoading(false);
     }
   };
 
@@ -459,9 +563,10 @@ export default function DashboardPage() {
     stopVoiceInput();
     setAssistantConversationId(null);
     setAssistantMessages([]);
-    setAssistantSummary(null);
     setAssistantError(null);
     setAssistantQuestion("");
+    setAssistantSummaryModalOpen(false);
+    setAssistantSummaryPreview(null);
   };
 
   return (
@@ -477,13 +582,13 @@ export default function DashboardPage() {
             </div>
             <button
               type="button"
-              onClick={() => setAssistantModalOpen(true)}
-              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-cyan-300/40 bg-cyan-500/15 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/25"
+              onClick={openAssistantModal}
+              className="inline-flex min-h-16 items-center gap-3 rounded-2xl border border-cyan-200/70 bg-gradient-to-r from-cyan-300 to-blue-300 px-6 py-3 text-base font-extrabold tracking-wide text-slate-950 shadow-[0_16px_40px_-18px_rgba(56,189,248,0.95)] transition hover:scale-[1.02] hover:from-cyan-200 hover:to-blue-200"
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-cyan-300/30 to-blue-400/30 text-base">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-950/10 text-xl">
                 ✨
               </span>
-              Ouvrir
+              Lancer la conversation
             </button>
           </div>
         </section>
@@ -491,7 +596,7 @@ export default function DashboardPage() {
         {assistantModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/70 p-3 sm:p-6" onClick={closeAssistantModal}>
             <div
-              className="mx-auto flex h-[96vh] w-full max-w-3xl flex-col rounded-2xl border border-white/10 bg-slate-900 shadow-2xl shadow-black/40"
+              className="relative mx-auto flex h-[96vh] w-full max-w-3xl flex-col rounded-2xl border border-white/10 bg-slate-900 shadow-2xl shadow-black/40"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 sm:px-4">
@@ -503,11 +608,11 @@ export default function DashboardPage() {
                   {assistantConversationId && (
                     <button
                       type="button"
-                      onClick={finalizeConversation}
+                      onClick={closeConversation}
                       disabled={assistantFinalizing}
                       className="rounded-lg border border-cyan-300/30 bg-cyan-500/15 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 disabled:opacity-60"
                     >
-                      {assistantFinalizing ? 'Synthese...' : 'Clore et memoriser'}
+                      {assistantFinalizing ? 'Cloture...' : 'Clore'}
                     </button>
                   )}
                   <button
@@ -539,27 +644,57 @@ export default function DashboardPage() {
                     />
                     Autoriser recherche internet
                   </label>
+                </div>
 
-                  {assistantConversations.slice(0, 4).map((conversation) => (
-                    <button
-                      key={conversation.id}
-                      type="button"
-                      onClick={() => setAssistantConversationId(conversation.id)}
-                      className={`rounded-full px-3 py-1 text-[11px] ${
-                        assistantConversationId === conversation.id
-                          ? 'bg-cyan-500/25 text-cyan-100'
-                          : 'bg-slate-800 text-slate-300'
-                      }`}
-                    >
-                      {(conversation.title || 'Discussion').slice(0, 26)}
-                    </button>
-                  ))}
+                <div className="mt-2 overflow-hidden rounded-xl border border-white/10">
+                  <div className="grid grid-cols-[76px_1fr_1.2fr_96px] bg-slate-950/70 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400">
+                    <span>Date</span>
+                    <span>Sujet</span>
+                    <span>Resume</span>
+                    <span className="text-right">Conversation</span>
+                  </div>
+                  <div className="max-h-40 overflow-y-auto bg-slate-900/35">
+                    {assistantConversations.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-slate-400">Aucune conversation pour le moment.</p>
+                    ) : (
+                      assistantConversations.map((conversation) => (
+                        <div
+                          key={conversation.id}
+                          className={`grid grid-cols-[76px_1fr_1.2fr_96px] items-center gap-2 border-t border-white/10 px-2 py-1.5 text-xs ${
+                            assistantConversationId === conversation.id ? 'bg-cyan-500/10' : 'bg-transparent'
+                          }`}
+                        >
+                          <span className="text-slate-400">{formatRelativeDate(conversation.last_message_at)}</span>
+                          <button
+                            type="button"
+                            onClick={() => openConversation(conversation)}
+                            className="truncate text-left text-slate-100 hover:text-cyan-100"
+                            title={conversation.title || 'Discussion'}
+                          >
+                            {conversation.title || 'Discussion'}
+                          </button>
+                          <span className="truncate text-slate-400" title={conversation.summary || 'Aucun resume'}>
+                            {conversation.summary || '-'}
+                          </span>
+                          <div className="text-right">
+                            <button
+                              type="button"
+                              onClick={() => openConversation(conversation)}
+                              className="rounded-md border border-cyan-300/30 px-2 py-1 text-[11px] text-cyan-100"
+                            >
+                              Ouvrir
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
 
               <div className="flex-1 space-y-2 overflow-y-auto bg-slate-950/35 px-3 py-3 sm:px-4">
                 {assistantMessages.length === 0 ? (
-                  <p className="text-sm text-slate-300">{displayName}</p>
+                  <p className="text-sm text-slate-300">Selectionne une conversation ou commence une nouvelle discussion.</p>
                 ) : (
                   assistantMessages.map((message) => (
                     <div
@@ -590,6 +725,26 @@ export default function DashboardPage() {
               </div>
 
               <div className="border-t border-white/10 bg-slate-900/95 px-3 py-3 sm:px-4">
+                {assistantConversationId && selectedConversation?.status === 'closed' && (
+                  <div className="mb-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => rateConversation(true)}
+                      disabled={assistantRatingLoading}
+                      className="rounded-lg border border-emerald-300/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                    >
+                      Pouce haut (memoriser)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => rateConversation(false)}
+                      disabled={assistantRatingLoading}
+                      className="rounded-lg border border-rose-300/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-100 disabled:opacity-60"
+                    >
+                      Pouce bas (ne pas memoriser)
+                    </button>
+                  </div>
+                )}
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <input
                     value={assistantQuestion}
@@ -604,7 +759,7 @@ export default function DashboardPage() {
                       className={`min-h-11 rounded-xl px-3 text-xs font-semibold ${
                         assistantListening
                           ? 'bg-rose-500 text-white'
-                          : 'border border-white/15 bg-slate-800 text-slate-100'
+                          : 'border border-cyan-300/30 bg-slate-800 text-cyan-100'
                       }`}
                     >
                       {assistantListening ? 'Stop micro' : 'Micro'}
@@ -620,13 +775,28 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 {assistantError && <p className="mt-2 text-xs text-rose-300">{assistantError}</p>}
-                {assistantSummary && (
-                  <div className="mt-2 rounded-lg border border-emerald-300/20 bg-emerald-500/10 p-2.5 text-xs text-emerald-100">
-                    <p className="mb-1 font-semibold">Discussion synthetisee et enregistree en memoire (type discussion)</p>
-                    <p>{assistantSummary}</p>
-                  </div>
-                )}
               </div>
+
+              {assistantSummaryModalOpen && assistantSummaryPreview && (
+                <div className="pointer-events-none absolute inset-0 flex items-start justify-center bg-black/45 p-4">
+                  <div className="pointer-events-auto w-full max-w-xl rounded-2xl border border-emerald-300/30 bg-slate-900 p-4 shadow-xl">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-emerald-100">Synthese conversation</p>
+                        <p className="mt-1 text-[11px] text-slate-400">Grandes idees uniquement</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAssistantSummaryModalOpen(false)}
+                        className="rounded-md border border-white/15 px-2 py-1 text-xs text-slate-200"
+                      >
+                        X
+                      </button>
+                    </div>
+                    <p className="mt-3 whitespace-pre-wrap text-sm text-slate-100">{assistantSummaryPreview}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

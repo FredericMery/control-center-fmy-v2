@@ -14,6 +14,8 @@ type ConversationRow = {
   last_message_at: string;
   ended_at: string | null;
   summary: string | null;
+  liked: boolean | null;
+  summary_memory_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -327,10 +329,51 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (action === 'finalize') {
+    if (action === 'close') {
       const conversationId = String(body?.conversationId || '').trim();
       if (!conversationId) {
         return NextResponse.json({ error: 'conversationId requis' }, { status: 400 });
+      }
+
+      const supabase = getSupabaseAdminClient();
+      const { data: conversation, error: convError } = await supabase
+        .from('ai_conversations')
+        .select('*')
+        .eq('id', conversationId)
+        .eq('user_id', userId)
+        .single();
+
+      if (convError || !conversation) {
+        return NextResponse.json({ error: 'Conversation introuvable' }, { status: 404 });
+      }
+
+      if (conversation.status !== 'closed') {
+        return NextResponse.json({ error: 'Clore la conversation avant de noter' }, { status: 400 });
+      }
+
+      await supabase
+        .from('ai_conversations')
+        .update({
+          status: 'closed',
+          ended_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', conversationId)
+        .eq('user_id', userId);
+
+      return NextResponse.json({
+        conversationId,
+        status: 'closed',
+      });
+    }
+
+    if (action === 'rate') {
+      const conversationId = String(body?.conversationId || '').trim();
+      const liked = body?.liked === true;
+      const disliked = body?.liked === false;
+
+      if (!conversationId || (!liked && !disliked)) {
+        return NextResponse.json({ error: 'conversationId et liked requis' }, { status: 400 });
       }
 
       const supabase = getSupabaseAdminClient();
@@ -350,6 +393,34 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Conversation vide' }, { status: 400 });
       }
 
+      // Dislike: close feedback loop without creating memory.
+      if (disliked) {
+        await supabase
+          .from('ai_conversations')
+          .update({
+            liked: false,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', conversationId)
+          .eq('user_id', userId);
+
+        return NextResponse.json({
+          conversationId,
+          liked: false,
+          summary: null,
+          discussionMemoryId: null,
+        });
+      }
+
+      if (conversation.liked === true && conversation.summary && conversation.summary_memory_id) {
+        return NextResponse.json({
+          conversationId,
+          liked: true,
+          summary: conversation.summary,
+          discussionMemoryId: conversation.summary_memory_id,
+        });
+      }
+
       const model = 'gpt-4.1-mini';
       const summaryResponse = await callOpenAi({
         userId,
@@ -361,7 +432,7 @@ export async function POST(request: NextRequest) {
             {
               role: 'system',
               content:
-                'Summarize this conversation in French using: context, key questions, clear answers, pending actions. Keep it concise and useful as a memory.',
+                'Resume cette conversation en francais avec uniquement les grandes idees. Format strict: 4 a 7 lignes maximum, une idee majeure par ligne, pas de details secondaires.',
             },
             {
               role: 'user',
@@ -383,7 +454,8 @@ export async function POST(request: NextRequest) {
           conversation_id: conversationId,
           messages_count: messages.length,
           allow_internet: conversation.allow_internet,
-          ended_at: new Date().toISOString(),
+          ended_at: conversation.ended_at || new Date().toISOString(),
+          liked: true,
         },
         source: 'dashboard-assistant',
       });
@@ -391,9 +463,9 @@ export async function POST(request: NextRequest) {
       await supabase
         .from('ai_conversations')
         .update({
-          status: 'closed',
+          liked: true,
           summary,
-          ended_at: new Date().toISOString(),
+          summary_memory_id: memory.id,
           updated_at: new Date().toISOString(),
         })
         .eq('id', conversationId)
@@ -401,6 +473,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         conversationId,
+        liked: true,
         summary,
         discussionMemoryId: memory.id,
       });
