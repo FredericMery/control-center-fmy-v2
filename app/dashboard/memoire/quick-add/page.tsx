@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '@/components/providers/LanguageProvider';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 import { useMemoryStore } from '@/store/memoryStore';
@@ -64,6 +64,8 @@ export default function QuickAddMemoryPage() {
   const [saveMessage, setSaveMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const requiredPhotoLibraryRef = useRef<HTMLInputElement>(null);
+  const requiredPhotoCaptureRef = useRef<HTMLInputElement>(null);
 
   const selectedType = useMemo(
     () => typeOptions.find((entry) => entry.id === selectedTypeId) || null,
@@ -261,6 +263,37 @@ export default function QuickAddMemoryPage() {
 
     setSaveMessage(t('memory.quickAdd.progress.refresh'));
     await fetchItemsBySectionId(ensured.sectionId);
+
+    // Sync manual entry into AI memories so it appears in global memory modules.
+    try {
+      const fieldPayload = entries
+        .map(([sourceFieldId, value]) => {
+          const sourceField = fields.find((field) => field.id === sourceFieldId);
+          if (!sourceField) return null;
+          return {
+            label: sourceField.label,
+            value: value.trim(),
+            type: sourceField.type,
+          };
+        })
+        .filter(Boolean);
+
+      await fetch('/api/memory/manual-entry', {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({
+          title: title.trim(),
+          type: selectedType.templateId || 'other',
+          memoryTypeId: selectedType.id,
+          memoryTypeName: selectedType.name,
+          sectionId: ensured.sectionId,
+          description: selectedType.description,
+          fieldValues: fieldPayload,
+        }),
+      });
+    } catch (syncError) {
+      console.error('Manual entry sync to memories failed', syncError);
+    }
 
     setSaveProgress(100);
     setSaveMessage(t('memory.quickAdd.progress.done'));
@@ -472,6 +505,54 @@ export default function QuickAddMemoryPage() {
               {photoField && (
                 <div className="rounded-lg border border-emerald-300/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
                   {t('memory.quickAdd.photoHint', { field: photoField.label })}
+                </div>
+              )}
+
+              {requiredPhotoField && (
+                <div className="rounded-lg border border-amber-300/40 bg-amber-500/10 p-3 text-xs text-amber-100 space-y-2">
+                  <p className="font-semibold">{t('memory.quickAdd.requiredPhotoTitle')}</p>
+                  <p>{t('memory.quickAdd.requiredPhotoText')}</p>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => requiredPhotoLibraryRef.current?.click()}
+                      className="rounded-md bg-slate-700 px-3 py-2 text-xs text-white hover:bg-slate-600"
+                    >
+                      {t('memory.quickAdd.photoLibrary')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => requiredPhotoCaptureRef.current?.click()}
+                      className="rounded-md bg-slate-700 px-3 py-2 text-xs text-white hover:bg-slate-600"
+                    >
+                      {t('memory.quickAdd.takePhoto')}
+                    </button>
+                  </div>
+
+                  <input
+                    ref={requiredPhotoLibraryRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => handlePhotoSelect(requiredPhotoField, event.target.files?.[0])}
+                  />
+                  <input
+                    ref={requiredPhotoCaptureRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(event) => handlePhotoSelect(requiredPhotoField, event.target.files?.[0])}
+                  />
+
+                  {fieldValues[requiredPhotoField.id] && (
+                    <img
+                      src={fieldValues[requiredPhotoField.id]}
+                      alt={requiredPhotoField.label}
+                      className="h-36 w-full rounded-lg border border-slate-700 object-cover"
+                    />
+                  )}
                 </div>
               )}
 
