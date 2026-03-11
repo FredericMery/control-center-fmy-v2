@@ -81,6 +81,17 @@ export default function MemorePage() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Link
+            href="/dashboard/memoire/quick-add"
+            className="rounded-xl border border-cyan-300/60 bg-cyan-500/15 p-6 hover:bg-cyan-500/25 transition sm:col-span-2"
+          >
+            <p className="text-xs uppercase tracking-[0.2em] text-cyan-100">{t('memory.quickAdd.tag')}</p>
+            <h2 className="mt-2 text-2xl font-semibold">{t('memory.quickAdd.title')}</h2>
+            <p className="mt-2 text-sm text-slate-200">
+              {t('memory.quickAdd.description')}
+            </p>
+          </Link>
+
+          <Link
             href="/dashboard/memoire/scan"
             className="rounded-xl border border-emerald-300/60 bg-emerald-500/15 p-6 hover:bg-emerald-500/25 transition"
           >

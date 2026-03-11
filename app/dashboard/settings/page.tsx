@@ -556,6 +556,19 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
+        <h2 className="font-semibold text-lg">{t('settings.memoryZone.title')}</h2>
+        <p className="text-sm text-gray-600">
+          {t('settings.memoryZone.subtitleSettingsCard')}
+        </p>
+        <button
+          onClick={() => router.push('/dashboard/settings/memory')}
+          className="px-4 py-2 bg-blue-900 text-white rounded-xl text-sm"
+        >
+          {t('settings.memoryZone.addFieldCta')}
+        </button>
+      </div>
+
       {FULL_ACCESS_USER_IDS.has(user.id) && (
         <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
           <h2 className="font-semibold text-lg">Memory action mappings (admin)</h2>
@@ -727,6 +740,13 @@ export default function SettingsPage() {
                     className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
                   >
                     {t("settings.memory")}
+                  </button>
+
+                  <button
+                    onClick={() => router.push('/dashboard/settings/memory')}
+                    className="px-4 py-2 bg-blue-100 text-blue-900 rounded-xl text-sm"
+                  >
+                    {t('settings.memoryZone.title')}
                   </button>
 
                   {/* 🔔 NOUVEAU */}
