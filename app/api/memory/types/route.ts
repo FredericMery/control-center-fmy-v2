@@ -11,6 +11,11 @@ type TypeFieldPayload = {
   searchable?: boolean;
 };
 
+function isPhotoFieldLabel(label: string): boolean {
+  const normalized = label.toLowerCase();
+  return normalized.includes('photo') || normalized.includes('image') || normalized.includes('affiche');
+}
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -165,7 +170,30 @@ export async function POST(request: NextRequest) {
       const description = String(body.description || '').trim();
       const isCommunity = Boolean(body.isCommunity);
       const templateId = String(body.templateId || 'other').trim() || 'other';
+      const withPhoto = Boolean(body.withPhoto);
       const fields = sanitizeFields(body.fields);
+
+      if (withPhoto) {
+        const hasPhotoField = fields.some(
+          (field) => field.type === 'url' && isPhotoFieldLabel(String(field.label || ''))
+        );
+
+        if (!hasPhotoField) {
+          fields.push({
+            label: 'Photo',
+            type: 'url',
+            options: null,
+            required: true,
+            searchable: false,
+          });
+        } else {
+          for (const field of fields) {
+            if (field.type === 'url' && isPhotoFieldLabel(String(field.label || ''))) {
+              field.required = true;
+            }
+          }
+        }
+      }
 
       if (!name) {
         return NextResponse.json({ error: 'Type name required' }, { status: 400 });

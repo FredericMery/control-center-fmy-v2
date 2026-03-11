@@ -77,6 +77,7 @@ export default function MemorySettingsPage() {
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypeDescription, setNewTypeDescription] = useState('');
   const [newTypeCommunity, setNewTypeCommunity] = useState(false);
+  const [newTypeWithPhoto, setNewTypeWithPhoto] = useState(false);
   const [newTypeFields, setNewTypeFields] = useState<DraftTypeField[]>([newDraftField()]);
 
   useEffect(() => {
@@ -209,6 +210,7 @@ export default function MemorySettingsPage() {
           name: sanitizedName,
           description: newTypeDescription.trim(),
           isCommunity: newTypeCommunity,
+          withPhoto: newTypeWithPhoto,
           templateId: 'other',
           fields: normalizedFields.map((field) => ({
             label: field.label,
@@ -238,6 +240,7 @@ export default function MemorySettingsPage() {
       setNewTypeName('');
       setNewTypeDescription('');
       setNewTypeCommunity(false);
+      setNewTypeWithPhoto(false);
       setNewTypeFields([newDraftField()]);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : t('settings.memoryZone.error.addFailed'));
@@ -307,6 +310,15 @@ export default function MemorySettingsPage() {
                 onChange={(event) => setNewTypeCommunity(event.target.checked)}
               />
               {t('settings.memoryZone.create.communityLabel')}
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-blue-950">
+              <input
+                type="checkbox"
+                checked={newTypeWithPhoto}
+                onChange={(event) => setNewTypeWithPhoto(event.target.checked)}
+              />
+              {t('settings.memoryZone.create.withPhotoLabel')}
             </label>
 
             <div className="space-y-3">

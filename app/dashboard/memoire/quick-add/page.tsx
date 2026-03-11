@@ -77,6 +77,11 @@ export default function QuickAddMemoryPage() {
     [fields]
   );
 
+  const requiredPhotoField = useMemo(
+    () => fields.find((field) => field.type === 'url' && isPhotoLikeField(field.label) && field.required),
+    [fields]
+  );
+
   const currentStep = useMemo(() => {
     if (saveState === 'done') return 5;
     if (saveState === 'saving') return 4;
@@ -183,6 +188,14 @@ export default function QuickAddMemoryPage() {
     if (!title.trim()) {
       setError(t('memory.quickAdd.error.titleRequired'));
       return;
+    }
+
+    if (requiredPhotoField) {
+      const hasPhotoValue = Boolean(fieldValues[requiredPhotoField.id]?.trim());
+      if (!hasPhotoValue) {
+        setError(t('memory.quickAdd.error.photoRequired'));
+        return;
+      }
     }
 
     setSaveState('saving');

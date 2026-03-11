@@ -20,6 +20,13 @@ export default function DashboardPage() {
   const { tasks, fetchTasks } = useTaskStore();
   const [visionCountMonth, setVisionCountMonth] = useState(0);
   const [enabledModules, setEnabledModules] = useState<DashboardModuleId[]>([]);
+  const [recentMemoryItems, setRecentMemoryItems] = useState<Array<{
+    id: string;
+    item_title: string;
+    created_at: string;
+    section_id: string;
+    section_name: string;
+  }>>([]);
   const monthName =
     language === 'fr'
       ? getMonthNameFr()
@@ -66,6 +73,41 @@ export default function DashboardPage() {
       fetchMonthlyStats();
     }
   }, [user]);
+
+  useEffect(() => {
+    const fetchRecentMemoryItems = async () => {
+      if (!user) return;
+
+      const [{ data: sectionRows, error: sectionsError }, { data: itemRows, error: itemsError }] = await Promise.all([
+        supabase
+          .from('memory_sections')
+          .select('id, section_name')
+          .eq('user_id', user.id),
+        supabase
+          .from('memory_items')
+          .select('id, item_title, created_at, section_id')
+          .order('created_at', { ascending: false })
+          .limit(6),
+      ]);
+
+      if (sectionsError || itemsError) {
+        console.error('Erreur chargement entrees memoire dashboard:', sectionsError || itemsError);
+        return;
+      }
+
+      const sectionNameById = new Map((sectionRows || []).map((row) => [row.id, row.section_name || 'Memoire']));
+      const merged = (itemRows || [])
+        .filter((row) => sectionNameById.has(row.section_id))
+        .map((row) => ({
+          ...row,
+          section_name: sectionNameById.get(row.section_id) || 'Memoire',
+        }));
+
+      setRecentMemoryItems(merged);
+    };
+
+    fetchRecentMemoryItems();
+  }, [user, tasks.length]);
 
   const proTodoCount = useMemo(
     () => tasks.filter(t => t.type === "pro" && t.status === "todo" && !t.archived).length,
@@ -184,6 +226,28 @@ export default function DashboardPage() {
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="mt-2 rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs uppercase text-gray-400">Dernieres entrees memoire</p>
+              <Link href="/dashboard/memoire/quick-add" className="text-[11px] text-emerald-300 hover:text-emerald-200">
+                + Ajouter
+              </Link>
+            </div>
+
+            {recentMemoryItems.length === 0 ? (
+              <p className="text-xs text-gray-500">Aucune entree manuelle pour le moment.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {recentMemoryItems.map((entry) => (
+                  <div key={entry.id} className="rounded-lg border border-white/10 bg-slate-900/40 px-2.5 py-2">
+                    <p className="truncate text-sm text-white">{entry.item_title}</p>
+                    <p className="text-[11px] text-gray-400">{entry.section_name}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
