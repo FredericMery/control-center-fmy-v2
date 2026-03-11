@@ -433,22 +433,23 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="text-blue-950 max-w-3xl mx-auto space-y-10 pb-20">
-
-      <h1 className="text-2xl font-semibold">
-        {t("settings.title")}
-      </h1>
+    <div className="mx-auto max-w-6xl space-y-4 px-3 pb-20 text-slate-100 sm:space-y-6 sm:px-0">
+      <section className="rounded-3xl border border-cyan-200/10 bg-gradient-to-r from-slate-900/80 via-slate-900/75 to-cyan-950/60 p-4 sm:p-6">
+        <p className="text-xs uppercase tracking-[0.22em] text-cyan-200/80">Control</p>
+        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">{t("settings.title")}</h1>
+        <p className="mt-2 text-sm text-slate-300">Configure ton environnement, les modules visibles et les automatismes memoire.</p>
+      </section>
 
       {/* COMPTE */}
-      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-6">
+      <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl shadow-slate-950/40 backdrop-blur space-y-6 sm:p-6">
 
-        <h2 className="font-semibold text-lg">{t("settings.account")}</h2>
+        <h2 className="text-lg font-semibold text-white">{t("settings.account")}</h2>
 
-        <div className="flex items-center gap-6">
+        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:gap-6">
 
           <div
             onClick={handleAvatarClick}
-            className="relative w-24 h-24 rounded-full overflow-hidden bg-gray-200 cursor-pointer group"
+            className="group relative h-24 w-24 cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-slate-800"
           >
             {previewAvatar && (
               <img
@@ -457,7 +458,7 @@ export default function SettingsPage() {
               />
             )}
 
-            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs">
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs text-white opacity-0 transition group-hover:opacity-100">
               {t("settings.change")}
             </div>
           </div>
@@ -469,10 +470,10 @@ export default function SettingsPage() {
             className="hidden"
           />
 
-          <div className="text-sm space-y-1">
+          <div className="space-y-1 text-sm text-slate-200">
             <p><strong>{t("settings.username")} :</strong> {profile?.username}</p>
             <p><strong>{t("settings.email")} :</strong> {user.email}</p>
-            <p className="text-gray-500 text-xs">
+            <p className="text-xs text-slate-400">
               ID : {user.id}
             </p>
 
@@ -482,7 +483,7 @@ export default function SettingsPage() {
                   ? "text-green-600"
                   : uploadStatus === "error"
                   ? "text-red-600"
-                  : "text-gray-500"
+                    : "text-slate-400"
               }`}>
                 {uploadStatus === "loading"
                   ? t("common.loading")
@@ -495,17 +496,17 @@ export default function SettingsPage() {
 
         </div>
 
-        <div className="flex gap-4 flex-wrap">
+        <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
           <button
             onClick={handleLogout}
-            className="px-4 py-2 bg-black text-white rounded-xl text-sm"
+            className="min-h-11 rounded-xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900"
           >
             {t("settings.logout")}
           </button>
 
           <button
             onClick={handleSignOutAll}
-            className="px-4 py-2 bg-blue-950 text-white rounded-xl text-sm"
+            className="min-h-11 rounded-xl border border-cyan-300/30 bg-cyan-500/15 px-4 py-2 text-sm font-medium text-cyan-100"
           >
             {t("settings.logoutAll")}
           </button>
@@ -514,16 +515,16 @@ export default function SettingsPage() {
       </div>
 
 
-      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
-        <h2 className="font-semibold text-lg">{t("language.title")}</h2>
-        <p className="text-sm text-gray-600">{t("language.description")}</p>
+      <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl shadow-slate-950/40 backdrop-blur space-y-4 sm:p-6">
+        <h2 className="text-lg font-semibold text-white">{t("language.title")}</h2>
+        <p className="text-sm text-slate-300">{t("language.description")}</p>
         <div className="flex flex-wrap gap-2">
           {(["fr", "en", "es"] as const).map((lang) => (
             <button
               key={lang}
               onClick={() => setLanguage(lang)}
-              className={`px-4 py-2 rounded-lg text-sm ${
-                language === lang ? "bg-blue-900 text-white" : "bg-gray-100 text-gray-800"
+              className={`min-h-10 rounded-lg px-4 py-2 text-sm font-medium ${
+                language === lang ? "bg-cyan-400 text-slate-950" : "border border-white/10 bg-slate-800 text-slate-200"
               }`}
             >
               {t(`language.${lang}`)}
@@ -532,52 +533,53 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
-        <h2 className="font-semibold text-lg">Modules dashboard</h2>
-        <p className="text-sm text-gray-600">
+      <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl shadow-slate-950/40 backdrop-blur space-y-4 sm:p-6">
+        <h2 className="text-lg font-semibold text-white">Modules dashboard</h2>
+        <p className="text-sm text-slate-300">
           Activez les modules visibles sur la page d accueil.
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
           {DASHBOARD_MODULES.map((module) => (
             <label
               key={module.id}
-              className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              className="flex items-center justify-between rounded-lg border border-white/10 bg-slate-950/30 px-3 py-2 text-sm"
             >
-              <span>
+              <span className="text-slate-100">
                 {module.icon} {module.title}
               </span>
               <input
                 type="checkbox"
                 checked={enabledModules.includes(module.id)}
                 onChange={() => toggleDashboardModule(module.id)}
+                className="h-4 w-4 accent-cyan-400"
               />
             </label>
           ))}
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
-        <h2 className="font-semibold text-lg">{t('settings.memoryZone.title')}</h2>
-        <p className="text-sm text-gray-600">
+      <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl shadow-slate-950/40 backdrop-blur space-y-4 sm:p-6">
+        <h2 className="text-lg font-semibold text-white">{t('settings.memoryZone.title')}</h2>
+        <p className="text-sm text-slate-300">
           {t('settings.memoryZone.subtitleSettingsCard')}
         </p>
         <button
           onClick={() => router.push('/dashboard/settings/memory')}
-          className="px-4 py-2 bg-blue-900 text-white rounded-xl text-sm"
+          className="rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950"
         >
           {t('settings.memoryZone.addFieldCta')}
         </button>
       </div>
 
       {FULL_ACCESS_USER_IDS.has(user.id) && (
-        <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
-          <h2 className="font-semibold text-lg">Memory action mappings (admin)</h2>
-          <p className="text-sm text-gray-600">
+        <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-6 shadow-xl shadow-slate-950/40 backdrop-blur space-y-4">
+          <h2 className="text-lg font-semibold text-white">Memory action mappings (admin)</h2>
+          <p className="text-sm text-slate-300">
             Definissez l action prioritaire proposee pour chaque type detecte apres un scan.
           </p>
 
           {loadingMemoryActions && (
-            <p className="text-sm text-gray-500">Chargement...</p>
+            <p className="text-sm text-slate-400">Chargement...</p>
           )}
 
           {!loadingMemoryActions && memoryActionsConfig && (
@@ -592,9 +594,9 @@ export default function SettingsPage() {
 
                 return (
                   <div key={detectedType} className="grid gap-2 md:grid-cols-2 md:items-center">
-                    <label className="text-sm font-medium text-gray-700">{label}</label>
+                    <label className="text-sm font-medium text-slate-200">{label}</label>
                     <select
-                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      className="rounded-lg border border-white/10 bg-slate-800 px-3 py-2 text-sm text-white"
                       value={memoryActionsDraft[detectedType] || options[0] || ''}
                       onChange={(e) =>
                         setMemoryActionsDraft((prev) => ({
@@ -615,7 +617,7 @@ export default function SettingsPage() {
 
               <button
                 onClick={saveMemoryActions}
-                className="px-4 py-2 rounded-lg bg-blue-900 text-white text-sm"
+                className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950"
               >
                 Sauvegarder mappings
               </button>
@@ -623,39 +625,39 @@ export default function SettingsPage() {
           )}
 
           {memoryActionsStatus && (
-            <p className="text-xs text-gray-600">{memoryActionsStatus}</p>
+            <p className="text-xs text-slate-300">{memoryActionsStatus}</p>
           )}
         </div>
       )}
 
       {/* EMAILS */}
-      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-6">
+      <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl shadow-slate-950/40 backdrop-blur space-y-6 sm:p-6">
         <EmailSettingsForm />
       </div>
 
       {/* IA + ABONNEMENT */}
-      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-6">
-        <h2 className="font-semibold text-lg">{t("settings.aiSection")}</h2>
+      <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl shadow-slate-950/40 backdrop-blur space-y-6 sm:p-6">
+        <h2 className="text-lg font-semibold text-white">{t("settings.aiSection")}</h2>
 
         {loadingBilling ? (
-          <p className="text-sm text-gray-500">{t("settings.loadingAi")}</p>
+          <p className="text-sm text-slate-400">{t("settings.loadingAi")}</p>
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-xs text-gray-500">{t("settings.totalUsage")}</p>
+              <div className="rounded-xl border border-white/10 bg-slate-950/30 p-4">
+                <p className="text-xs text-slate-400">{t("settings.totalUsage")}</p>
                 <p className="text-lg font-semibold">{usage?.totals.tokens || 0} {t("settings.aiTokens")}</p>
-                <p className="text-sm text-gray-600">~ {Number(usage?.totals.costEstimate || 0).toFixed(4)} EUR</p>
+                <p className="text-sm text-slate-300">~ {Number(usage?.totals.costEstimate || 0).toFixed(4)} EUR</p>
               </div>
 
-              <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-xs text-gray-500">{t("settings.thisMonth")}</p>
+              <div className="rounded-xl border border-white/10 bg-slate-950/30 p-4">
+                <p className="text-xs text-slate-400">{t("settings.thisMonth")}</p>
                 <p className="text-lg font-semibold">{usage?.thisMonth.tokens || 0} {t("settings.aiTokens")}</p>
-                <p className="text-sm text-gray-600">~ {Number(usage?.thisMonth.costEstimate || 0).toFixed(4)} EUR</p>
+                <p className="text-sm text-slate-300">~ {Number(usage?.thisMonth.costEstimate || 0).toFixed(4)} EUR</p>
               </div>
             </div>
 
-            <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+            <div className="rounded-xl border border-white/10 bg-slate-950/30 p-4 space-y-3">
               <p className="text-sm font-semibold">{t("settings.activePlan")}</p>
 
               <div className="flex flex-wrap gap-2">
@@ -665,8 +667,8 @@ export default function SettingsPage() {
                     onClick={() => handlePlanChange(plan)}
                     className={`px-3 py-2 rounded-lg text-sm ${
                       subscription?.plan === plan
-                        ? "bg-blue-900 text-white"
-                        : "bg-gray-100 text-gray-800"
+                        ? "bg-cyan-400 text-slate-950"
+                        : "border border-white/10 bg-slate-800 text-slate-200"
                     }`}
                   >
                     {plan}
@@ -674,18 +676,19 @@ export default function SettingsPage() {
                 ))}
               </div>
 
-              <p className="text-xs text-gray-600">
+              <p className="text-xs text-slate-300">
                 {t("settings.monthlyPrice")}: {Number(subscription?.price || 0).toFixed(2)} EUR
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2">
                 {(Object.entries(subscription?.features || {}) as Array<[keyof PlanFeatures, boolean]>).map(([key, value]) => (
-                  <label key={key} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm">
+                  <label key={key} className="flex items-center justify-between rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-sm">
                     <span>{key}</span>
                     <input
                       type="checkbox"
                       checked={Boolean(value)}
                       onChange={(e) => handleFeatureToggle(key, e.target.checked)}
+                      className="h-4 w-4 accent-cyan-400"
                     />
                   </label>
                 ))}
@@ -695,56 +698,56 @@ export default function SettingsPage() {
         )}
 
         {billingMessage && (
-          <p className="text-xs text-gray-600">{billingMessage}</p>
+          <p className="text-xs text-slate-300">{billingMessage}</p>
         )}
       </div>
 
       {/* PARTAGER */}
-      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
-        <h2 className="font-semibold text-lg">
+      <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl shadow-slate-950/40 backdrop-blur space-y-4 sm:p-6">
+        <h2 className="text-lg font-semibold text-white">
           {t("settings.shareApp")}
         </h2>
 
         <button
           onClick={handleShare}
-          className="px-4 py-2 bg-black text-white rounded-xl text-sm"
+          className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-950"
         >
           {t("common.share")}
         </button>
       </div>
 
       {/* ACCÈS RAPIDE */}
-      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
-        <h2 className="font-semibold text-lg">
+      <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl shadow-slate-950/40 backdrop-blur space-y-4 sm:p-6">
+        <h2 className="text-lg font-semibold text-white">
           {t("settings.quickAccess")}
         </h2>
 
-        <div className="flex gap-4 flex-wrap">
+        <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:gap-4">
 
                   <button
                     onClick={() => router.push("/dashboard")}
-                    className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+                    className="min-h-11 rounded-xl border border-white/10 bg-slate-800 px-4 py-2 text-sm"
                   >
                     {t("settings.dashboard")}
                   </button>
 
                   <button
                     onClick={() => router.push("/dashboard/tasks")}
-                    className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+                    className="min-h-11 rounded-xl border border-white/10 bg-slate-800 px-4 py-2 text-sm"
                   >
                     {t("settings.tasks")}
                   </button>
 
                   <button
                     onClick={() => router.push("/dashboard/memoire")}
-                    className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+                    className="min-h-11 rounded-xl border border-white/10 bg-slate-800 px-4 py-2 text-sm"
                   >
                     {t("settings.memory")}
                   </button>
 
                   <button
                     onClick={() => router.push('/dashboard/settings/memory')}
-                    className="px-4 py-2 bg-blue-100 text-blue-900 rounded-xl text-sm"
+                    className="min-h-11 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-medium text-slate-950"
                   >
                     {t('settings.memoryZone.title')}
                   </button>
@@ -754,7 +757,7 @@ export default function SettingsPage() {
                     onClick={() =>
                       router.push("/dashboard/settings/notifications")
                     }
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm hover:bg-indigo-700 transition"
+                    className="min-h-11 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-emerald-400"
                   >
                     🔔 {t("settings.notifications")}
                   </button>
@@ -764,22 +767,22 @@ export default function SettingsPage() {
       </div>
 
       {/* DONNÉES */}
-      <div className="bg-white rounded-2xl shadow-sm p-6 space-y-4">
-        <h2 className="font-semibold text-lg">
+      <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl shadow-slate-950/40 backdrop-blur space-y-4 sm:p-6">
+        <h2 className="text-lg font-semibold text-white">
           {t("settings.data")}
         </h2>
 
         <div className="flex gap-4 flex-wrap">
           <button
             onClick={handleExport}
-            className="px-4 py-2 bg-gray-200 rounded-xl text-sm"
+            className="rounded-xl border border-white/10 bg-slate-800 px-4 py-2 text-sm"
           >
             {t("settings.export")}
           </button>
 
           <button
             onClick={() => setShowDeleteModal(true)}
-            className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm"
+            className="rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white"
           >
             {t("settings.deleteAccount")}
           </button>
@@ -787,7 +790,7 @@ export default function SettingsPage() {
       </div>
 
       {/* VERSION */}
-      <div className="text-center text-xs text-gray-400 pt-10">
+      <div className="pt-10 text-center text-xs text-slate-400">
         My Hyppocampe<br />
         Version 2.4<br />
         {t("settings.versionBuiltBy")}

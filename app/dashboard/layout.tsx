@@ -60,54 +60,54 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
+    <div className="min-h-screen flex flex-col bg-[radial-gradient(circle_at_top,_#16324a_0%,_#0f172a_40%,_#020617_100%)] text-white">
 
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-white/10 backdrop-blur-xl bg-slate-900/80">
-        <div className="flex items-center justify-between max-w-5xl mx-auto px-6 py-4 w-full">
+      <header className="sticky top-0 z-30 border-b border-cyan-200/10 bg-slate-950/75 backdrop-blur-xl">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-3 py-2.5 sm:gap-4 sm:px-6 sm:py-3">
           
-          <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-80 transition">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-white shadow-lg">
-              ✓
+          <Link href="/dashboard" className="flex items-center gap-3 transition hover:opacity-90">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-200/20 bg-cyan-400/15 font-bold text-cyan-200 shadow-lg shadow-cyan-950/40">
+              CC
             </div>
             <div>
-              <span className="font-bold text-lg">H+</span>
-              <p className="text-xs text-gray-400">{t('nav.control')}</p>
+              <span className="text-base font-semibold tracking-tight text-white">Control Center</span>
+              <p className="text-[11px] text-slate-400">{t('nav.control')}</p>
             </div>
           </Link>
 
-          <nav className="flex gap-8 text-sm">
+          <nav className="flex max-w-[65vw] items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-slate-900/70 p-1 text-sm sm:max-w-none">
             <Link
               href="/dashboard"
-              className={`font-medium transition ${
+              className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
                 pathname === "/dashboard"
-                  ? "text-indigo-400"
-                  : "text-gray-400 hover:text-white"
+                  ? "bg-cyan-500/20 text-cyan-100"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
               }`}
             >
-              📋 {t('nav.tasks')}
+              {t('nav.tasks')}
             </Link>
 
             <Link
               href="/dashboard/memoire"
-              className={`font-medium transition ${
+              className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
                 pathname.startsWith("/dashboard/memoire")
-                  ? "text-indigo-400"
-                  : "text-gray-400 hover:text-white"
+                  ? "bg-cyan-500/20 text-cyan-100"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
               }`}
             >
-              📚 {t('nav.memory')}
+              {t('nav.memory')}
             </Link>
 
             <Link
               href="/dashboard/settings"
-              className={`font-medium transition ${
+              className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
                 pathname.startsWith("/dashboard/settings")
-                  ? "text-indigo-400"
-                  : "text-gray-400 hover:text-white"
+                  ? "bg-cyan-500/20 text-cyan-100"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
               }`}
             >
-              ⚙️ {t('nav.settings')}
+              {t('nav.settings')}
             </Link>
           </nav>
         </div>

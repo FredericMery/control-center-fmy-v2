@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 import { useI18n } from '@/components/providers/LanguageProvider';
@@ -399,6 +399,7 @@ function formatDate(value: string, locale: string): string {
 }
 
 export default function MemoryListPage() {
+  const MODAL_ANIMATION_MS = 180;
   const { t, language } = useI18n();
   const locale = language === 'en' ? 'en-US' : language === 'es' ? 'es-ES' : 'fr-FR';
 
@@ -422,6 +423,12 @@ export default function MemoryListPage() {
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
   const [previewPhotoSrc, setPreviewPhotoSrc] = useState<string | null>(null);
   const [previewPhotoTitle, setPreviewPhotoTitle] = useState<string>('');
+  const [isDetailModalClosing, setIsDetailModalClosing] = useState(false);
+  const [isEditModalClosing, setIsEditModalClosing] = useState(false);
+  const [isPhotoModalClosing, setIsPhotoModalClosing] = useState(false);
+  const detailModalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editModalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const photoModalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const draftItems = useMemo(() => {
     return items.map((memory) => {
@@ -530,8 +537,8 @@ export default function MemoryListPage() {
   const boardThemes = useMemo(() => MEMORY_CATEGORIES.map((entry) => entry.id), []);
 
   const selectedMemory = useMemo(
-    () => filteredItems.find((item) => item.id === selectedId) || filteredItems[0] || null,
-    [filteredItems, selectedId]
+    () => (selectedId ? enrichedItems.find((item) => item.id === selectedId) || null : null),
+    [enrichedItems, selectedId]
   );
 
   const editTemplate = MEMORY_TEMPLATES[editTemplateId];
@@ -643,6 +650,12 @@ export default function MemoryListPage() {
   }
 
   function openEdit(memory: EnrichedMemory) {
+    if (editModalTimerRef.current) {
+      clearTimeout(editModalTimerRef.current);
+      editModalTimerRef.current = null;
+    }
+    setIsEditModalClosing(false);
+
     const structured = memory.structured_data || {};
     const templateId = String(structured.template_id || structured.category_id || memory.categoryId || 'other');
 
@@ -655,7 +668,7 @@ export default function MemoryListPage() {
     setError(null);
   }
 
-  function closeEdit() {
+  function finalizeCloseEdit() {
     setEditingMemoryId(null);
     setEditTitle('');
     setEditContent('');
@@ -663,6 +676,21 @@ export default function MemoryListPage() {
     setEditTemplateId('other');
     setEditTemplateFields({});
     setSavingEdit(false);
+  }
+
+  function closeEdit() {
+    if (isEditModalClosing) return;
+    setIsEditModalClosing(true);
+
+    if (editModalTimerRef.current) {
+      clearTimeout(editModalTimerRef.current);
+    }
+
+    editModalTimerRef.current = setTimeout(() => {
+      finalizeCloseEdit();
+      setIsEditModalClosing(false);
+      editModalTimerRef.current = null;
+    }, MODAL_ANIMATION_MS);
   }
 
   async function saveEdit() {
@@ -788,13 +816,44 @@ export default function MemoryListPage() {
   }
 
   function openPhotoPreview(src: string, title: string) {
+    if (photoModalTimerRef.current) {
+      clearTimeout(photoModalTimerRef.current);
+      photoModalTimerRef.current = null;
+    }
+    setIsPhotoModalClosing(false);
     setPreviewPhotoSrc(src);
     setPreviewPhotoTitle(title);
   }
 
   function closePhotoPreview() {
-    setPreviewPhotoSrc(null);
-    setPreviewPhotoTitle('');
+    if (isPhotoModalClosing) return;
+    setIsPhotoModalClosing(true);
+
+    if (photoModalTimerRef.current) {
+      clearTimeout(photoModalTimerRef.current);
+    }
+
+    photoModalTimerRef.current = setTimeout(() => {
+      setPreviewPhotoSrc(null);
+      setPreviewPhotoTitle('');
+      setIsPhotoModalClosing(false);
+      photoModalTimerRef.current = null;
+    }, MODAL_ANIMATION_MS);
+  }
+
+  function closeSelectedMemoryModal() {
+    if (!selectedMemory || isDetailModalClosing) return;
+    setIsDetailModalClosing(true);
+
+    if (detailModalTimerRef.current) {
+      clearTimeout(detailModalTimerRef.current);
+    }
+
+    detailModalTimerRef.current = setTimeout(() => {
+      setSelectedId(null);
+      setIsDetailModalClosing(false);
+      detailModalTimerRef.current = null;
+    }, MODAL_ANIMATION_MS);
   }
 
   useEffect(() => {
@@ -807,15 +866,11 @@ export default function MemoryListPage() {
       return;
     }
 
-    if (selectedId !== selectedMemory.id) {
-      setSelectedId(selectedMemory.id);
-    }
-
     loadRelations(selectedMemory.id);
   }, [selectedMemory?.id]);
 
   useEffect(() => {
-    if (!editingMemoryId && !previewPhotoSrc) return;
+    if (!editingMemoryId && !previewPhotoSrc && !selectedMemory) return;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -823,7 +878,21 @@ export default function MemoryListPage() {
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [editingMemoryId, previewPhotoSrc]);
+  }, [editingMemoryId, previewPhotoSrc, selectedMemory]);
+
+  useEffect(() => {
+    if (!selectedMemory) return;
+    setIsDetailModalClosing(false);
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        closeSelectedMemoryModal();
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedMemory]);
 
   useEffect(() => {
     if (!previewPhotoSrc) return;
@@ -838,10 +907,18 @@ export default function MemoryListPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [previewPhotoSrc]);
 
+  useEffect(() => {
+    return () => {
+      if (detailModalTimerRef.current) clearTimeout(detailModalTimerRef.current);
+      if (editModalTimerRef.current) clearTimeout(editModalTimerRef.current);
+      if (photoModalTimerRef.current) clearTimeout(photoModalTimerRef.current);
+    };
+  }, []);
+
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_#1f3b4d_0%,_#0f172a_48%,_#020617_100%)] p-4 text-white sm:p-6">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_#1f3b4d_0%,_#0f172a_48%,_#020617_100%)] p-3 text-white sm:p-6">
       <div className="mx-auto max-w-7xl space-y-5">
-        <header className="rounded-2xl border border-cyan-300/20 bg-slate-900/60 p-4 backdrop-blur">
+        <header className="rounded-2xl border border-cyan-300/20 bg-slate-900/60 p-3 backdrop-blur sm:p-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h1 className="text-xl font-semibold tracking-tight md:text-2xl">{t('memory.list.title')}</h1>
@@ -887,7 +964,7 @@ export default function MemoryListPage() {
           </div>
         </header>
 
-        <section className="rounded-2xl border border-slate-700 bg-slate-900/60 p-3 backdrop-blur">
+        <section className="rounded-2xl border border-slate-700 bg-slate-900/60 p-2.5 backdrop-blur sm:p-3">
           <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_180px_220px_auto]">
             <input
               value={search}
@@ -1037,8 +1114,7 @@ export default function MemoryListPage() {
             </div>
           </section>
         ) : (
-          <div className="grid gap-4 xl:grid-cols-[2fr,1fr]">
-            <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+          <section className="grid gap-2.5 sm:grid-cols-2 sm:gap-3 2xl:grid-cols-3">
               {filteredItems.map((memory) => (
                 <article
                   key={memory.id}
@@ -1047,7 +1123,7 @@ export default function MemoryListPage() {
                     event.dataTransfer.setData('text/memory-id', memory.id);
                   }}
                   className={`overflow-hidden rounded-2xl border transition ${
-                    selectedMemory?.id === memory.id
+                    selectedId === memory.id
                       ? 'border-cyan-300 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(103,232,249,0.35)]'
                       : 'border-slate-700 bg-slate-900/70 hover:border-slate-500'
                   }`}
@@ -1107,7 +1183,7 @@ export default function MemoryListPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedId(memory.id)}
-                      className="w-full space-y-1.5 p-2.5 text-left"
+                      className="w-full space-y-1.5 p-2.5 text-left sm:p-3"
                     >
                       <h2 className="line-clamp-2 text-sm font-semibold text-white">{memory.title}</h2>
                       {memory.categoryId === 'wines' ? (
@@ -1155,84 +1231,7 @@ export default function MemoryListPage() {
                   </div>
                 </article>
               ))}
-            </section>
-
-            <aside className="rounded-2xl border border-slate-700 bg-slate-900/70 p-3.5">
-              {!selectedMemory ? (
-                <p className="text-sm text-slate-400">{t('memory.list.selectMemory')}</p>
-              ) : (
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">{selectedMemory.categoryLabel}</p>
-                    <h3 className="mt-1 text-xl font-semibold text-white">{selectedMemory.title}</h3>
-                    <p className="mt-1 text-xs text-slate-400">{formatDate(selectedMemory.created_at, locale)}</p>
-                    <p className="mt-1 text-xs text-emerald-300">
-                      {t('memory.list.relevanceScore')}: {selectedMemory.relevanceScore.toFixed(3)}
-                    </p>
-                  </div>
-
-                  {selectedMemory.categoryId === 'wines' && (
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
-                        <p className="text-[10px] uppercase tracking-wide text-slate-400">{t('memory.list.wineYear')}</p>
-                        <p className="mt-1 text-base font-semibold text-white">{selectedMemory.wineYear}</p>
-                      </div>
-                      <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
-                        <p className="text-[10px] uppercase tracking-wide text-slate-400">{t('memory.list.wineRating')}</p>
-                        <p className="mt-1 text-base font-semibold text-amber-300">
-                          {selectedMemory.effectiveRating > 0 ? `${selectedMemory.effectiveRating}/5` : '-'}
-                        </p>
-                      </div>
-                      <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
-                        <p className="text-[10px] uppercase tracking-wide text-slate-400">{t('memory.list.wineColor')}</p>
-                        <p className="mt-1 text-base font-semibold text-white">{selectedMemory.wineColor}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedMemory.scanDetail && selectedMemory.categoryId !== 'wines' && (
-                    <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
-                      <p className="mb-1 text-xs uppercase tracking-wide text-slate-400">{t('memory.list.scannedDetail')}</p>
-                      <p className="text-sm text-slate-200">{selectedMemory.scanDetail}</p>
-                    </div>
-                  )}
-
-                  {selectedMemory.content && (
-                    <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
-                      <p className="mb-1 text-xs uppercase tracking-wide text-slate-400">{t('memory.list.content')}</p>
-                      <p className="whitespace-pre-wrap text-sm text-slate-200">{selectedMemory.content}</p>
-                    </div>
-                  )}
-
-                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
-                    <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">{t('memory.list.related')}</p>
-                    {relations.length === 0 ? (
-                      <p className="text-sm text-slate-400">{t('memory.list.noRelated')}</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {relations.map((relation) => (
-                          <div key={relation.id} className="rounded-md border border-slate-700 bg-slate-900 p-2">
-                            <p className="text-[10px] uppercase tracking-wide text-cyan-300">{relation.relationType}</p>
-                            <p className="text-sm text-white">{relation.relatedMemory.title}</p>
-                            <p className="text-xs text-slate-400">{relation.relatedMemory.type}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <details className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
-                    <summary className="cursor-pointer text-xs uppercase tracking-wide text-slate-300">
-                      {t('memory.list.technicalData')}
-                    </summary>
-                    <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded bg-slate-950 p-2 text-xs text-slate-200">
-                      {JSON.stringify(selectedMemory.structured_data || {}, null, 2)}
-                    </pre>
-                  </details>
-                </div>
-              )}
-            </aside>
-          </div>
+          </section>
         )}
 
         {movingMemoryId && (
@@ -1241,9 +1240,115 @@ export default function MemoryListPage() {
           </div>
         )}
 
+        {selectedMemory && (
+          <div
+            className={`fixed inset-0 z-40 overflow-y-auto p-4 transition-opacity duration-200 ${
+              isDetailModalClosing ? 'bg-black/0 opacity-0' : 'bg-black/60 opacity-100'
+            }`}
+            onClick={closeSelectedMemoryModal}
+          >
+            <div
+              className={`mx-auto my-2 w-full max-w-3xl rounded-2xl border border-slate-700 bg-slate-900 p-3 shadow-2xl transition-all duration-200 sm:my-4 sm:p-5 ${
+                isDetailModalClosing ? 'translate-y-2 scale-[0.985] opacity-0' : 'translate-y-0 scale-100 opacity-100'
+              }`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">{selectedMemory.categoryLabel}</p>
+                  <h3 className="mt-1 text-xl font-semibold text-white">{selectedMemory.title}</h3>
+                  <p className="mt-1 text-xs text-slate-400">{formatDate(selectedMemory.created_at, locale)}</p>
+                  <p className="mt-1 text-xs text-emerald-300">
+                    {t('memory.list.relevanceScore')}: {selectedMemory.relevanceScore.toFixed(3)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeSelectedMemoryModal}
+                  className="min-h-9 rounded-md border border-slate-600 px-3 py-1 text-xs text-slate-100 hover:bg-slate-700"
+                  aria-label={t('common.cancel')}
+                >
+                  X
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                {selectedMemory.categoryId === 'wines' && (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                      <p className="text-[10px] uppercase tracking-wide text-slate-400">{t('memory.list.wineYear')}</p>
+                      <p className="mt-1 text-base font-semibold text-white">{selectedMemory.wineYear}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                      <p className="text-[10px] uppercase tracking-wide text-slate-400">{t('memory.list.wineRating')}</p>
+                      <p className="mt-1 text-base font-semibold text-amber-300">
+                        {selectedMemory.effectiveRating > 0 ? `${selectedMemory.effectiveRating}/5` : '-'}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                      <p className="text-[10px] uppercase tracking-wide text-slate-400">{t('memory.list.wineColor')}</p>
+                      <p className="mt-1 text-base font-semibold text-white">{selectedMemory.wineColor}</p>
+                    </div>
+                  </div>
+                )}
+
+                {selectedMemory.scanDetail && selectedMemory.categoryId !== 'wines' && (
+                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                    <p className="mb-1 text-xs uppercase tracking-wide text-slate-400">{t('memory.list.scannedDetail')}</p>
+                    <p className="text-sm text-slate-200">{selectedMemory.scanDetail}</p>
+                  </div>
+                )}
+
+                {selectedMemory.content && (
+                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                    <p className="mb-1 text-xs uppercase tracking-wide text-slate-400">{t('memory.list.content')}</p>
+                    <p className="max-h-56 overflow-y-auto whitespace-pre-wrap pr-1 text-sm text-slate-200">{selectedMemory.content}</p>
+                  </div>
+                )}
+
+                <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                  <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">{t('memory.list.related')}</p>
+                  {relations.length === 0 ? (
+                    <p className="text-sm text-slate-400">{t('memory.list.noRelated')}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {relations.map((relation) => (
+                        <div key={relation.id} className="rounded-md border border-slate-700 bg-slate-900 p-2">
+                          <p className="text-[10px] uppercase tracking-wide text-cyan-300">{relation.relationType}</p>
+                          <p className="text-sm text-white">{relation.relatedMemory.title}</p>
+                          <p className="text-xs text-slate-400">{relation.relatedMemory.type}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <details className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                  <summary className="cursor-pointer text-xs uppercase tracking-wide text-slate-300">
+                    {t('memory.list.technicalData')}
+                  </summary>
+                  <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded bg-slate-950 p-2 text-xs text-slate-200">
+                    {JSON.stringify(selectedMemory.structured_data || {}, null, 2)}
+                  </pre>
+                </details>
+              </div>
+            </div>
+          </div>
+        )}
+
         {editingMemoryId && (
-          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 p-4">
-            <div className="mx-auto my-6 w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-xl max-h-[88vh] overflow-y-auto">
+          <div
+            className={`fixed inset-0 z-50 overflow-y-auto p-4 transition-opacity duration-200 ${
+              isEditModalClosing ? 'bg-black/0 opacity-0' : 'bg-black/60 opacity-100'
+            }`}
+            onClick={closeEdit}
+          >
+            <div
+              className={`mx-auto my-2 w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-3 shadow-xl max-h-[90vh] overflow-y-auto transition-all duration-200 sm:my-6 sm:p-5 sm:max-h-[88vh] ${
+                isEditModalClosing ? 'translate-y-2 scale-[0.985] opacity-0' : 'translate-y-0 scale-100 opacity-100'
+              }`}
+              onClick={(event) => event.stopPropagation()}
+            >
               <h2 className="text-lg font-semibold text-white">{t('memory.list.editTitle')}</h2>
 
               <div className="mt-4 space-y-3">
@@ -1345,12 +1450,16 @@ export default function MemoryListPage() {
 
         {previewPhotoSrc && (
           <div
-            className="fixed inset-0 z-[70] bg-black/85 p-4"
+            className={`fixed inset-0 z-[70] p-4 transition-opacity duration-200 ${
+              isPhotoModalClosing ? 'bg-black/0 opacity-0' : 'bg-black/85 opacity-100'
+            }`}
             onClick={closePhotoPreview}
           >
             <div className="mx-auto flex h-full max-w-5xl items-center justify-center">
               <div
-                className="relative w-full"
+                className={`relative w-full transition-all duration-200 ${
+                  isPhotoModalClosing ? 'scale-[0.99] opacity-0' : 'scale-100 opacity-100'
+                }`}
                 onClick={(event) => event.stopPropagation()}
               >
                 <button
