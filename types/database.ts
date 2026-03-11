@@ -9,6 +9,7 @@ export type Database = {
           section_name: string;
           description: string | null;
           is_custom: boolean;
+          is_community: boolean;
           items_count: number;
           created_at: string;
           updated_at: string;
@@ -19,11 +20,13 @@ export type Database = {
           section_name: string;
           description?: string | null;
           is_custom?: boolean;
+          is_community?: boolean;
         };
         Update: {
           section_name?: string;
           description?: string | null;
           is_custom?: boolean;
+          is_community?: boolean;
         };
       };
       memory_fields: {

@@ -1,10 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 import { useI18n } from '@/components/providers/LanguageProvider';
-import { MEMORY_TEMPLATES, type FieldTemplate } from '@/lib/memoryTemplates';
 
 type SuggestedAction = {
   id: string;
@@ -28,6 +27,23 @@ type ScanResponse = {
 
 type TemplateFieldValues = Record<string, string>;
 
+type MemoryTypeField = {
+  id: string;
+  label: string;
+  type: string;
+  order: number;
+  options: string[] | null;
+};
+
+type MemoryTypeOption = {
+  id: string;
+  templateId: string;
+  name: string;
+  description: string;
+  isCommunity: boolean;
+  fields: MemoryTypeField[];
+};
+
 function safeString(value: unknown): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number') return String(value);
@@ -45,13 +61,13 @@ function toFieldKey(label: string): string {
 }
 
 function renderTemplateFieldInput(args: {
-  field: FieldTemplate;
+  field: MemoryTypeField;
   value: string;
   onChange: (next: string) => void;
 }): React.ReactNode {
   const { field, value, onChange } = args;
 
-  if (field.field_type === 'textarea') {
+  if (field.type === 'textarea') {
     return (
       <textarea
         value={value}
@@ -62,7 +78,7 @@ function renderTemplateFieldInput(args: {
     );
   }
 
-  if (field.field_type === 'select' && Array.isArray(field.options) && field.options.length > 0) {
+  if (field.type === 'select' && Array.isArray(field.options) && field.options.length > 0) {
     return (
       <select
         value={value}
@@ -79,7 +95,7 @@ function renderTemplateFieldInput(args: {
     );
   }
 
-  if (field.field_type === 'rating') {
+  if (field.type === 'rating') {
     return (
       <select
         value={value}
@@ -104,7 +120,7 @@ function renderTemplateFieldInput(args: {
     url: 'url',
   };
 
-  const inputType = typeMap[field.field_type] || 'text';
+  const inputType = typeMap[field.type] || 'text';
 
   return (
     <input
@@ -118,15 +134,12 @@ function renderTemplateFieldInput(args: {
 
 export default function MemoryScanPage() {
   const { t } = useI18n();
-  const templateOptions = useMemo(
-    () => [
-      ...Object.entries(MEMORY_TEMPLATES).map(([id, template]) => ({ id, name: template.name })),
-      { id: 'custom_create', name: t('memory.scan.templateCreateNew') },
-      { id: 'other', name: t('memory.scan.templateOther') },
-    ],
-    [t]
-  );
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [typeOptions, setTypeOptions] = useState<MemoryTypeOption[]>([]);
+  const [loadingTypes, setLoadingTypes] = useState(true);
+  const [selectedTypeId, setSelectedTypeId] = useState('');
+
   const [validationCode, setValidationCode] = useState('');
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string>('');
@@ -134,17 +147,19 @@ export default function MemoryScanPage() {
   const [savingMemory, setSavingMemory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<ScanResponse | null>(null);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('other');
-  const [customTemplateName, setCustomTemplateName] = useState<string>('');
   const [draftTitle, setDraftTitle] = useState<string>('');
   const [draftContent, setDraftContent] = useState<string>('');
   const [draftTemplateFields, setDraftTemplateFields] = useState<TemplateFieldValues>({});
   const [savedMemoryId, setSavedMemoryId] = useState<string | null>(null);
 
-  const effectiveTemplateId = selectedTemplateId === 'custom_create' ? 'other' : selectedTemplateId;
-  const activeTemplate = MEMORY_TEMPLATES[effectiveTemplateId];
-  const hasCustomTypeReady = selectedTemplateId !== 'custom_create' || customTemplateName.trim().length > 0;
-  const hasScanPrerequisites = Boolean(validationCode.trim() && imageBase64 && hasCustomTypeReady);
+  const selectedType = useMemo(
+    () => typeOptions.find((entry) => entry.id === selectedTypeId) || null,
+    [selectedTypeId, typeOptions]
+  );
+
+  const activeFields = selectedType?.fields || [];
+
+  const hasScanPrerequisites = Boolean(validationCode.trim() && imageBase64 && selectedTypeId);
   const currentStep = savedMemoryId ? 4 : scanResult ? 3 : hasScanPrerequisites ? 2 : 1;
   const stepItems = [
     { id: 1, label: t('memory.scan.stepChoose') },
@@ -152,6 +167,45 @@ export default function MemoryScanPage() {
     { id: 3, label: t('memory.scan.stepReview') },
     { id: 4, label: t('memory.scan.stepSave') },
   ];
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTypes = async () => {
+      setLoadingTypes(true);
+      try {
+        const response = await fetch('/api/memory/types', {
+          headers: await getAuthHeaders(false),
+        });
+        const json = (await response.json()) as { types?: MemoryTypeOption[]; error?: string };
+
+        if (!response.ok) {
+          throw new Error(json.error || 'Unable to load memory types');
+        }
+
+        if (cancelled) return;
+        const next = json.types || [];
+        setTypeOptions(next);
+        if (next.length > 0) {
+          setSelectedTypeId(next[0].id);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : t('memory.scan.errors.networkScan'));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingTypes(false);
+        }
+      }
+    };
+
+    loadTypes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
 
   async function onImageSelected(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -164,26 +218,23 @@ export default function MemoryScanPage() {
     setError(null);
   }
 
-  function getTemplateFieldsFromParsed(parsed: ScanResponse['parsed'], templateId: string): TemplateFieldValues {
-    const template = MEMORY_TEMPLATES[templateId];
-    if (!template) return {};
-
+  function getTemplateFieldsFromParsed(parsed: ScanResponse['parsed'], fields: MemoryTypeField[]): TemplateFieldValues {
     const structured = parsed.structured_data || {};
     const nested =
       structured.template_fields && typeof structured.template_fields === 'object'
         ? (structured.template_fields as Record<string, unknown>)
         : {};
-    const fields: TemplateFieldValues = {};
+    const values: TemplateFieldValues = {};
 
-    for (const field of template.fields) {
+    for (const field of fields) {
       const key = toFieldKey(field.label);
       const nestedValue = safeString(nested[key]);
       const direct = safeString((structured as Record<string, unknown>)[key]);
       const labelMatch = safeString((structured as Record<string, unknown>)[field.label]);
-      fields[key] = nestedValue || direct || labelMatch || '';
+      values[key] = nestedValue || direct || labelMatch || '';
     }
 
-    return fields;
+    return values;
   }
 
   function prefillDraft(nextResult: ScanResponse) {
@@ -196,7 +247,7 @@ export default function MemoryScanPage() {
 
     setDraftTitle(parsedTitle || fallbackTitle);
     setDraftContent(parsedSummary || structuredSummary || '');
-    setDraftTemplateFields(getTemplateFieldsFromParsed(parsed, effectiveTemplateId));
+    setDraftTemplateFields(getTemplateFieldsFromParsed(parsed, activeFields));
   }
 
   async function runSmartScan() {
@@ -205,14 +256,14 @@ export default function MemoryScanPage() {
       return;
     }
 
-    if (!imageBase64) {
-      setError(t('memory.scan.errors.imageBeforeScan'));
-      fileInputRef.current?.click();
+    if (!selectedType) {
+      setError(t('memory.quickAdd.error.selectType'));
       return;
     }
 
-    if (selectedTemplateId === 'custom_create' && !customTemplateName.trim()) {
-      setError(t('memory.scan.errors.customTypeRequired'));
+    if (!imageBase64) {
+      setError(t('memory.scan.errors.imageBeforeScan'));
+      fileInputRef.current?.click();
       return;
     }
 
@@ -228,7 +279,7 @@ export default function MemoryScanPage() {
         body: JSON.stringify({
           imageBase64,
           validationCode,
-          selectedTemplateId: effectiveTemplateId,
+          selectedTemplateId: selectedType.templateId || 'other',
         }),
       });
 
@@ -249,7 +300,7 @@ export default function MemoryScanPage() {
   }
 
   async function saveMemory() {
-    if (!scanResult) return;
+    if (!scanResult || !selectedType) return;
 
     if (!draftTitle.trim()) {
       setError(t('memory.scan.errors.titleRequired'));
@@ -266,12 +317,6 @@ export default function MemoryScanPage() {
         .filter(([, value]) => value.length > 0)
     );
 
-    const customType = customTemplateName.trim();
-    const selectedTypeLabel =
-      selectedTemplateId === 'custom_create'
-        ? customType
-        : templateOptions.find((option) => option.id === selectedTemplateId)?.name || t('memory.scan.templateOther');
-
     try {
       const response = await fetch('/api/memory/cards', {
         method: 'POST',
@@ -279,7 +324,7 @@ export default function MemoryScanPage() {
         body: JSON.stringify({
           validationCode,
           title: draftTitle.trim(),
-          type: effectiveTemplateId,
+          type: selectedType.templateId || 'other',
           content: draftContent,
           source: 'assistant_scan',
           source_image: imageBase64,
@@ -287,15 +332,12 @@ export default function MemoryScanPage() {
             ...(scanResult.parsed.structured_data || {}),
             detected_type: scanResult.detectedType,
             raw_ocr_text: scanResult.rawText,
-            template_id: effectiveTemplateId,
-            category_id: effectiveTemplateId,
-            theme: selectedTypeLabel,
+            template_id: selectedType.templateId || 'other',
+            category_id: selectedType.templateId || 'other',
+            theme: selectedType.name,
+            memory_type_id: selectedType.id,
+            memory_type_name: selectedType.name,
             template_fields: cleanTemplateFields,
-            ...(customType
-              ? {
-                  custom_memory_type: customType,
-                }
-              : {}),
           },
         }),
       });
@@ -318,8 +360,6 @@ export default function MemoryScanPage() {
     setImageBase64(null);
     setSelectedFileName('');
     setScanResult(null);
-    setSelectedTemplateId('other');
-    setCustomTemplateName('');
     setDraftTitle('');
     setDraftContent('');
     setDraftTemplateFields({});
@@ -336,9 +376,7 @@ export default function MemoryScanPage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold sm:text-2xl">{t('memory.scan.title')}</h1>
-            <p className="mt-1 text-xs text-slate-300 sm:text-sm">
-              {t('memory.scan.subtitle')}
-            </p>
+            <p className="mt-1 text-xs text-slate-300 sm:text-sm">{t('memory.scan.subtitle')}</p>
           </div>
           <Link
             href="/dashboard/memoire"
@@ -375,9 +413,7 @@ export default function MemoryScanPage() {
 
         <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-3.5 space-y-3.5 shadow-[inset_0_1px_0_rgba(148,163,184,0.08)] sm:p-4 sm:space-y-4">
           <div>
-            <label className="mb-2 block text-xs uppercase tracking-wide text-slate-300">
-              {t('memory.scan.validationCode')}
-            </label>
+            <label className="mb-2 block text-xs uppercase tracking-wide text-slate-300">{t('memory.scan.validationCode')}</label>
             <input
               type="password"
               value={validationCode}
@@ -388,50 +424,29 @@ export default function MemoryScanPage() {
           </div>
 
           <div>
-            <label className="mb-2 block text-xs uppercase tracking-wide text-slate-300">
-              {t('memory.scan.targetTemplate')}
-            </label>
+            <label className="mb-2 block text-xs uppercase tracking-wide text-slate-300">{t('memory.scan.targetTemplate')}</label>
             <select
-              value={selectedTemplateId}
+              value={selectedTypeId}
               onChange={(event) => {
-                setSelectedTemplateId(event.target.value);
+                setSelectedTypeId(event.target.value);
                 setScanResult(null);
                 setDraftTemplateFields({});
                 setSavedMemoryId(null);
               }}
               className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-[13px] text-white"
             >
-              {templateOptions.map((option) => (
+              {typeOptions.map((option) => (
                 <option key={option.id} value={option.id}>
                   {option.name}
+                  {option.isCommunity ? ` (${t('memory.quickAdd.community')})` : ''}
                 </option>
               ))}
             </select>
             <p className="mt-2 text-xs text-slate-400">{t('memory.scan.workflowHint')}</p>
           </div>
 
-          {selectedTemplateId === 'custom_create' && (
-            <div>
-              <label className="mb-2 block text-xs uppercase tracking-wide text-slate-300">
-                {t('memory.scan.customTypeLabel')}
-              </label>
-              <input
-                value={customTemplateName}
-                onChange={(event) => setCustomTemplateName(event.target.value)}
-                className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-[13px]"
-                placeholder={t('memory.scan.customTypePlaceholder')}
-              />
-            </div>
-          )}
-
           <div className="space-y-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={onImageSelected}
-              className="hidden"
-            />
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={onImageSelected} className="hidden" />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -439,15 +454,11 @@ export default function MemoryScanPage() {
             >
               {t('memory.scan.chooseImage')}
             </button>
-            <p className="text-xs text-slate-400">
-              {selectedFileName || t('memory.scan.noFile')}
-            </p>
+            <p className="text-xs text-slate-400">{selectedFileName || t('memory.scan.noFile')}</p>
             <div className="flex flex-wrap gap-2 text-[11px] text-slate-300">
-              <span className="rounded-full border border-slate-700 bg-slate-800/70 px-2 py-1">
-                {selectedTemplateId === 'custom_create'
-                  ? customTemplateName.trim() || t('memory.scan.templateCreateNew')
-                  : templateOptions.find((option) => option.id === selectedTemplateId)?.name || t('memory.scan.templateOther')}
-              </span>
+              {selectedType && (
+                <span className="rounded-full border border-slate-700 bg-slate-800/70 px-2 py-1">{selectedType.name}</span>
+              )}
               {selectedFileName && (
                 <span className="rounded-full border border-slate-700 bg-slate-800/70 px-2 py-1">{selectedFileName}</span>
               )}
@@ -457,11 +468,13 @@ export default function MemoryScanPage() {
           <button
             type="button"
             onClick={runSmartScan}
-            disabled={loadingScan || savingMemory}
+            disabled={loadingScan || savingMemory || loadingTypes}
             className="rounded-md bg-emerald-400 px-4 py-1.5 text-xs font-semibold text-black shadow-lg shadow-emerald-900/30 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm"
           >
             {loadingScan ? t('memory.scan.scanning') : t('memory.scan.scanButton')}
           </button>
+
+          {loadingTypes && <p className="text-xs text-slate-400">{t('memory.quickAdd.loadingTypes')}</p>}
 
           {loadingScan && (
             <div className="rounded-lg border border-emerald-300/35 bg-emerald-500/10 p-3">
@@ -476,11 +489,7 @@ export default function MemoryScanPage() {
           )}
         </div>
 
-        {error && (
-          <div className="rounded-lg border border-red-400/60 bg-red-500/10 p-3 text-sm text-red-100">
-            {error}
-          </div>
-        )}
+        {error && <div className="rounded-lg border border-red-400/60 bg-red-500/10 p-3 text-sm text-red-100">{error}</div>}
 
         {scanResult && (
           <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 p-4 space-y-3.5 shadow-[0_8px_24px_rgba(16,185,129,0.08)] sm:p-5 sm:space-y-4">
@@ -512,13 +521,11 @@ export default function MemoryScanPage() {
                   />
                 </label>
 
-                {activeTemplate && (
+                {activeFields.length > 0 && (
                   <div className="rounded-md border border-slate-700 bg-slate-800/40 p-3">
-                    <p className="mb-2 text-xs uppercase tracking-wide text-slate-300">
-                      {t('memory.list.editTemplateFields')}
-                    </p>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-slate-300">{t('memory.list.editTemplateFields')}</p>
                     <div className="grid gap-3 md:grid-cols-2">
-                      {activeTemplate.fields.map((field) => {
+                      {activeFields.map((field) => {
                         const fieldKey = toFieldKey(field.label);
                         const fieldValue = draftTemplateFields[fieldKey] || '';
 

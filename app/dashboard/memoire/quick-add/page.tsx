@@ -3,13 +3,39 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/components/providers/LanguageProvider';
-import { useAuthStore } from '@/store/authStore';
+import { getAuthHeaders } from '@/lib/auth/clientSession';
 import { useMemoryStore } from '@/store/memoryStore';
+import { useAuthStore } from '@/store/authStore';
 import { isPhotoLikeField, uploadMemoryPhoto } from '@/lib/memoryPhotos';
-import { MEMORY_TEMPLATES } from '@/lib/memoryTemplates';
-import type { Database } from '@/types/database';
 
-type MemoryField = Database['public']['Tables']['memory_fields']['Row'];
+type MemoryTypeField = {
+  id: string;
+  label: string;
+  type: string;
+  order: number;
+  options: string[] | null;
+  required: boolean;
+  searchable: boolean;
+};
+
+type MemoryTypeOption = {
+  id: string;
+  sectionId: string | null;
+  ownerUserId: string | null;
+  templateId: string;
+  name: string;
+  description: string;
+  isCommunity: boolean;
+  source: 'template' | 'private' | 'community';
+  fields: MemoryTypeField[];
+};
+
+type EnsureResponse = {
+  sectionId: string;
+  fields: MemoryTypeField[];
+  cloned: boolean;
+};
+
 type SaveState = 'idle' | 'saving' | 'done' | 'error';
 
 const FIELD_TYPE_TO_INPUT: Record<string, string> = {
@@ -23,73 +49,98 @@ const FIELD_TYPE_TO_INPUT: Record<string, string> = {
 export default function QuickAddMemoryPage() {
   const { t } = useI18n();
   const { user } = useAuthStore();
-  const {
-    sections,
-    fields,
-    items,
-    loadingSections,
-    loadingItems,
-    fetchSections,
-    fetchItemsBySectionId,
-    createItem,
-    setItemValue,
-  } = useMemoryStore();
+  const { createItem, setItemValue, fetchItemsBySectionId } = useMemoryStore();
 
-  const [selectedSectionId, setSelectedSectionId] = useState('');
+  const [typesLoading, setTypesLoading] = useState(true);
+  const [typeOptions, setTypeOptions] = useState<MemoryTypeOption[]>([]);
+  const [selectedTypeId, setSelectedTypeId] = useState('');
+
   const [title, setTitle] = useState('');
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [photoUploadingFieldId, setPhotoUploadingFieldId] = useState<string | null>(null);
+
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveProgress, setSaveProgress] = useState(0);
   const [saveMessage, setSaveMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (user) {
-      fetchSections();
-    }
-  }, [user, fetchSections]);
-
-  useEffect(() => {
-    if (selectedSectionId) {
-      fetchItemsBySectionId(selectedSectionId);
-      setFieldValues({});
-      setTitle('');
-      setSaveState('idle');
-      setSaveProgress(0);
-      setSaveMessage('');
-      setError(null);
-    }
-  }, [selectedSectionId, fetchItemsBySectionId]);
-
-  const selectedSection = sections.find((section) => section.id === selectedSectionId);
-  const selectedTemplate = selectedSection?.template_id
-    ? MEMORY_TEMPLATES[selectedSection.template_id]
-    : null;
-
-  const sectionFields = useMemo(
-    () => fields.filter((field) => field.section_id === selectedSectionId),
-    [fields, selectedSectionId]
+  const selectedType = useMemo(
+    () => typeOptions.find((entry) => entry.id === selectedTypeId) || null,
+    [typeOptions, selectedTypeId]
   );
 
-  const sectionItemsCount = useMemo(
-    () => items.filter((item) => item.section_id === selectedSectionId).length,
-    [items, selectedSectionId]
-  );
+  const fields = selectedType?.fields || [];
 
   const photoField = useMemo(
-    () => sectionFields.find((field) => field.field_type === 'url' && isPhotoLikeField(field.field_label)),
-    [sectionFields]
+    () => fields.find((field) => field.type === 'url' && isPhotoLikeField(field.label)),
+    [fields]
   );
 
   const currentStep = useMemo(() => {
     if (saveState === 'done') return 5;
     if (saveState === 'saving') return 4;
     if (title.trim() || Object.keys(fieldValues).length > 0) return 3;
-    if (selectedSectionId) return 2;
+    if (selectedTypeId) return 2;
     return 1;
-  }, [fieldValues, saveState, selectedSectionId, title]);
+  }, [fieldValues, saveState, selectedTypeId, title]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTypes = async () => {
+      setTypesLoading(true);
+      setError(null);
+      try {
+        const response = await fetch('/api/memory/types', {
+          headers: await getAuthHeaders(false),
+        });
+        const json = (await response.json()) as { types?: MemoryTypeOption[]; error?: string };
+
+        if (!response.ok) {
+          throw new Error(json.error || 'Unable to load memory types');
+        }
+
+        if (cancelled) return;
+
+        const next = json.types || [];
+        setTypeOptions(next);
+        if (!selectedTypeId && next.length > 0) {
+          setSelectedTypeId(next[0].id);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : 'Unable to load memory types');
+        }
+      } finally {
+        if (!cancelled) {
+          setTypesLoading(false);
+        }
+      }
+    };
+
+    loadTypes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTypeId) return;
+    setFieldValues({});
+    setTitle('');
+    setSaveState('idle');
+    setSaveProgress(0);
+    setSaveMessage('');
+    setError(null);
+  }, [selectedTypeId]);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = window.setTimeout(() => setToastMessage(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [toastMessage]);
 
   const stepLabels = [
     t('memory.quickAdd.step1'),
@@ -99,26 +150,18 @@ export default function QuickAddMemoryPage() {
     t('memory.quickAdd.step5'),
   ];
 
-  useEffect(() => {
-    if (!toastMessage) return;
-    const timer = window.setTimeout(() => setToastMessage(null), 3200);
-    return () => window.clearTimeout(timer);
-  }, [toastMessage]);
-
-  const handlePhotoSelect = async (field: MemoryField, file?: File) => {
-    if (!file || !user || !selectedSectionId) return;
+  const handlePhotoSelect = async (field: MemoryTypeField, file?: File) => {
+    if (!file || !user || !selectedTypeId || !selectedType) return;
 
     setError(null);
     setPhotoUploadingFieldId(field.id);
-
     try {
       const photoUrl = await uploadMemoryPhoto({
         file,
         userId: user.id,
-        sectionId: selectedSectionId,
+        sectionId: selectedType.sectionId || selectedType.templateId || selectedTypeId,
         fieldId: field.id,
       });
-
       setFieldValues((prev) => ({
         ...prev,
         [field.id]: photoUrl,
@@ -132,7 +175,7 @@ export default function QuickAddMemoryPage() {
   };
 
   const handleSave = async () => {
-    if (!selectedSectionId) {
+    if (!selectedType) {
       setError(t('memory.quickAdd.error.selectType'));
       return;
     }
@@ -147,54 +190,87 @@ export default function QuickAddMemoryPage() {
     setSaveMessage(t('memory.quickAdd.progress.creating'));
     setError(null);
 
-    const createdItem = await createItem(selectedSectionId, title.trim());
-    if (!createdItem) {
+    let ensured: EnsureResponse;
+    try {
+      const ensureResponse = await fetch('/api/memory/types', {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ action: 'ensure', sectionId: selectedType.id }),
+      });
+      const ensureJson = (await ensureResponse.json()) as EnsureResponse & { error?: string };
+      if (!ensureResponse.ok) {
+        throw new Error(ensureJson.error || 'Unable to prepare memory type');
+      }
+      ensured = ensureJson;
+    } catch (ensureError) {
+      console.error('Ensure memory type failed', ensureError);
       setSaveState('error');
       setSaveMessage('');
       setError(t('memory.quickAdd.error.createFailed'));
       return;
     }
 
-    const entries = Object.entries(fieldValues).filter(([, value]) => value && value.trim());
+    const created = await createItem(ensured.sectionId, title.trim());
+    if (!created) {
+      setSaveState('error');
+      setSaveMessage('');
+      setError(t('memory.quickAdd.error.createFailed'));
+      return;
+    }
+
+    const ensuredFieldByLabel = new Map<string, string>();
+    for (const field of ensured.fields || []) {
+      ensuredFieldByLabel.set(field.label.trim().toLowerCase(), field.id);
+    }
+
+    const entries = Object.entries(fieldValues).filter(([, value]) => value.trim().length > 0);
     const totalEntries = entries.length || 1;
 
     for (let index = 0; index < entries.length; index += 1) {
-      const [fieldId, value] = entries[index];
+      const [sourceFieldId, value] = entries[index];
+      const sourceField = fields.find((field) => field.id === sourceFieldId);
+      if (!sourceField) continue;
+
+      const targetFieldId = ensuredFieldByLabel.get(sourceField.label.trim().toLowerCase());
+      if (!targetFieldId) continue;
+
       setSaveMessage(
         t('memory.quickAdd.progress.fields', {
           current: index + 1,
           total: entries.length,
         })
       );
-      await setItemValue(createdItem.id, fieldId, value.trim());
+
+      await setItemValue(created.id, targetFieldId, value.trim());
       const ratio = (index + 1) / totalEntries;
       setSaveProgress(10 + Math.round(ratio * 75));
     }
 
     setSaveMessage(t('memory.quickAdd.progress.refresh'));
-    await fetchItemsBySectionId(selectedSectionId);
+    await fetchItemsBySectionId(ensured.sectionId);
+
     setSaveProgress(100);
     setSaveMessage(t('memory.quickAdd.progress.done'));
     setSaveState('done');
     setToastMessage(t('memory.quickAdd.toast.saved'));
   };
 
-  const renderFieldInput = (field: MemoryField) => {
+  const renderFieldInput = (field: MemoryTypeField) => {
     const value = fieldValues[field.id] || '';
 
-    if (field.field_type === 'textarea') {
+    if (field.type === 'textarea') {
       return (
         <textarea
           value={value}
           onChange={(event) => setFieldValues((prev) => ({ ...prev, [field.id]: event.target.value }))}
           rows={3}
           className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-          placeholder={field.field_label}
+          placeholder={field.label}
         />
       );
     }
 
-    if (field.field_type === 'select') {
+    if (field.type === 'select') {
       return (
         <select
           value={value}
@@ -211,7 +287,7 @@ export default function QuickAddMemoryPage() {
       );
     }
 
-    if (field.field_type === 'rating') {
+    if (field.type === 'rating') {
       return (
         <div className="flex gap-1">
           {[1, 2, 3, 4, 5].map((score) => {
@@ -231,7 +307,7 @@ export default function QuickAddMemoryPage() {
       );
     }
 
-    if (field.field_type === 'url' && isPhotoLikeField(field.field_label)) {
+    if (field.type === 'url' && isPhotoLikeField(field.label)) {
       return (
         <div className="space-y-2">
           <input
@@ -245,7 +321,7 @@ export default function QuickAddMemoryPage() {
           {value && (
             <img
               src={value}
-              alt={field.field_label}
+              alt={field.label}
               className="h-36 w-full rounded-lg border border-slate-700 object-cover"
             />
           )}
@@ -280,7 +356,7 @@ export default function QuickAddMemoryPage() {
       );
     }
 
-    const inputType = FIELD_TYPE_TO_INPUT[field.field_type] || 'text';
+    const inputType = FIELD_TYPE_TO_INPUT[field.type] || 'text';
 
     return (
       <input
@@ -288,7 +364,7 @@ export default function QuickAddMemoryPage() {
         value={value}
         onChange={(event) => setFieldValues((prev) => ({ ...prev, [field.id]: event.target.value }))}
         className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-        placeholder={field.field_label}
+        placeholder={field.label}
       />
     );
   };
@@ -299,9 +375,7 @@ export default function QuickAddMemoryPage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold sm:text-2xl">{t('memory.quickAdd.title')}</h1>
-            <p className="mt-1 text-xs text-slate-300 sm:text-sm">
-              {t('memory.quickAdd.subtitle')}
-            </p>
+            <p className="mt-1 text-xs text-slate-300 sm:text-sm">{t('memory.quickAdd.subtitle')}</p>
           </div>
           <Link
             href="/dashboard/memoire"
@@ -351,25 +425,26 @@ export default function QuickAddMemoryPage() {
           <div>
             <label className="mb-2 block text-xs uppercase tracking-wide text-slate-300">{t('memory.quickAdd.whichMemory')}</label>
             <select
-              value={selectedSectionId}
-              onChange={(event) => setSelectedSectionId(event.target.value)}
+              value={selectedTypeId}
+              onChange={(event) => setSelectedTypeId(event.target.value)}
               className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
             >
               <option value="">{t('memory.quickAdd.selectType')}</option>
-              {sections.map((section) => (
-                <option key={section.id} value={section.id}>
-                  {section.section_name}
+              {typeOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name}
+                  {option.isCommunity ? ` (${t('memory.quickAdd.community')})` : ''}
                 </option>
               ))}
             </select>
-            {selectedSection && (
+            {selectedType && (
               <p className="mt-2 text-xs text-slate-400">
-                {selectedTemplate?.icon || '🧠'} {selectedTemplate?.description || selectedSection.description || t('memory.quickAdd.customType')}
+                🧠 {selectedType.description || t('memory.quickAdd.customType')}
               </p>
             )}
           </div>
 
-          {selectedSectionId && (
+          {selectedTypeId && (
             <>
               <div>
                 <label className="mb-2 block text-xs uppercase tracking-wide text-slate-300">{t('memory.quickAdd.cardTitle')}</label>
@@ -383,29 +458,27 @@ export default function QuickAddMemoryPage() {
 
               {photoField && (
                 <div className="rounded-lg border border-emerald-300/30 bg-emerald-500/10 p-3 text-xs text-emerald-100">
-                  {t('memory.quickAdd.photoHint', { field: photoField.field_label })}
+                  {t('memory.quickAdd.photoHint', { field: photoField.label })}
                 </div>
               )}
 
               <div className="space-y-3">
-                {sectionFields.map((field) => (
+                {fields.map((field) => (
                   <div key={field.id}>
-                    <p className="mb-1 text-sm text-slate-200">{field.field_label}</p>
+                    <p className="mb-1 text-sm text-slate-200">{field.label}</p>
                     {renderFieldInput(field)}
                   </div>
                 ))}
 
-                {!loadingItems && sectionFields.length === 0 && (
-                  <p className="text-sm text-amber-300">
-                    {t('memory.quickAdd.noFields')}
-                  </p>
+                {!typesLoading && fields.length === 0 && (
+                  <p className="text-sm text-amber-300">{t('memory.quickAdd.noFields')}</p>
                 )}
               </div>
 
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={saveState === 'saving' || sectionFields.length === 0}
+                disabled={saveState === 'saving' || fields.length === 0}
                 className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-black hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saveState === 'saving' ? t('memory.quickAdd.saving') : t('common.save')}
@@ -430,9 +503,9 @@ export default function QuickAddMemoryPage() {
             </div>
           )}
 
-          {saveState === 'done' && selectedSectionId && (
+          {saveState === 'done' && (
             <Link
-              href={`/dashboard/memoire/${selectedSectionId}`}
+              href="/dashboard/memoire/list"
               className="inline-block rounded-lg border border-cyan-400/40 bg-cyan-500/15 px-3 py-2 text-sm text-cyan-100"
             >
               {t('memory.quickAdd.viewInSection')}
@@ -440,11 +513,8 @@ export default function QuickAddMemoryPage() {
           )}
 
           {error && <p className="text-sm text-red-300">{error}</p>}
-          {loadingSections && <p className="text-xs text-slate-400">{t('memory.quickAdd.loadingTypes')}</p>}
-          {selectedSectionId && loadingItems && <p className="text-xs text-slate-400">{t('memory.quickAdd.loadingFields')}</p>}
-          {selectedSectionId && !loadingItems && (
-            <p className="text-xs text-slate-400">{t('memory.quickAdd.sectionCardsCount', { count: sectionItemsCount })}</p>
-          )}
+          {typesLoading && <p className="text-xs text-slate-400">{t('memory.quickAdd.loadingTypes')}</p>}
+          {selectedTypeId && !typesLoading && <p className="text-xs text-slate-400">{t('memory.quickAdd.loadingFields')}</p>}
         </div>
       </div>
     </div>
