@@ -114,32 +114,61 @@ export default function TasksPage() {
     [filteredTasks]
   );
 
+  const todayCreatedCount = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return tasks.filter((task) => {
+      if (task.type !== typeParam || !task.created_at) return false;
+      const created = new Date(task.created_at);
+      created.setHours(0, 0, 0, 0);
+      return created.getTime() === today.getTime();
+    }).length;
+  }, [tasks, typeParam]);
+
+  const todayDoneCount = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return tasks.filter((task) => {
+      if (task.type !== typeParam || !task.created_at || task.status !== "done") return false;
+      const created = new Date(task.created_at);
+      created.setHours(0, 0, 0, 0);
+      return created.getTime() === today.getTime();
+    }).length;
+  }, [tasks, typeParam]);
+
+  const dayEfficiency = useMemo(() => {
+    if (todayCreatedCount === 0) return 0;
+    return Math.round((todayDoneCount / todayCreatedCount) * 100);
+  }, [todayCreatedCount, todayDoneCount]);
+
   const typeTitle = typeParam.charAt(0).toUpperCase() + typeParam.slice(1);
   const typeEmoji = typeParam === "pro" ? "💼" : "🎯";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#16324a_0%,_#0f172a_42%,_#020617_100%)] text-white">
 
       {/* HEADER SECTION */}
-      <div className="sticky top-0 z-20 backdrop-blur-xl bg-slate-900/80 border-b border-white/10">
-        <div className="max-w-5xl mx-auto px-6 py-4">
+      <div className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/75 backdrop-blur-xl">
+        <div className="mx-auto max-w-6xl px-3 py-3 sm:px-6 sm:py-4">
           
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/dashboard" className="text-gray-400 hover:text-white transition text-xl">
+            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+              <Link href="/dashboard" className="text-xl text-gray-400 transition hover:text-white">
                 ←
               </Link>
-              <div className="text-4xl">{typeEmoji}</div>
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight">{t('tasks.title', { type: typeTitle })}</h1>
-                <p className="text-sm text-gray-400">{t('tasks.subtitle')}</p>
+              <div className="text-3xl sm:text-4xl">{typeEmoji}</div>
+              <div className="min-w-0">
+                <h1 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">{t('tasks.title', { type: typeTitle })}</h1>
+                <p className="text-xs text-gray-400 sm:text-sm">{t('tasks.subtitle')}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               <button
                 onClick={toggleArchivedView}
-                className="px-4 py-2 rounded-full text-xs font-medium bg-white/5 text-gray-300 hover:bg-white/10 transition-all"
+                className="min-h-10 rounded-full bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition-all hover:bg-white/10 sm:px-4"
               >
                 {showArchived ? t('tasks.active') : t('tasks.archives')}
               </button>
@@ -151,10 +180,29 @@ export default function TasksPage() {
       </div>
 
       {/* MAIN CONTENT */}
-      <div className="max-w-5xl mx-auto px-6 py-8 pb-32">
+      <div className="mx-auto max-w-6xl px-3 py-4 pb-32 sm:px-6 sm:py-7">
+        <section className="mb-4 overflow-x-auto rounded-2xl border border-cyan-200/10 bg-slate-900/65 p-2.5 sm:mb-6 sm:p-3">
+          <div className="flex min-w-max items-center gap-2 text-xs sm:text-sm">
+            <div className="rounded-full border border-white/10 bg-slate-950/40 px-3 py-1.5 text-slate-300">
+              Total: <span className="font-semibold text-white">{activeCount}</span>
+            </div>
+            <div className="rounded-full border border-cyan-300/20 bg-cyan-500/10 px-3 py-1.5 text-cyan-100">
+              Todo: <span className="font-semibold">{todoCount}</span>
+            </div>
+            <div className="rounded-full border border-emerald-300/20 bg-emerald-500/10 px-3 py-1.5 text-emerald-100">
+              Done: <span className="font-semibold">{doneCount}</span>
+            </div>
+            <div className="rounded-full border border-amber-300/20 bg-amber-500/10 px-3 py-1.5 text-amber-100">
+              Efficacite day: <span className="font-semibold">{todayDoneCount}/{todayCreatedCount}</span>
+            </div>
+            <div className="rounded-full border border-indigo-300/20 bg-indigo-500/10 px-3 py-1.5 text-indigo-100">
+              KPI: <span className="font-semibold">{dayEfficiency}%</span>
+            </div>
+          </div>
+        </section>
 
         {filteredTasks.length === 0 ? (
-          <div className="text-center py-16">
+          <div className="py-16 text-center">
             <div className="text-6xl mb-4">🎯</div>
             <p className="text-gray-400 text-lg mb-6">
               {showArchived ? t('tasks.noneArchived') : t('tasks.noneYet')}
@@ -162,14 +210,14 @@ export default function TasksPage() {
             {!showArchived && (
               <button
                 onClick={() => setShowModal(true)}
-                className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-full font-semibold transition-all hover:scale-105"
+                className="rounded-full bg-cyan-500 px-8 py-3 font-semibold text-slate-950 transition-all hover:scale-105 hover:bg-cyan-400"
               >
                 {t('tasks.createTask')}
               </button>
             )}
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2.5 sm:space-y-3">
             {filteredTasks.map((task) => {
 
               const deadlinePassed = isDeadlinePassed(task.deadline);
@@ -182,8 +230,10 @@ export default function TasksPage() {
               return (
                 <div
                   key={task.id}
-                  className={`group relative bg-white/5 backdrop-blur-sm p-5 rounded-2xl hover:bg-white/10 cursor-pointer border transition-all ${
-                    deadlinePassed ? "border-red-500/50 bg-red-500/5" : "border-white/10"
+                  className={`group relative cursor-pointer rounded-2xl border p-3 backdrop-blur-sm transition-all sm:p-5 ${
+                    deadlinePassed
+                      ? "border-red-500/50 bg-red-500/5"
+                      : "border-white/10 bg-slate-900/60 hover:border-white/20 hover:bg-slate-900/80"
                   }`}
                   onClick={() =>
                     setExpandedTaskId(
@@ -193,9 +243,9 @@ export default function TasksPage() {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start gap-3 mb-3">
+                      <div className="mb-3 flex items-start gap-2.5 sm:gap-3">
                         <span className="text-2xl flex-shrink-0">{statusEmojis[task.status]}</span>
-                        <h3 className="text-sm font-light text-white leading-relaxed">
+                        <h3 className="whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-white sm:text-[15px]">
                           {task.title}
                         </h3>
                       </div>
@@ -226,14 +276,14 @@ export default function TasksPage() {
                           <a
                             href={phoneHref}
                             onClick={(e) => e.stopPropagation()}
-                            className="px-2 py-1 rounded-md bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs hover:bg-emerald-500/30 transition-colors"
+                            className="min-h-8 rounded-md border border-emerald-400/40 bg-emerald-500/20 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/30"
                             title={`Appeler: ${contacts.phone}`}
                           >
                             📱 {t('tasks.phone')}
                           </a>
                         ) : (
                           <span
-                            className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-gray-500 text-xs"
+                            className="min-h-8 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-gray-500"
                             title={t('tasks.addPhoneHint')}
                           >
                             📱 {t('tasks.phone')}
@@ -244,14 +294,14 @@ export default function TasksPage() {
                           <a
                             href={emailHref}
                             onClick={(e) => e.stopPropagation()}
-                            className="px-2 py-1 rounded-md bg-sky-500/20 border border-sky-400/40 text-sky-300 text-xs hover:bg-sky-500/30 transition-colors"
+                            className="min-h-8 rounded-md border border-sky-400/40 bg-sky-500/20 px-2 py-1 text-xs text-sky-300 transition-colors hover:bg-sky-500/30"
                             title={`Email: ${contacts.email}`}
                           >
                             📧 {t('tasks.mail')}
                           </a>
                         ) : (
                           <span
-                            className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-gray-500 text-xs"
+                            className="min-h-8 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-gray-500"
                             title={t('tasks.addEmailHint')}
                           >
                             📧 {t('tasks.mail')}
@@ -264,14 +314,14 @@ export default function TasksPage() {
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="px-2 py-1 rounded-md bg-indigo-500/20 border border-indigo-400/40 text-indigo-300 text-xs hover:bg-indigo-500/30 transition-colors"
+                            className="min-h-8 rounded-md border border-indigo-400/40 bg-indigo-500/20 px-2 py-1 text-xs text-indigo-300 transition-colors hover:bg-indigo-500/30"
                             title={`Teams: ${contacts.teams}`}
                           >
                             💬 Teams
                           </a>
                         ) : (
                           <span
-                            className="px-2 py-1 rounded-md bg-white/5 border border-white/10 text-gray-500 text-xs"
+                            className="min-h-8 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-gray-500"
                             title={t('tasks.addTeamsHint')}
                           >
                             💬 Teams
@@ -285,14 +335,14 @@ export default function TasksPage() {
                         e.stopPropagation();
                         deleteTask(task.id);
                       }}
-                      className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-red-400 hover:text-red-300 transition text-xl"
+                      className="text-xl text-red-400 transition hover:text-red-300 opacity-100 md:opacity-0 md:group-hover:opacity-100"
                     >
                       🗑️
                     </button>
                   </div>
 
                   {expandedTaskId === task.id && (
-                    <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+                    <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
                       <p className="text-xs text-gray-400 uppercase tracking-wide">{t('tasks.changeStatus')}</p>
                       <div className="flex gap-2 flex-wrap">
                         {statuses.map((status) => (
@@ -303,7 +353,7 @@ export default function TasksPage() {
                               updateStatus(task.id, status);
                               setExpandedTaskId(null);
                             }}
-                            className={`px-4 py-2 rounded-lg text-xs uppercase font-medium transition-all ${statusColors[status]} hover:brightness-110`}
+                            className={`rounded-lg px-4 py-2 text-xs font-medium uppercase transition-all hover:brightness-110 ${statusColors[status]}`}
                           >
                             {statusEmojis[status]} {t(`tasks.status.${status}`)}
                           </button>
@@ -322,7 +372,7 @@ export default function TasksPage() {
                             });
                             setTransferModalOpen(true);
                           }}
-                          className="w-full px-4 py-2 rounded-lg bg-purple-600/30 text-purple-300 hover:bg-purple-600/40 text-xs uppercase font-medium transition-all"
+                          className="w-full rounded-lg bg-purple-600/30 px-4 py-2 text-xs font-medium uppercase text-purple-300 transition-all hover:bg-purple-600/40"
                         >
                           ✉️ {t('tasks.transfer')}
                         </button>
