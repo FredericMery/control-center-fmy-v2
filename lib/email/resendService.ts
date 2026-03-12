@@ -35,7 +35,17 @@ export async function sendExpenseEmail({
     throw new Error('RESEND_API_KEY manquant');
   }
 
-  const fromAddress = process.env.EMAIL_FROM || 'noreply@meetsync-ai.com';
+  const preferredFrom =
+    String(process.env.EMAIL_FROM || process.env.RESEND_FROM || '').trim() ||
+    'Control Center <noreply@meetsync-ai.com>';
+  const fallbackFrom =
+    String(process.env.RESEND_FALLBACK_FROM || 'onboarding@resend.dev').trim() ||
+    'onboarding@resend.dev';
+  const recipients = normalizeRecipientList(to);
+
+  if (recipients.length === 0) {
+    throw new Error('Aucun destinataire email valide');
+  }
 
   try {
     const aiBody = await generateExpenseEmailBodyWithAi({
@@ -49,13 +59,18 @@ export async function sendExpenseEmail({
       invoiceDate,
     });
 
-    const receiptAttachment = photoUrl
-      ? await buildAttachmentFromUrl(photoUrl, 'justificatif')
-      : null;
+    let receiptAttachment: Awaited<ReturnType<typeof buildAttachmentFromUrl>> | null = null;
+    if (photoUrl) {
+      try {
+        receiptAttachment = await buildAttachmentFromUrl(photoUrl, 'justificatif');
+      } catch (attachmentError) {
+        // The email must still be sent even if the receipt cannot be fetched.
+        console.warn('Piece jointe indisponible, envoi sans justificatif:', attachmentError);
+      }
+    }
 
-    const response = await resend.emails.send({
-      from: fromAddress,
-      to,
+    const emailPayload = {
+      to: recipients.length === 1 ? recipients[0] : recipients,
       subject: `Facture - ${vendor}`,
       html: generateExpenseEmailHTML({
         aiBody,
@@ -68,13 +83,44 @@ export async function sendExpenseEmail({
         invoiceDate,
       }),
       attachments: receiptAttachment ? [receiptAttachment] : undefined,
-    });
+    };
 
-    return response;
+    try {
+      const response = await resend.emails.send({
+        from: preferredFrom,
+        ...emailPayload,
+      });
+      return response;
+    } catch (primaryError) {
+      const primaryMessage = String((primaryError as any)?.message || '').toLowerCase();
+      const shouldFallbackFrom =
+        primaryMessage.includes('from') ||
+        primaryMessage.includes('domain') ||
+        primaryMessage.includes('sender');
+
+      if (!shouldFallbackFrom || fallbackFrom === preferredFrom) {
+        throw primaryError;
+      }
+
+      const retryResponse = await resend.emails.send({
+        from: fallbackFrom,
+        ...emailPayload,
+      });
+
+      return retryResponse;
+    }
   } catch (error) {
     console.error('Erreur Resend:', error);
     throw error;
   }
+}
+
+function normalizeRecipientList(raw: string): string[] {
+  return String(raw || '')
+    .split(/[;,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .filter((entry) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry));
 }
 
 export async function buildAttachmentFromUrl(url: string, baseName: string) {

@@ -164,18 +164,28 @@ export async function POST(request: NextRequest) {
 
     if (payload.paymentMethod === 'cb_pro') {
       try {
-        // Récupérer l'email du destinataire depuis email_settings
-        const { data: settings } = await supabase
+        // Recuperer l email de destination facture avec fallback sur destinataire selectionne.
+        const { data: settings, error: settingsError } = await supabase
           .from('email_settings')
           .select('email')
           .eq('type', 'facture')
           .eq('user_id', userId)
-          .single();
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        if (settings?.email) {
+        const destinationFromSettings = String(settings?.email || '').trim();
+        const destinationFromPayload = String(payload.recipientDestination || '').trim();
+        const recipientEmail = destinationFromSettings || destinationFromPayload;
+
+        if (settingsError) {
+          throw new Error(settingsError.message);
+        }
+
+        if (recipientEmail) {
           await sendExpenseEmail({
             userId,
-            to: settings.email,
+            to: recipientEmail,
             vendor: invoiceData.vendor || 'Fournisseur',
             amountHt: normalizedAmounts.amountHt || 0,
             amountTax: normalizedAmounts.amountTva || 0,
@@ -186,6 +196,8 @@ export async function POST(request: NextRequest) {
             photoUrl: publicUrl || undefined,
           });
           emailSent = true;
+        } else {
+          emailErrorMessage = 'Aucun destinataire facture configure (settings ou formulaire).';
         }
       } catch (emailError) {
         console.error('Erreur envoi email:', emailError);
