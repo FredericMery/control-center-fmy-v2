@@ -38,7 +38,13 @@ type ExpenseReportResponse = {
 export default function ExpensesListPage() {
   const { t, language } = useI18n();
   const now = new Date();
-  const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const previousMonthInfo = useMemo(() => {
+    const date = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return {
+      month: date.getMonth() + 1,
+      year: date.getFullYear(),
+    };
+  }, [now]);
   const [report, setReport] = useState<ExpenseReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +68,7 @@ export default function ExpensesListPage() {
   const [reimbursedFullName, setReimbursedFullName] = useState('');
   const [ndfValidatorFullName, setNdfValidatorFullName] = useState('');
   const [ndfCompanyName, setNdfCompanyName] = useState('');
+  const [lastAutoSelectKey, setLastAutoSelectKey] = useState<string | null>(null);
 
   useEffect(() => {
     fetchExpenses();
@@ -140,26 +147,45 @@ export default function ExpensesListPage() {
     );
   }, [filteredRows]);
 
+  const ndfEligibleIds = useMemo(() => ndfEligibleRows.map((row) => row.id), [ndfEligibleRows]);
+
+  useEffect(() => {
+    const eligibleSet = new Set(ndfEligibleIds);
+    setSelectedNdfExpenseIds((prev) => prev.filter((id) => eligibleSet.has(id)));
+  }, [ndfEligibleIds]);
+
   useEffect(() => {
     const isPreviousMonthView =
-      selectedMonth === previousMonthDate.getMonth() + 1 &&
-      selectedYear === previousMonthDate.getFullYear();
+      selectedMonth === previousMonthInfo.month && selectedYear === previousMonthInfo.year;
 
-    if (isPreviousMonthView) {
-      setSelectedNdfExpenseIds(ndfEligibleRows.map((row) => row.id));
+    if (!isPreviousMonthView) {
+      setLastAutoSelectKey(null);
       return;
     }
 
-    setSelectedNdfExpenseIds([]);
+    const selectionScopeKey = `${selectedYear}-${selectedMonth}-${selectedCardType}-${selectedRecipient}-${ndfEligibleIds.join('|')}`;
+    if (selectionScopeKey === lastAutoSelectKey) return;
+
+    setSelectedNdfExpenseIds(ndfEligibleIds);
+    setLastAutoSelectKey(selectionScopeKey);
   }, [
     selectedMonth,
     selectedYear,
-    report,
     selectedCardType,
     selectedRecipient,
-    ndfEligibleRows,
-    previousMonthDate,
+    previousMonthInfo.month,
+    previousMonthInfo.year,
+    ndfEligibleIds,
+    lastAutoSelectKey,
   ]);
+
+  const selectAllEligibleNdf = () => {
+    setSelectedNdfExpenseIds(ndfEligibleIds);
+  };
+
+  const clearNdfSelection = () => {
+    setSelectedNdfExpenseIds([]);
+  };
 
   const toggleNdfExpense = (expense: ExpenseRow) => {
     const selectable =
@@ -453,8 +479,31 @@ export default function ExpensesListPage() {
               </button>
             </div>
 
-            <div className="rounded-lg border border-slate-700 bg-slate-900/70 px-4 py-3 text-xs text-slate-300">
-              <strong className="text-white">NDF:</strong> {selectedNdfExpenseIds.length} ligne(s) selectionnee(s). Les lignes deja envoyees sont grisees et non selectionnables.
+            <div className="rounded-lg border border-slate-700 bg-slate-900/70 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-slate-300">
+                  <strong className="text-white">NDF:</strong> {selectedNdfExpenseIds.length} ligne(s) selectionnee(s) sur {ndfEligibleIds.length} eligible(s).
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={selectAllEligibleNdf}
+                    className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
+                  >
+                    Tout cocher
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearNdfSelection}
+                    className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+                  >
+                    Tout decocher
+                  </button>
+                </div>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-400">
+                Les lignes deja envoyees sont grisees et ne peuvent plus etre selectionnees.
+              </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
