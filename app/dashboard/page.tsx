@@ -58,6 +58,9 @@ export default function DashboardPage() {
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [assistantFinalizing, setAssistantFinalizing] = useState(false);
   const [assistantRatingLoading, setAssistantRatingLoading] = useState(false);
+  const [assistantShowFeedback, setAssistantShowFeedback] = useState(false);
+  const [assistantSaveProgress, setAssistantSaveProgress] = useState(0);
+  const [assistantFlowStatus, setAssistantFlowStatus] = useState<string | null>(null);
   const [assistantListening, setAssistantListening] = useState(false);
   const [assistantModalOpen, setAssistantModalOpen] = useState(false);
   const [assistantName, setAssistantName] = useState('Assistant');
@@ -414,6 +417,9 @@ export default function DashboardPage() {
     setAssistantModalOpen(false);
     setAssistantSummaryModalOpen(false);
     setAssistantSummaryPreview(null);
+    setAssistantShowFeedback(false);
+    setAssistantSaveProgress(0);
+    setAssistantFlowStatus(null);
   };
 
   const openAssistantModal = () => {
@@ -424,6 +430,9 @@ export default function DashboardPage() {
     setAssistantError(null);
     setAssistantSummaryModalOpen(false);
     setAssistantSummaryPreview(null);
+    setAssistantShowFeedback(false);
+    setAssistantSaveProgress(0);
+    setAssistantFlowStatus(null);
   };
 
   const openConversation = (conversation: AssistantConversation) => {
@@ -437,6 +446,9 @@ export default function DashboardPage() {
       setAssistantSummaryPreview(null);
       setAssistantSummaryModalOpen(false);
     }
+    setAssistantShowFeedback(false);
+    setAssistantSaveProgress(0);
+    setAssistantFlowStatus(null);
   };
 
   const askAssistant = async () => {
@@ -445,6 +457,8 @@ export default function DashboardPage() {
     const targetConversationId = selectedConversation?.status === 'closed' ? null : assistantConversationId;
 
     setAssistantError(null);
+    setAssistantShowFeedback(false);
+    setAssistantFlowStatus(null);
     setAssistantLoading(true);
 
     try {
@@ -510,6 +524,8 @@ export default function DashboardPage() {
       if (listResponse.ok) {
         setAssistantConversations((listJson.conversations || []) as AssistantConversation[]);
       }
+      setAssistantShowFeedback(true);
+      setAssistantFlowStatus('Conversation cloturee. Donne ton avis.');
     } catch {
       setAssistantError("Erreur reseau pendant la cloture.");
     } finally {
@@ -522,6 +538,18 @@ export default function DashboardPage() {
 
     setAssistantRatingLoading(true);
     setAssistantError(null);
+    setAssistantFlowStatus(null);
+
+    let progressTimer: ReturnType<typeof setInterval> | null = null;
+    if (liked) {
+      setAssistantSaveProgress(8);
+      progressTimer = setInterval(() => {
+        setAssistantSaveProgress((prev) => {
+          if (prev >= 92) return prev;
+          return prev + 7;
+        });
+      }, 180);
+    }
 
     try {
       const response = await fetch('/api/dashboard/assistant', {
@@ -540,9 +568,11 @@ export default function DashboardPage() {
         return;
       }
 
-      if (liked && json?.summary) {
-        setAssistantSummaryPreview(String(json.summary));
-        setAssistantSummaryModalOpen(true);
+      if (liked) {
+        setAssistantSaveProgress(100);
+        setAssistantFlowStatus('Enregistrement OK');
+      } else {
+        setAssistantFlowStatus('Conversation fermee sans enregistrement');
       }
 
       const listResponse = await fetch('/api/dashboard/assistant', {
@@ -552,9 +582,14 @@ export default function DashboardPage() {
       if (listResponse.ok) {
         setAssistantConversations((listJson.conversations || []) as AssistantConversation[]);
       }
+
+      setTimeout(() => {
+        startNewConversation();
+      }, liked ? 900 : 500);
     } catch {
       setAssistantError('Erreur reseau pendant le feedback.');
     } finally {
+      if (progressTimer) clearInterval(progressTimer);
       setAssistantRatingLoading(false);
     }
   };
@@ -567,6 +602,9 @@ export default function DashboardPage() {
     setAssistantQuestion("");
     setAssistantSummaryModalOpen(false);
     setAssistantSummaryPreview(null);
+    setAssistantShowFeedback(false);
+    setAssistantSaveProgress(0);
+    setAssistantFlowStatus(null);
   };
 
   return (
@@ -605,16 +643,6 @@ export default function DashboardPage() {
                   <p className="text-[11px] text-slate-400">Assistant conversationnel</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {assistantConversationId && (
-                    <button
-                      type="button"
-                      onClick={closeConversation}
-                      disabled={assistantFinalizing}
-                      className="rounded-lg border border-cyan-300/30 bg-cyan-500/15 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 disabled:opacity-60"
-                    >
-                      {assistantFinalizing ? 'Cloture...' : 'Clore'}
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={closeAssistantModal}
@@ -721,11 +749,24 @@ export default function DashboardPage() {
                     </div>
                   ))
                 )}
+
+                {assistantConversationId && assistantMessages.length > 0 && !assistantShowFeedback && (
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={closeConversation}
+                      disabled={assistantFinalizing || selectedConversation?.status === 'closed'}
+                      className="rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-60"
+                    >
+                      {assistantFinalizing ? 'Cloture...' : 'Fin de conversation'}
+                    </button>
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </div>
 
               <div className="border-t border-white/10 bg-slate-900/95 px-3 py-3 sm:px-4">
-                {assistantConversationId && selectedConversation?.status === 'closed' && (
+                {assistantConversationId && assistantShowFeedback && (
                   <div className="mb-2 flex items-center gap-2">
                     <button
                       type="button"
@@ -745,17 +786,31 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 )}
+                {assistantFlowStatus && <p className="mb-2 text-xs text-emerald-300">{assistantFlowStatus}</p>}
+                {assistantRatingLoading && assistantSaveProgress > 0 && (
+                  <div className="mb-2">
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+                      <div
+                        className="h-full rounded-full bg-emerald-400 transition-all duration-200"
+                        style={{ width: `${assistantSaveProgress}%` }}
+                      />
+                    </div>
+                    <p className="mt-1 text-[11px] text-emerald-200">Enregistrement du resume... {assistantSaveProgress}%</p>
+                  </div>
+                )}
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <input
                     value={assistantQuestion}
                     onChange={(event) => setAssistantQuestion(event.target.value)}
                     placeholder={displayName}
+                    disabled={assistantShowFeedback}
                     className="min-h-11 flex-1 rounded-xl border border-white/10 bg-slate-900 px-3 text-sm text-white outline-none focus:border-cyan-300"
                   />
                   <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={assistantListening ? stopVoiceInput : startVoiceInput}
+                      disabled={assistantShowFeedback}
                       className={`min-h-11 rounded-xl px-3 text-xs font-semibold ${
                         assistantListening
                           ? 'bg-rose-500 text-white'
@@ -767,7 +822,7 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       onClick={askAssistant}
-                      disabled={assistantLoading || !assistantQuestion.trim()}
+                      disabled={assistantLoading || assistantShowFeedback || !assistantQuestion.trim()}
                       className="min-h-11 rounded-xl bg-cyan-400 px-4 text-sm font-semibold text-slate-950 disabled:opacity-50"
                     >
                       {assistantLoading ? 'Analyse...' : 'Envoyer'}

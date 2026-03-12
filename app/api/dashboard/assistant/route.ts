@@ -30,6 +30,21 @@ type MessageRow = {
   created_at: string;
 };
 
+type AssistantActionPlan = {
+  action: 'none' | 'create_task' | 'create_memory' | 'create_expense';
+  title?: string;
+  content?: string;
+  taskType?: 'pro' | 'perso';
+  deadline?: string | null;
+  memoryType?: string;
+  paymentMethod?: 'cb_perso' | 'cb_pro';
+  amount?: number | null;
+  vendor?: string;
+  category?: string;
+  description?: string;
+  confidence?: number;
+};
+
 async function loadUserContext(userId: string) {
   const supabase = getSupabaseAdminClient();
 
@@ -48,7 +63,7 @@ async function loadUserContext(userId: string) {
       .limit(120),
     supabase
       .from('expenses')
-      .select('id,merchant_name,total_amount,date,category,payment_method,description,created_at')
+      .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(120),
@@ -80,6 +95,219 @@ function readOutputText(response: any): string {
   }
 
   return 'Je n ai pas trouve de reponse dans les donnees disponibles.';
+}
+
+function readJsonObject(response: any): Record<string, unknown> | null {
+  const raw = readOutputText(response);
+  const fenced = raw.match(/```json\s*([\s\S]*?)```/i)?.[1] || raw;
+  const fromBraces = fenced.match(/\{[\s\S]*\}/)?.[0] || fenced;
+
+  try {
+    const parsed = JSON.parse(fromBraces);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function normalizeDateOnly(value?: string | null): string | null {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+async function loadAssistantName(userId: string): Promise<string> {
+  const supabase = getSupabaseAdminClient();
+  const { data } = await supabase
+    .from('user_ai_settings')
+    .select('assistant_name')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  const name = String(data?.assistant_name || 'Assistant').trim();
+  return name || 'Assistant';
+}
+
+async function detectAssistantAction(args: {
+  userId: string;
+  question: string;
+}): Promise<AssistantActionPlan> {
+  const model = 'gpt-4.1-mini';
+  const response = await callOpenAi({
+    userId: args.userId,
+    service: 'responses',
+    model,
+    body: {
+      model,
+      input: [
+        {
+          role: 'system',
+          content:
+            'Tu analyses une demande utilisateur et tu retournes UNIQUEMENT un JSON valide (sans texte hors JSON). Detecte une action a executer dans l app. Actions autorisees: none, create_task, create_memory, create_expense. Si infos insuffisantes, garde action mais laisse les champs manquants vides. Format exact des cles: action,title,content,taskType,deadline,memoryType,paymentMethod,amount,vendor,category,description,confidence.',
+        },
+        {
+          role: 'user',
+          content: args.question,
+        },
+      ],
+    },
+  });
+
+  const parsed = readJsonObject(response) || {};
+  const action = String(parsed.action || 'none') as AssistantActionPlan['action'];
+
+  const normalized: AssistantActionPlan = {
+    action: action === 'create_task' || action === 'create_memory' || action === 'create_expense' ? action : 'none',
+    title: typeof parsed.title === 'string' ? parsed.title.trim() : undefined,
+    content: typeof parsed.content === 'string' ? parsed.content.trim() : undefined,
+    taskType: parsed.taskType === 'perso' ? 'perso' : 'pro',
+    deadline: normalizeDateOnly(typeof parsed.deadline === 'string' ? parsed.deadline : null),
+    memoryType: typeof parsed.memoryType === 'string' ? parsed.memoryType.trim() : undefined,
+    paymentMethod: parsed.paymentMethod === 'cb_pro' ? 'cb_pro' : 'cb_perso',
+    amount:
+      typeof parsed.amount === 'number'
+        ? parsed.amount
+        : Number.isFinite(Number(parsed.amount))
+        ? Number(parsed.amount)
+        : null,
+    vendor: typeof parsed.vendor === 'string' ? parsed.vendor.trim() : undefined,
+    category: typeof parsed.category === 'string' ? parsed.category.trim() : undefined,
+    description: typeof parsed.description === 'string' ? parsed.description.trim() : undefined,
+    confidence: Number.isFinite(Number(parsed.confidence)) ? Number(parsed.confidence) : undefined,
+  };
+
+  return normalized;
+}
+
+async function executeAssistantAction(args: {
+  userId: string;
+  plan: AssistantActionPlan;
+}) {
+  const { userId, plan } = args;
+  const supabase = getSupabaseAdminClient();
+
+  if (plan.action === 'create_task') {
+    const title = String(plan.title || '').trim();
+    if (!title) {
+      return {
+        executed: false,
+        kind: 'create_task',
+        message: 'Titre manquant pour creer la tache.',
+      };
+    }
+
+    const deadline = plan.deadline ? `${plan.deadline}T12:00:00.000Z` : null;
+    const { data, error } = await supabase
+      .from('tasks')
+      .insert({
+        user_id: userId,
+        title,
+        type: plan.taskType || 'pro',
+        status: 'todo',
+        archived: false,
+        deadline,
+      })
+      .select('id,title,type,status,deadline')
+      .single();
+
+    if (error || !data) {
+      return {
+        executed: false,
+        kind: 'create_task',
+        message: `Echec creation tache: ${error?.message || 'erreur inconnue'}`,
+      };
+    }
+
+    return {
+      executed: true,
+      kind: 'create_task',
+      message: `Tache creee: ${data.title}`,
+      data,
+    };
+  }
+
+  if (plan.action === 'create_memory') {
+    const title = String(plan.title || '').trim();
+    if (!title) {
+      return {
+        executed: false,
+        kind: 'create_memory',
+        message: 'Titre manquant pour creer la memoire.',
+      };
+    }
+
+    const memory = await createMemory({
+      userId,
+      title,
+      type: plan.memoryType || 'other',
+      content: plan.content || plan.description || '',
+      structuredData: {
+        source: 'assistant-action',
+      },
+      source: 'dashboard-assistant',
+    });
+
+    return {
+      executed: true,
+      kind: 'create_memory',
+      message: `Memoire creee: ${memory.title}`,
+      data: { id: memory.id, title: memory.title, type: memory.type },
+    };
+  }
+
+  if (plan.action === 'create_expense') {
+    const vendor = String(plan.vendor || '').trim() || 'Fournisseur';
+    const amount = Number.isFinite(plan.amount as number) ? Number(plan.amount) : 0;
+    const today = new Date().toISOString().slice(0, 10);
+    const invoiceDate = normalizeDateOnly(plan.deadline || null) || today;
+
+    const { data, error } = await supabase
+      .from('expenses')
+      .insert({
+        user_id: userId,
+        payment_method: plan.paymentMethod || 'cb_perso',
+        invoice_date: invoiceDate,
+        vendor,
+        amount_ht: amount,
+        amount_tva: 0,
+        amount_ttc: amount,
+        category: plan.category || 'autre',
+        description: plan.description || plan.content || 'Cree via assistant',
+        status: plan.paymentMethod === 'cb_perso' ? 'pending_ndf' : 'pending',
+        currency: 'EUR',
+      })
+      .select('id,vendor,amount_ttc,payment_method,status')
+      .single();
+
+    if (error || !data) {
+      return {
+        executed: false,
+        kind: 'create_expense',
+        message: `Echec creation depense: ${error?.message || 'erreur inconnue'}`,
+      };
+    }
+
+    return {
+      executed: true,
+      kind: 'create_expense',
+      message: `Depense creee: ${data.vendor} (${Number(data.amount_ttc || 0).toFixed(2)} EUR)`,
+      data,
+    };
+  }
+
+  return {
+    executed: false,
+    kind: 'none',
+    message: 'Aucune action operationnelle detectee.',
+  };
 }
 
 async function getOrCreateConversation(args: {
@@ -258,10 +486,33 @@ export async function POST(request: NextRequest) {
 
       const messages = await listMessages(userId, conversation.id);
       const contextPayload = await loadUserContext(userId);
+      const assistantName = await loadAssistantName(userId);
+
+      let actionExecutionResult: Record<string, unknown> | null = null;
+      try {
+        const detectedPlan = await detectAssistantAction({ userId, question });
+        if (detectedPlan.action !== 'none' && (detectedPlan.confidence || 0) >= 0.45) {
+          const execution = await executeAssistantAction({
+            userId,
+            plan: detectedPlan,
+          });
+          actionExecutionResult = {
+            detectedPlan,
+            execution,
+          };
+        }
+      } catch {
+        actionExecutionResult = {
+          execution: {
+            executed: false,
+            message: 'Detection action indisponible pour cette requete.',
+          },
+        };
+      }
 
       const baseInstruction = allowInternet
-        ? 'You are a personal assistant. First use the connected user data below. If needed, and only when useful, complete with web search. Always clearly separate what comes from app data and what comes from the web. Respond in the user language used in the question.'
-        : 'You are a personal assistant. You must answer using only the connected user data below. If information is missing, say so explicitly. Never use external facts. Respond in the user language used in the question.';
+        ? `You are a personal assistant named ${assistantName}. First use connected user data below. If needed, and only when useful, complete with web search. Always separate what comes from app data and what comes from web. Respond in user language. If an app action has been executed, confirm the result clearly.`
+        : `You are a personal assistant named ${assistantName}. You must answer using only connected user data below. If information is missing, say so explicitly. Never use external facts. Respond in user language. If an app action has been executed, confirm the result clearly.`;
 
       const inputMessages = [
         {
@@ -270,6 +521,9 @@ export async function POST(request: NextRequest) {
             baseInstruction,
             'User data context JSON (strictly scoped to the connected user):',
             JSON.stringify(contextPayload),
+            actionExecutionResult
+              ? ['Executed app action JSON:', JSON.stringify(actionExecutionResult)].join('\n')
+              : '',
           ].join('\n\n'),
         },
         ...toConversationInput(messages),
@@ -305,6 +559,7 @@ export async function POST(request: NextRequest) {
           taskCount: (contextPayload.tasks || []).length,
           memoryCount: (contextPayload.memories || []).length,
           expenseCount: (contextPayload.expenses || []).length,
+          actionExecutionResult,
         },
       });
 
@@ -349,6 +604,13 @@ export async function POST(request: NextRequest) {
 
       if (conversation.status !== 'closed') {
         return NextResponse.json({ error: 'Clore la conversation avant de noter' }, { status: 400 });
+      }
+
+      if (conversation.status === 'closed') {
+        return NextResponse.json({
+          conversationId,
+          status: 'closed',
+        });
       }
 
       await supabase
