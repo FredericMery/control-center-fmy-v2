@@ -7,6 +7,14 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+function normalizeRecipientList(raw: string): string[] {
+  return String(raw || '')
+    .split(/[;,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .filter((entry) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry));
+}
+
 export async function POST(request: NextRequest) {
   try {
     const userId = await getUserIdFromRequest(request);
@@ -18,6 +26,7 @@ export async function POST(request: NextRequest) {
       month?: number;
       year?: number;
       email?: string;
+      expenseIds?: string[];
     };
 
     const now = new Date();
@@ -30,8 +39,11 @@ export async function POST(request: NextRequest) {
     }
 
     const { start, end } = getMonthRange(year, month);
+    const selectedExpenseIds = Array.isArray(body.expenseIds)
+      ? body.expenseIds.map((id) => String(id).trim()).filter(Boolean)
+      : [];
 
-    const { data: expenses, error: expensesError } = await supabase
+    let expensesQuery = supabase
       .from('expenses')
       .select('id, invoice_number, invoice_date, vendor, amount_ht, amount_tva, amount_ttc, category, photo_url, status, created_at')
       .eq('user_id', userId)
@@ -40,6 +52,12 @@ export async function POST(request: NextRequest) {
       .lte('created_at', end)
       .in('status', ['pending_ndf', 'pending'])
       .order('created_at', { ascending: true });
+
+    if (selectedExpenseIds.length > 0) {
+      expensesQuery = expensesQuery.in('id', selectedExpenseIds);
+    }
+
+    const { data: expenses, error: expensesError } = await expensesQuery;
 
     if (expensesError) {
       return NextResponse.json({ error: 'Erreur recuperation depenses CB Perso' }, { status: 500 });
@@ -67,7 +85,25 @@ export async function POST(request: NextRequest) {
       .eq('type', 'ndf')
       .maybeSingle();
 
-    const toEmail = providedEmail || String(setting?.email || '').trim();
+    const { data: ndfProfile } = await supabase
+      .from('user_ndf_settings')
+      .select('validator_first_name, validator_last_name, company_recipient_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    let company: { name: string; destination: string } | null = null;
+    if (ndfProfile?.company_recipient_id) {
+      const { data: companyRow } = await supabase
+        .from('expense_recipients')
+        .select('name, destination')
+        .eq('id', ndfProfile.company_recipient_id)
+        .eq('user_id', userId)
+        .maybeSingle();
+      company = companyRow || null;
+    }
+
+    const toRecipients = normalizeRecipientList(providedEmail || String(setting?.email || '').trim());
+    const toEmail = toRecipients.join(', ');
 
     const subject = `Note de frais ${String(month).padStart(2, '0')}/${year}`;
     const bodyText = [
@@ -91,6 +127,12 @@ export async function POST(request: NextRequest) {
         to: toEmail,
         subject,
         bodyText,
+      },
+      ndfProfile: {
+        validatorFirstName: String(ndfProfile?.validator_first_name || ''),
+        validatorLastName: String(ndfProfile?.validator_last_name || ''),
+        companyName: company?.name || null,
+        companyDestination: company?.destination || null,
       },
       expenses: rows,
       totals,

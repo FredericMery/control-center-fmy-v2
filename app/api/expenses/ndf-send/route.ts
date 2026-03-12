@@ -12,6 +12,20 @@ const supabase = createClient(
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+type ExpenseRow = {
+  id: string;
+  invoice_number: string | null;
+  invoice_date: string | null;
+  vendor: string | null;
+  amount_ht: number | null;
+  amount_tva: number | null;
+  amount_ttc: number | null;
+  category: string | null;
+  photo_url: string | null;
+  status: string;
+  created_at: string;
+};
+
 export async function POST(request: NextRequest) {
   try {
     if (!process.env.RESEND_API_KEY) {
@@ -29,22 +43,48 @@ export async function POST(request: NextRequest) {
       email?: string;
       subject?: string;
       bodyText?: string;
+      expenseIds?: string[];
+      reimbursedFullName?: string;
     };
 
     const now = new Date();
     const month = Number(body.month || now.getMonth() + 1);
     const year = Number(body.year || now.getFullYear());
-    const toEmail = String(body.email || '').trim();
+    const providedEmail = String(body.email || '').trim();
     const subject = String(body.subject || `Note de frais ${String(month).padStart(2, '0')}/${year}`).trim();
     const bodyText = String(body.bodyText || '').trim();
+    const reimbursedFullName = String(body.reimbursedFullName || '').trim().slice(0, 120);
+    const selectedExpenseIds = Array.isArray(body.expenseIds)
+      ? body.expenseIds.map((id) => String(id).trim()).filter(Boolean)
+      : [];
 
-    if (!toEmail || !isEmail(toEmail)) {
-      return NextResponse.json({ error: 'Adresse email destinataire invalide' }, { status: 400 });
+    if (!reimbursedFullName) {
+      return NextResponse.json({ error: 'Nom et prenom de la personne remboursee requis' }, { status: 400 });
+    }
+
+    let recipientsSource = providedEmail;
+    if (!recipientsSource) {
+      const { data: setting } = await supabase
+        .from('email_settings')
+        .select('email')
+        .eq('user_id', userId)
+        .eq('type', 'ndf')
+        .maybeSingle();
+
+      recipientsSource = String(setting?.email || '').trim();
+    }
+
+    const recipientEmails = normalizeRecipientList(recipientsSource);
+    if (recipientEmails.length === 0) {
+      return NextResponse.json(
+        { error: 'Aucune adresse email NDF valide configuree' },
+        { status: 400 }
+      );
     }
 
     const { start, end } = getMonthRange(year, month);
 
-    const { data: expenses, error: expensesError } = await supabase
+    let expensesQuery = supabase
       .from('expenses')
       .select('id, invoice_number, invoice_date, vendor, amount_ht, amount_tva, amount_ttc, category, photo_url, status, created_at')
       .eq('user_id', userId)
@@ -54,11 +94,17 @@ export async function POST(request: NextRequest) {
       .in('status', ['pending_ndf', 'pending'])
       .order('created_at', { ascending: true });
 
+    if (selectedExpenseIds.length > 0) {
+      expensesQuery = expensesQuery.in('id', selectedExpenseIds);
+    }
+
+    const { data: expenses, error: expensesError } = await expensesQuery;
+
     if (expensesError) {
       return NextResponse.json({ error: 'Erreur recuperation depenses CB Perso' }, { status: 500 });
     }
 
-    const rows = expenses || [];
+    const rows: ExpenseRow[] = expenses || [];
     if (rows.length === 0) {
       return NextResponse.json({ error: 'Aucune depense CB Perso pour cette periode' }, { status: 400 });
     }
@@ -73,7 +119,37 @@ export async function POST(request: NextRequest) {
       { totalHt: 0, totalTax: 0, totalTtc: 0 }
     );
 
-    const pdfBytes = await buildNdfPdf({ month, year, expenses: rows, totals });
+    const { data: ndfProfile } = await supabase
+      .from('user_ndf_settings')
+      .select('validator_first_name, validator_last_name, company_recipient_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    let company: { name: string; destination: string } | null = null;
+    if (ndfProfile?.company_recipient_id) {
+      const { data: companyRow } = await supabase
+        .from('expense_recipients')
+        .select('name, destination')
+        .eq('id', ndfProfile.company_recipient_id)
+        .eq('user_id', userId)
+        .maybeSingle();
+      company = companyRow || null;
+    }
+
+    const validatorFullName = `${String(ndfProfile?.validator_first_name || '').trim()} ${String(
+      ndfProfile?.validator_last_name || ''
+    ).trim()}`.trim();
+
+    const pdfBytes = await buildNdfPdf({
+      month,
+      year,
+      expenses: rows,
+      totals,
+      reimbursedFullName,
+      validatorFullName,
+      companyName: company?.name || '',
+      companyDestination: company?.destination || '',
+    });
     const pdfFileName = `ndf_${year}_${String(month).padStart(2, '0')}_${Date.now()}.pdf`;
     const pdfStoragePath = `ndf-reports/${pdfFileName}`;
 
@@ -137,9 +213,18 @@ export async function POST(request: NextRequest) {
     try {
       await resend.emails.send({
         from: process.env.EMAIL_FROM || 'noreply@meetsync-ai.com',
-        to: toEmail,
+        to: recipientEmails.length === 1 ? recipientEmails[0] : recipientEmails,
         subject,
-        html: mailboxStyleHtml({ bodyText, month, year, totals, count: rows.length }),
+        html: mailboxStyleHtml({
+          bodyText,
+          month,
+          year,
+          totals,
+          count: rows.length,
+          reimbursedFullName,
+          validatorFullName,
+          companyName: company?.name || '',
+        }),
         attachments: [
           {
             filename: `NDF_${String(month).padStart(2, '0')}_${year}.pdf`,
@@ -166,8 +251,24 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function isEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+function normalizeRecipientList(raw: string): string[] {
+  const entries = String(raw || '')
+    .split(/[;,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  const validEntries = entries.filter((entry) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry));
+  const unique = new Set<string>();
+  const out: string[] = [];
+
+  for (const email of validEntries) {
+    const key = email.toLowerCase();
+    if (unique.has(key)) continue;
+    unique.add(key);
+    out.push(email);
+  }
+
+  return out;
 }
 
 function getMonthRange(year: number, month: number) {
@@ -179,17 +280,16 @@ function getMonthRange(year: number, month: number) {
 async function buildNdfPdf(args: {
   month: number;
   year: number;
-  expenses: Array<{
-    invoice_date: string | null;
-    vendor: string | null;
-    category: string | null;
-    amount_ttc: number | null;
-  }>;
+  expenses: ExpenseRow[];
   totals: {
     totalHt: number;
     totalTax: number;
     totalTtc: number;
   };
+  reimbursedFullName: string;
+  validatorFullName: string;
+  companyName: string;
+  companyDestination: string;
 }) {
   const doc = await PDFDocument.create();
   const page = doc.addPage([842, 595]);
@@ -207,26 +307,39 @@ async function buildNdfPdf(args: {
   };
 
   draw(`NOTE DE FRAIS ${String(args.month).padStart(2, '0')}/${args.year}`, 40, 555, 18, true);
-  draw(`Total HT: ${args.totals.totalHt.toFixed(2)} EUR`, 40, 530, 11);
-  draw(`Total Taxe: ${args.totals.totalTax.toFixed(2)} EUR`, 250, 530, 11);
-  draw(`Total TTC: ${args.totals.totalTtc.toFixed(2)} EUR`, 460, 530, 11, true);
+  draw(`Personne remboursee: ${args.reimbursedFullName}`, 40, 535, 11);
+  draw(`Valideur: ${args.validatorFullName || '-'}`, 40, 520, 11);
+  draw(`Entreprise: ${args.companyName || '-'}`, 360, 535, 11);
+  draw(`Contact entreprise: ${args.companyDestination || '-'}`, 360, 520, 9);
+  draw(`Total HT: ${args.totals.totalHt.toFixed(2)} EUR`, 40, 500, 11);
+  draw(`Total Taxe: ${args.totals.totalTax.toFixed(2)} EUR`, 280, 500, 11);
+  draw(`Total TTC: ${args.totals.totalTtc.toFixed(2)} EUR`, 520, 500, 11, true);
 
-  let y = 500;
-  draw('Date', 40, y, 10, true);
-  draw('Fournisseur', 130, y, 10, true);
-  draw('Categorie', 380, y, 10, true);
-  draw('TTC', 680, y, 10, true);
+  let y = 475;
+  draw('Ligne', 40, y, 9, true);
+  draw('No facture', 80, y, 9, true);
+  draw('Raison', 180, y, 9, true);
+  draw('Fournisseur', 320, y, 9, true);
+  draw('HT', 520, y, 9, true);
+  draw('Taxe', 590, y, 9, true);
+  draw('TTC', 680, y, 9, true);
 
   y -= 18;
-  args.expenses.slice(0, 22).forEach((row) => {
-    const date = row.invoice_date || '-';
+  args.expenses.slice(0, 22).forEach((row, index) => {
+    const lineNo = String(index + 1);
+    const invoiceNumber = String(row.invoice_number || '-').slice(0, 16);
+    const reason = String(row.category || '-').slice(0, 22);
     const vendor = String(row.vendor || '-').slice(0, 35);
-    const category = String(row.category || '-').slice(0, 24);
+    const ht = Number(row.amount_ht || 0).toFixed(2);
+    const tax = Number(row.amount_tva || 0).toFixed(2);
     const ttc = Number(row.amount_ttc || 0).toFixed(2);
 
-    draw(date, 40, y, 9);
-    draw(vendor, 130, y, 9);
-    draw(category, 380, y, 9);
+    draw(lineNo, 40, y, 9);
+    draw(invoiceNumber, 80, y, 9);
+    draw(reason, 180, y, 9);
+    draw(vendor, 320, y, 9);
+    draw(ht, 520, y, 9);
+    draw(tax, 590, y, 9);
     draw(`${ttc} EUR`, 670, y, 9);
     y -= 16;
   });
@@ -244,8 +357,11 @@ function mailboxStyleHtml(args: {
   year: number;
   totals: { totalHt: number; totalTax: number; totalTtc: number };
   count: number;
+  reimbursedFullName: string;
+  validatorFullName: string;
+  companyName: string;
 }) {
-  const content = (args.bodyText || '').replace(/\n/g, '<br>');
+  const content = escapeHtml(args.bodyText || '').replace(/\n/g, '<br>');
 
   return `
     <div style="font-family: Arial, sans-serif; background:#f3f4f6; padding:24px;">
@@ -253,6 +369,9 @@ function mailboxStyleHtml(args: {
         <div style="padding:14px 18px;border-bottom:1px solid #e5e7eb;background:#fafafa;">
           <div style="font-size:12px;color:#6b7280;">Boite d envoi</div>
           <div style="margin-top:4px;font-size:15px;font-weight:600;color:#111827;">Note de frais ${String(args.month).padStart(2, '0')}/${args.year}</div>
+          <div style="margin-top:4px;font-size:12px;color:#334155;">Personne remboursee: ${escapeHtml(args.reimbursedFullName)}</div>
+          <div style="margin-top:2px;font-size:12px;color:#334155;">Valideur: ${escapeHtml(args.validatorFullName || '-')}</div>
+          <div style="margin-top:2px;font-size:12px;color:#334155;">Entreprise: ${escapeHtml(args.companyName || '-')}</div>
         </div>
         <div style="padding:16px 18px;font-size:14px;color:#111827;line-height:1.6;">
           ${content}
@@ -266,4 +385,13 @@ function mailboxStyleHtml(args: {
       </div>
     </div>
   `;
+}
+
+function escapeHtml(value: string) {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }

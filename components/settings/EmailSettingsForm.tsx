@@ -22,6 +22,12 @@ interface ExpenseRecipient {
   created_at: string;
 }
 
+interface NdfProfile {
+  validatorFirstName: string;
+  validatorLastName: string;
+  companyRecipientId: string | null;
+}
+
 export default function EmailSettingsForm() {
   const { t } = useI18n();
   const [settings, setSettings] = useState<EmailSetting[]>([]);
@@ -35,12 +41,47 @@ export default function EmailSettingsForm() {
     facture: '',
     ndf: '',
   });
+  const [emailDrafts, setEmailDrafts] = useState({
+    facture: '',
+    ndf: '',
+  });
   const [contactsSupported, setContactsSupported] = useState(false);
   const [contactsEnabled, setContactsEnabled] = useState(false);
   const [recipients, setRecipients] = useState<ExpenseRecipient[]>([]);
   const [recipientsLoading, setRecipientsLoading] = useState(false);
   const [recipientName, setRecipientName] = useState('');
   const [recipientDestination, setRecipientDestination] = useState('');
+  const [ndfProfile, setNdfProfile] = useState<NdfProfile>({
+    validatorFirstName: '',
+    validatorLastName: '',
+    companyRecipientId: null,
+  });
+
+  const parseEmailEntries = (raw: string) =>
+    String(raw || '')
+      .split(/[;,]/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+  const uniqueEmails = (emails: string[]) => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+
+    for (const email of emails) {
+      const key = email.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(email);
+    }
+
+    return out;
+  };
+
+  const normalizeEmails = (raw: string) => uniqueEmails(parseEmailEntries(raw));
+
+  const formatEmails = (emails: string[]) => emails.join(', ');
 
   // Récupérer le token Supabase
   useEffect(() => {
@@ -90,8 +131,12 @@ export default function EmailSettingsForm() {
         setSettings(data.settings);
 
         // Pré-remplir le formulaire
-        const factureEmail = data.settings.find((s: EmailSetting) => s.type === 'facture')?.email || '';
-        const ndfEmail = data.settings.find((s: EmailSetting) => s.type === 'ndf')?.email || '';
+        const factureEmail = formatEmails(
+          normalizeEmails(data.settings.find((s: EmailSetting) => s.type === 'facture')?.email || '')
+        );
+        const ndfEmail = formatEmails(
+          normalizeEmails(data.settings.find((s: EmailSetting) => s.type === 'ndf')?.email || '')
+        );
         setFormData({ facture: factureEmail, ndf: ndfEmail });
         console.log('✅ Paramètres chargés avec succès');
       } catch (err: any) {
@@ -133,16 +178,48 @@ export default function EmailSettingsForm() {
     fetchRecipients();
   }, [authToken]);
 
-  const handleSave = async (type: 'facture' | 'ndf') => {
-    const email = formData[type];
+  useEffect(() => {
+    if (!authToken) return;
 
-    if (!email) {
-      setError(`L'email pour ${type} est requis`);
+    const fetchNdfProfile = async () => {
+      try {
+        const response = await fetch('/api/settings/ndf-profile', {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Erreur chargement profil NDF');
+        }
+
+        const profile = data.profile || {};
+        setNdfProfile({
+          validatorFirstName: String(profile.validatorFirstName || ''),
+          validatorLastName: String(profile.validatorLastName || ''),
+          companyRecipientId: profile.companyRecipientId || null,
+        });
+      } catch (err: any) {
+        setError(err?.message || 'Erreur chargement profil NDF');
+      }
+    };
+
+    fetchNdfProfile();
+  }, [authToken]);
+
+  const handleSave = async (type: 'facture' | 'ndf') => {
+    const rawEntries = parseEmailEntries(formData[type]);
+    const invalidEmails = rawEntries.filter((entry) => !isValidEmail(entry));
+    const emails = uniqueEmails(rawEntries);
+
+    if (emails.length === 0) {
+      setError(`Au moins un email pour ${type} est requis`);
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('Email invalide');
+    if (invalidEmails.length > 0) {
+      setError(`Email(s) invalide(s): ${invalidEmails.join(', ')}`);
       return;
     }
 
@@ -156,14 +233,15 @@ export default function EmailSettingsForm() {
     setSuccess(null);
 
     try {
-      console.log('💾 Sauvegarde de l\'email', type, ':', email);
+      const payloadEmail = formatEmails(emails);
+      console.log('💾 Sauvegarde des emails', type, ':', payloadEmail);
       const response = await fetch('/api/settings/emails', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ type, email }),
+        body: JSON.stringify({ type, email: payloadEmail }),
       });
 
       const data = await response.json();
@@ -177,6 +255,7 @@ export default function EmailSettingsForm() {
       }
 
       console.log('✅ Sauvegardé avec succès');
+      setFormData((prev) => ({ ...prev, [type]: payloadEmail }));
       setSuccess(data.message);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
@@ -185,6 +264,41 @@ export default function EmailSettingsForm() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleAddEmail = (type: 'facture' | 'ndf') => {
+    const draft = String(emailDrafts[type] || '').trim();
+
+    if (!draft) {
+      setError('Veuillez saisir une adresse email');
+      return;
+    }
+
+    if (!isValidEmail(draft)) {
+      setError('Email invalide');
+      return;
+    }
+
+    const current = normalizeEmails(formData[type]);
+    const alreadyExists = current.some((email) => email.toLowerCase() === draft.toLowerCase());
+    if (alreadyExists) {
+      setError('Cette adresse est deja ajoutee');
+      return;
+    }
+
+    const updated = [...current, draft];
+    setFormData((prev) => ({ ...prev, [type]: formatEmails(updated) }));
+    setEmailDrafts((prev) => ({ ...prev, [type]: '' }));
+    setError(null);
+  };
+
+  const handleRemoveEmail = (type: 'facture' | 'ndf', emailToRemove: string) => {
+    const updated = normalizeEmails(formData[type]).filter(
+      (email) => email.toLowerCase() !== emailToRemove.toLowerCase()
+    );
+
+    setFormData((prev) => ({ ...prev, [type]: formatEmails(updated) }));
+    setError(null);
   };
 
   const handleAddRecipient = async () => {
@@ -219,6 +333,10 @@ export default function EmailSettingsForm() {
 
       if (data.recipient) {
         setRecipients((prev) => [data.recipient, ...prev]);
+        setNdfProfile((prev) => ({
+          ...prev,
+          companyRecipientId: prev.companyRecipientId || data.recipient.id,
+        }));
       }
       setRecipientName('');
       setRecipientDestination('');
@@ -253,8 +371,57 @@ export default function EmailSettingsForm() {
       }
 
       setRecipients((prev) => prev.filter((recipient) => recipient.id !== id));
+      setNdfProfile((prev) => ({
+        ...prev,
+        companyRecipientId: prev.companyRecipientId === id ? null : prev.companyRecipientId,
+      }));
     } catch (err: any) {
       setError(err?.message || 'Erreur suppression destinataire');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveNdfProfile = async () => {
+    if (!authToken) {
+      setError('Non authentifie. Veuillez vous reconnecter.');
+      return;
+    }
+
+    const firstName = ndfProfile.validatorFirstName.trim();
+    const lastName = ndfProfile.validatorLastName.trim();
+    if (!firstName || !lastName) {
+      setError('Nom et prenom du valideur requis');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch('/api/settings/ndf-profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          validatorFirstName: firstName,
+          validatorLastName: lastName,
+          companyRecipientId: ndfProfile.companyRecipientId,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur sauvegarde profil NDF');
+      }
+
+      setSuccess(data.message || 'Profil NDF sauvegarde');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err?.message || 'Erreur sauvegarde profil NDF');
     } finally {
       setIsSaving(false);
     }
@@ -306,15 +473,44 @@ export default function EmailSettingsForm() {
         </div>
 
         <div className="space-y-3">
-          <input
-            type="email"
-            placeholder="comptabilite@company.com"
-            value={formData.facture}
-            onChange={(e) =>
-              setFormData({ ...formData, facture: e.target.value })
-            }
-            className="w-full rounded-lg border border-slate-300 px-4 py-2 text-black placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-          />
+          <div className="flex gap-2">
+            <input
+              type="email"
+              placeholder="comptabilite@company.com"
+              value={emailDrafts.facture}
+              onChange={(e) =>
+                setEmailDrafts((prev) => ({ ...prev, facture: e.target.value }))
+              }
+              className="w-full rounded-lg border border-slate-300 px-4 py-2 text-black placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            />
+            <button
+              onClick={() => handleAddEmail('facture')}
+              disabled={isSaving}
+              className="rounded-lg border border-blue-200 px-4 py-2 text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            >
+              +
+            </button>
+          </div>
+
+          {normalizeEmails(formData.facture).length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {normalizeEmails(formData.facture).map((email) => (
+                <div key={email} className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1">
+                  <span className="text-xs text-slate-800">{email}</span>
+                  <button
+                    onClick={() => handleRemoveEmail('facture', email)}
+                    className="text-xs text-slate-500 hover:text-red-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">Aucune adresse configuree.</p>
+          )}
+
+          <p className="text-xs text-slate-500">Ajoutez plusieurs emails avec le bouton +, puis cliquez sur Sauvegarder.</p>
           <button
             onClick={() => handleSave('facture')}
             disabled={isSaving}
@@ -338,15 +534,44 @@ export default function EmailSettingsForm() {
         </div>
 
         <div className="space-y-3">
-          <input
-            type="email"
-            placeholder="rh@company.com"
-            value={formData.ndf}
-            onChange={(e) =>
-              setFormData({ ...formData, ndf: e.target.value })
-            }
-            className="w-full rounded-lg border border-slate-300 px-4 py-2 text-black placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-          />
+          <div className="flex gap-2">
+            <input
+              type="email"
+              placeholder="rh@company.com"
+              value={emailDrafts.ndf}
+              onChange={(e) =>
+                setEmailDrafts((prev) => ({ ...prev, ndf: e.target.value }))
+              }
+              className="w-full rounded-lg border border-slate-300 px-4 py-2 text-black placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            />
+            <button
+              onClick={() => handleAddEmail('ndf')}
+              disabled={isSaving}
+              className="rounded-lg border border-blue-200 px-4 py-2 text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            >
+              +
+            </button>
+          </div>
+
+          {normalizeEmails(formData.ndf).length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {normalizeEmails(formData.ndf).map((email) => (
+                <div key={email} className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1">
+                  <span className="text-xs text-slate-800">{email}</span>
+                  <button
+                    onClick={() => handleRemoveEmail('ndf', email)}
+                    className="text-xs text-slate-500 hover:text-red-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">Aucune adresse configuree.</p>
+          )}
+
+          <p className="text-xs text-slate-500">Ajoutez plusieurs emails avec le bouton +, puis cliquez sur Sauvegarder.</p>
           <button
             onClick={() => handleSave('ndf')}
             disabled={isSaving}
@@ -357,14 +582,77 @@ export default function EmailSettingsForm() {
         </div>
       </div>
 
-      {/* Destinataires depenses CB Perso */}
+      {/* Profil NDF */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="text-2xl">✅</div>
+          <div>
+            <h3 className="font-semibold text-slate-900">Profil NDF</h3>
+            <p className="text-xs text-slate-600">
+              Valideur de la NDF et entreprise par defaut utilises pour le PDF.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <input
+            type="text"
+            placeholder="Valideur - Prenom"
+            value={ndfProfile.validatorFirstName}
+            onChange={(e) =>
+              setNdfProfile((prev) => ({ ...prev, validatorFirstName: e.target.value }))
+            }
+            className="w-full rounded-lg border border-slate-300 px-4 py-2 text-black placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          />
+          <input
+            type="text"
+            placeholder="Valideur - Nom"
+            value={ndfProfile.validatorLastName}
+            onChange={(e) =>
+              setNdfProfile((prev) => ({ ...prev, validatorLastName: e.target.value }))
+            }
+            className="w-full rounded-lg border border-slate-300 px-4 py-2 text-black placeholder:text-slate-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-700">Entreprise</label>
+          <select
+            value={ndfProfile.companyRecipientId || ''}
+            onChange={(e) =>
+              setNdfProfile((prev) => ({
+                ...prev,
+                companyRecipientId: e.target.value ? e.target.value : null,
+              }))
+            }
+            className="w-full rounded-lg border border-slate-300 px-4 py-2 text-black outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="">Aucune entreprise selectionnee</option>
+            {recipients.map((recipient) => (
+              <option key={recipient.id} value={recipient.id}>
+                {recipient.name} ({recipient.destination})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          onClick={handleSaveNdfProfile}
+          disabled={isSaving}
+          className="w-full px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+        >
+          {isSaving ? t('common.loading') : t('common.save')}
+        </button>
+      </div>
+
+      {/* Entreprises (depenses CB Perso) */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
         <div className="flex items-center gap-3">
           <div className="text-2xl">🏢</div>
           <div>
-            <h3 className="font-semibold text-slate-900">Destinataires depenses CB Perso</h3>
+            <h3 className="font-semibold text-slate-900">Entreprises (depenses CB Perso)</h3>
             <p className="text-xs text-slate-600">
-              Ces destinataires sont proposes dans le workflow depense perso.
+              Ces entreprises sont proposees dans le workflow depense perso et la NDF.
             </p>
           </div>
         </div>
@@ -391,13 +679,13 @@ export default function EmailSettingsForm() {
           disabled={isSaving}
           className="w-full px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
         >
-          {isSaving ? t('common.loading') : '+ Ajouter un destinataire'}
+          {isSaving ? t('common.loading') : '+ Ajouter une entreprise'}
         </button>
 
         {recipientsLoading ? (
           <p className="text-sm text-slate-600">Chargement des destinataires...</p>
         ) : recipients.length === 0 ? (
-          <p className="text-sm text-slate-600">Aucun destinataire enregistre.</p>
+          <p className="text-sm text-slate-600">Aucune entreprise enregistree.</p>
         ) : (
           <div className="space-y-2">
             {recipients.map((recipient) => (

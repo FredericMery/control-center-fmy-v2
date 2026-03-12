@@ -38,13 +38,14 @@ type ExpenseReportResponse = {
 export default function ExpensesListPage() {
   const { t, language } = useI18n();
   const now = new Date();
+  const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const [report, setReport] = useState<ExpenseReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRecipient, setSelectedRecipient] = useState<string>('all');
   const [selectedCardType, setSelectedCardType] = useState<'all' | 'cb_perso' | 'cb_pro'>('all');
-  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(previousMonthDate.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState<number>(previousMonthDate.getFullYear());
   const [selectedExpense, setSelectedExpense] = useState<ExpenseRow | null>(null);
   const [isResendingEmail, setIsResendingEmail] = useState(false);
   const [modalMessage, setModalMessage] = useState<string | null>(null);
@@ -57,6 +58,10 @@ export default function ExpensesListPage() {
   const [isPreviewingNdf, setIsPreviewingNdf] = useState(false);
   const [isSendingNdf, setIsSendingNdf] = useState(false);
   const [ndfMessage, setNdfMessage] = useState<string | null>(null);
+  const [selectedNdfExpenseIds, setSelectedNdfExpenseIds] = useState<string[]>([]);
+  const [reimbursedFullName, setReimbursedFullName] = useState('');
+  const [ndfValidatorFullName, setNdfValidatorFullName] = useState('');
+  const [ndfCompanyName, setNdfCompanyName] = useState('');
 
   useEffect(() => {
     fetchExpenses();
@@ -127,6 +132,30 @@ export default function ExpensesListPage() {
     );
   }, [filteredRows]);
 
+  const ndfEligibleRows = useMemo(() => {
+    return filteredRows.filter(
+      (row) =>
+        row.payment_method === 'cb_perso' &&
+        ['pending', 'pending_ndf'].includes(String(row.status || '').toLowerCase())
+    );
+  }, [filteredRows]);
+
+  useEffect(() => {
+    setSelectedNdfExpenseIds(ndfEligibleRows.map((row) => row.id));
+  }, [selectedMonth, selectedYear, report, selectedCardType, selectedRecipient]);
+
+  const toggleNdfExpense = (expense: ExpenseRow) => {
+    const selectable =
+      expense.payment_method === 'cb_perso' &&
+      ['pending', 'pending_ndf'].includes(String(expense.status || '').toLowerCase());
+
+    if (!selectable) return;
+
+    setSelectedNdfExpenseIds((prev) =>
+      prev.includes(expense.id) ? prev.filter((id) => id !== expense.id) : [...prev, expense.id]
+    );
+  };
+
   const closeModal = () => {
     setSelectedExpense(null);
     setModalMessage(null);
@@ -171,6 +200,16 @@ export default function ExpensesListPage() {
   };
 
   const previewNdf = async () => {
+    if (selectedNdfExpenseIds.length === 0) {
+      setNdfMessage('Selectionnez au moins une ligne CB Perso a inclure dans la NDF.');
+      return;
+    }
+
+    if (!reimbursedFullName.trim()) {
+      setNdfMessage('Saisissez le nom et prenom de la personne remboursee.');
+      return;
+    }
+
     try {
       setIsPreviewingNdf(true);
       setNdfMessage(null);
@@ -181,6 +220,7 @@ export default function ExpensesListPage() {
           month: selectedMonth,
           year: selectedYear,
           email: ndfToEmail,
+          expenseIds: selectedNdfExpenseIds,
         }),
       });
 
@@ -190,6 +230,11 @@ export default function ExpensesListPage() {
         draft?: { to: string; subject: string; bodyText: string };
         expenses?: ExpenseRow[];
         totals?: { totalHt: number; totalTax: number; totalTtc: number };
+        ndfProfile?: {
+          validatorFirstName?: string;
+          validatorLastName?: string;
+          companyName?: string | null;
+        };
       };
 
       if (!response.ok || !json.draft) {
@@ -202,6 +247,10 @@ export default function ExpensesListPage() {
       setNdfBody(json.draft.bodyText || '');
       setNdfPreviewExpenses(json.expenses || []);
       setNdfPreviewTotals(json.totals || null);
+      const validatorFirst = String(json.ndfProfile?.validatorFirstName || '').trim();
+      const validatorLast = String(json.ndfProfile?.validatorLastName || '').trim();
+      setNdfValidatorFullName(`${validatorFirst} ${validatorLast}`.trim());
+      setNdfCompanyName(String(json.ndfProfile?.companyName || ''));
       setNdfMessage('PDF prepare. Verifiez le mail puis envoyez.');
     } catch {
       setNdfMessage('Erreur reseau preview NDF');
@@ -211,6 +260,11 @@ export default function ExpensesListPage() {
   };
 
   const sendNdf = async () => {
+    if (!reimbursedFullName.trim()) {
+      setNdfMessage('Saisissez le nom et prenom de la personne remboursee.');
+      return;
+    }
+
     try {
       setIsSendingNdf(true);
       setNdfMessage(null);
@@ -224,6 +278,8 @@ export default function ExpensesListPage() {
           email: ndfToEmail,
           subject: ndfSubject,
           bodyText: ndfBody,
+          expenseIds: selectedNdfExpenseIds,
+          reimbursedFullName,
         }),
       });
 
@@ -234,6 +290,7 @@ export default function ExpensesListPage() {
       }
 
       setNdfMessage(json.message || 'NDF envoyee');
+      setSelectedNdfExpenseIds([]);
       await fetchExpenses();
     } catch {
       setNdfMessage('Erreur reseau envoi NDF');
@@ -350,7 +407,20 @@ export default function ExpensesListPage() {
               </div>
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNdfModal(true);
+                  setNdfMessage(null);
+                  if (!ndfSubject) {
+                    setNdfSubject(`Note de frais ${String(selectedMonth).padStart(2, '0')}/${selectedYear}`);
+                  }
+                }}
+                className="rounded-lg border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-500/20"
+              >
+                Previsualiser NDF
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -362,8 +432,12 @@ export default function ExpensesListPage() {
                 }}
                 className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
               >
-                Creer ma NDF
+                Creer NDF
               </button>
+            </div>
+
+            <div className="rounded-lg border border-slate-700 bg-slate-900/70 px-4 py-3 text-xs text-slate-300">
+              <strong className="text-white">NDF:</strong> {selectedNdfExpenseIds.length} ligne(s) selectionnee(s). Les lignes deja envoyees sont grisees et non selectionnables.
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
@@ -386,6 +460,7 @@ export default function ExpensesListPage() {
                 <table className="w-full min-w-[700px] text-sm">
                   <thead className="bg-slate-800/80 text-slate-300">
                     <tr>
+                      <th className="px-4 py-3 text-center font-semibold">NDF</th>
                       <th className="px-4 py-3 text-left font-semibold">Date</th>
                       <th className="px-4 py-3 text-left font-semibold">Type</th>
                       <th className="px-4 py-3 text-center font-semibold">Mail</th>
@@ -398,9 +473,23 @@ export default function ExpensesListPage() {
                     {filteredRows.map((expense) => (
                       <tr
                         key={expense.id}
-                        className="cursor-pointer border-t border-slate-800 text-slate-200 transition hover:bg-slate-800/40"
+                        className={`cursor-pointer border-t border-slate-800 text-slate-200 transition hover:bg-slate-800/40 ${
+                          expense.status === 'submitted' ? 'bg-slate-700/40 text-slate-400' : ''
+                        }`}
                         onClick={() => setSelectedExpense(expense)}
                       >
+                        <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedNdfExpenseIds.includes(expense.id)}
+                            disabled={
+                              expense.payment_method !== 'cb_perso' ||
+                              !['pending', 'pending_ndf'].includes(String(expense.status || '').toLowerCase())
+                            }
+                            onChange={() => toggleNdfExpense(expense)}
+                            className="h-4 w-4 rounded border-slate-500 bg-slate-800 text-cyan-400 focus:ring-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+                          />
+                        </td>
                         <td className="px-4 py-3">
                           {expense.invoice_date
                             ? new Date(expense.invoice_date).toLocaleDateString(locale)
@@ -579,7 +668,7 @@ export default function ExpensesListPage() {
             </div>
 
             <div className="space-y-4 p-4">
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-4">
                 <div>
                   <label className="mb-1 block text-xs text-slate-300">Mois</label>
                   <select
@@ -606,16 +695,21 @@ export default function ExpensesListPage() {
                     ))}
                   </select>
                 </div>
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    onClick={previewNdf}
-                    disabled={isPreviewingNdf}
-                    className="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-60"
-                  >
-                    {isPreviewingNdf ? 'Preparation...' : 'Creer le PDF'}
-                  </button>
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-xs text-slate-300">Personne remboursee (Nom Prenom)</label>
+                  <input
+                    value={reimbursedFullName}
+                    onChange={(e) => setReimbursedFullName(e.target.value)}
+                    placeholder="Nom Prenom"
+                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                  />
                 </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-700 bg-slate-800/70 p-4 text-xs text-slate-300">
+                <p className="font-semibold text-slate-100">Cartouche NDF (parametres)</p>
+                <p className="mt-1">Valideur: {ndfValidatorFullName || '-'}</p>
+                <p>Entreprise: {ndfCompanyName || '-'}</p>
               </div>
 
               <div className="rounded-lg border border-slate-700 bg-slate-800/70 p-4 space-y-3">
@@ -642,15 +736,34 @@ export default function ExpensesListPage() {
                   <textarea
                     value={ndfBody}
                     onChange={(e) => setNdfBody(e.target.value)}
-                    rows={8}
+                    rows={6}
                     className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100"
                   />
                 </div>
 
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={previewNdf}
+                    disabled={isPreviewingNdf}
+                    className="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-60"
+                  >
+                    {isPreviewingNdf ? 'Preparation...' : 'Creer le PDF'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={sendNdf}
+                    disabled={isSendingNdf || selectedNdfExpenseIds.length === 0}
+                    className="flex-1 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+                  >
+                    {isSendingNdf ? 'Envoi en cours...' : 'Envoyer la NDF'}
+                  </button>
+                </div>
+
                 <div className="rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs text-slate-300">
                   <p>Pieces jointes prevues:</p>
-                  <p>- PDF NDF (${String(selectedMonth).padStart(2, '0')}/${selectedYear})</p>
-                  <p>- ${ndfPreviewExpenses.length} justificatif(s) photo/PDF</p>
+                  <p>- PDF NDF ({String(selectedMonth).padStart(2, '0')}/{selectedYear})</p>
+                  <p>- {ndfPreviewExpenses.length} justificatif(s) photo/PDF</p>
                   {ndfPreviewTotals && (
                     <p className="mt-2">
                       Totaux: HT {ndfPreviewTotals.totalHt.toFixed(2)} / Taxe {ndfPreviewTotals.totalTax.toFixed(2)} / TTC {ndfPreviewTotals.totalTtc.toFixed(2)} EUR
@@ -663,16 +776,51 @@ export default function ExpensesListPage() {
                     {ndfMessage}
                   </div>
                 )}
-
-                <button
-                  type="button"
-                  onClick={sendNdf}
-                  disabled={isSendingNdf}
-                  className="w-full rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
-                >
-                  {isSendingNdf ? 'Envoi en cours...' : 'Envoyer'}
-                </button>
               </div>
+
+              {ndfPreviewExpenses.length > 0 && (
+                <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+                  <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">Apercu PDF NDF</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[900px] text-xs">
+                      <thead className="bg-slate-800 text-slate-300">
+                        <tr>
+                          <th className="px-2 py-2 text-left">Ligne</th>
+                          <th className="px-2 py-2 text-left">No facture</th>
+                          <th className="px-2 py-2 text-left">Raison</th>
+                          <th className="px-2 py-2 text-left">Fournisseur</th>
+                          <th className="px-2 py-2 text-right">Montant HT</th>
+                          <th className="px-2 py-2 text-right">Montant Taxes</th>
+                          <th className="px-2 py-2 text-right">Montant TTC</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ndfPreviewExpenses.map((expense, index) => (
+                          <tr key={expense.id} className="border-t border-slate-800 text-slate-200">
+                            <td className="px-2 py-2">{index + 1}</td>
+                            <td className="px-2 py-2">{expense.invoice_number || '-'}</td>
+                            <td className="px-2 py-2">{expense.category || '-'}</td>
+                            <td className="px-2 py-2">{expense.vendor || '-'}</td>
+                            <td className="px-2 py-2 text-right">{Number(expense.amount_ht || 0).toFixed(2)} EUR</td>
+                            <td className="px-2 py-2 text-right">{Number(expense.amount_tva || 0).toFixed(2)} EUR</td>
+                            <td className="px-2 py-2 text-right">{Number(expense.amount_ttc || 0).toFixed(2)} EUR</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      {ndfPreviewTotals && (
+                        <tfoot className="border-t border-slate-700 bg-slate-800/70 text-slate-100">
+                          <tr>
+                            <td className="px-2 py-2 font-semibold" colSpan={4}>Totaux</td>
+                            <td className="px-2 py-2 text-right font-semibold">{ndfPreviewTotals.totalHt.toFixed(2)} EUR</td>
+                            <td className="px-2 py-2 text-right font-semibold">{ndfPreviewTotals.totalTax.toFixed(2)} EUR</td>
+                            <td className="px-2 py-2 text-right font-semibold">{ndfPreviewTotals.totalTtc.toFixed(2)} EUR</td>
+                          </tr>
+                        </tfoot>
+                      )}
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -7,6 +7,31 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+function parseEmailEntries(raw: string) {
+  return String(raw || '')
+    .split(/[;,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function uniqueEmails(emails: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const email of emails) {
+    const key = email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(email);
+  }
+
+  return out;
+}
+
 export async function GET(request: NextRequest) {
   try {
     console.log('🔍 GET /api/settings/emails - Récupération paramètres...');
@@ -64,9 +89,10 @@ export async function PUT(request: NextRequest) {
     console.log('✅ User authentifié:', userId);
 
     const { type, email } = await request.json();
-    console.log('📧 Données reçues:', { type, email });
+    const rawEmail = String(email || '');
+    console.log('📧 Données reçues:', { type, email: rawEmail });
 
-    if (!type || !email) {
+    if (!type || !rawEmail.trim()) {
       return NextResponse.json(
         { error: 'Type et email requis' },
         { status: 400 }
@@ -80,6 +106,24 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const entries = parseEmailEntries(rawEmail);
+    if (entries.length === 0) {
+      return NextResponse.json(
+        { error: 'Au moins une adresse email est requise' },
+        { status: 400 }
+      );
+    }
+
+    const invalidEmails = entries.filter((entry) => !isValidEmail(entry));
+    if (invalidEmails.length > 0) {
+      return NextResponse.json(
+        { error: `Adresse(s) email invalide(s): ${invalidEmails.join(', ')}` },
+        { status: 400 }
+      );
+    }
+
+    const normalizedEmailList = uniqueEmails(entries).join(', ');
 
     // Vérifier si le setting existe déjà
     const { data: existing } = await supabase
@@ -96,7 +140,7 @@ export async function PUT(request: NextRequest) {
       // Mettre à jour
       result = await supabase
         .from('email_settings')
-        .update({ email })
+        .update({ email: normalizedEmailList })
         .eq('user_id', userId)
         .eq('type', type)
         .select()
@@ -108,7 +152,7 @@ export async function PUT(request: NextRequest) {
         .insert({
           user_id: userId,
           type,
-          email,
+          email: normalizedEmailList,
         })
         .select()
         .single();
