@@ -44,8 +44,8 @@ export default function ExpensesListPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedRecipient, setSelectedRecipient] = useState<string>('all');
   const [selectedCardType, setSelectedCardType] = useState<'all' | 'cb_perso' | 'cb_pro'>('all');
-  const [selectedMonth, setSelectedMonth] = useState<number>(previousMonthDate.getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState<number>(previousMonthDate.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
   const [selectedExpense, setSelectedExpense] = useState<ExpenseRow | null>(null);
   const [isResendingEmail, setIsResendingEmail] = useState(false);
   const [modalMessage, setModalMessage] = useState<string | null>(null);
@@ -141,8 +141,25 @@ export default function ExpensesListPage() {
   }, [filteredRows]);
 
   useEffect(() => {
-    setSelectedNdfExpenseIds(ndfEligibleRows.map((row) => row.id));
-  }, [selectedMonth, selectedYear, report, selectedCardType, selectedRecipient]);
+    const isPreviousMonthView =
+      selectedMonth === previousMonthDate.getMonth() + 1 &&
+      selectedYear === previousMonthDate.getFullYear();
+
+    if (isPreviousMonthView) {
+      setSelectedNdfExpenseIds(ndfEligibleRows.map((row) => row.id));
+      return;
+    }
+
+    setSelectedNdfExpenseIds([]);
+  }, [
+    selectedMonth,
+    selectedYear,
+    report,
+    selectedCardType,
+    selectedRecipient,
+    ndfEligibleRows,
+    previousMonthDate,
+  ]);
 
   const toggleNdfExpense = (expense: ExpenseRow) => {
     const selectable =
