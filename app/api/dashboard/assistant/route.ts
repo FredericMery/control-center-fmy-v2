@@ -602,10 +602,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Conversation introuvable' }, { status: 404 });
       }
 
-      if (conversation.status !== 'closed') {
-        return NextResponse.json({ error: 'Clore la conversation avant de noter' }, { status: 400 });
-      }
-
       if (conversation.status === 'closed') {
         return NextResponse.json({
           conversationId,
@@ -648,6 +644,10 @@ export async function POST(request: NextRequest) {
 
       if (convError || !conversation) {
         return NextResponse.json({ error: 'Conversation introuvable' }, { status: 404 });
+      }
+
+      if (conversation.status !== 'closed') {
+        return NextResponse.json({ error: 'Clore la conversation avant de noter' }, { status: 400 });
       }
 
       const messages = await listMessages(userId, conversationId);

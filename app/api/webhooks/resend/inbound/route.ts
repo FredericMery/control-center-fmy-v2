@@ -10,7 +10,7 @@ const supabase = createClient(
 );
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const DEFAULT_TASK_INBOUND_ADDRESS = 'taskpro@control.meetsync-ai.com';
+const DEFAULT_TASK_INBOUND_ADDRESS = 'taskpro@mail.meetsync-ai.com';
 
 export async function POST(request: NextRequest) {
   try {
@@ -49,7 +49,12 @@ export async function POST(request: NextRequest) {
 
     const addressedToTaskInbox = recipientEmails.some((email) => email === inboundAddress);
     if (!addressedToTaskInbox) {
-      return NextResponse.json({ ok: true, skipped: 'not-task-inbox' });
+      return NextResponse.json({
+        ok: true,
+        skipped: 'not-task-inbox',
+        expectedInboundAddress: inboundAddress,
+        receivedRecipients: recipientEmails,
+      });
     }
 
     const senderEmail = extractSingleEmail(eventData.from);
@@ -120,6 +125,7 @@ export async function POST(request: NextRequest) {
         ok: true,
         skipped: 'unknown-sender-guidance-sent',
         senderEmail,
+        expectedInboundAddress: inboundAddress,
       });
     }
 
@@ -718,7 +724,7 @@ async function sendAliasGuidanceEmail(args: {
       text: [
         greeting,
         '',
-        'Nous avons bien recu votre email vers taskpro@, mais nous ne pouvons pas identifier le destinataire dans l\'application.',
+        'Nous avons bien recu votre email vers taskpro@mail.meetsync-ai.com, mais nous ne pouvons pas identifier le destinataire dans l\'application.',
         'Merci de repondre en indiquant le prenom + nom de la personne a qui attribuer la tache.',
         '',
         'Exemple: "Attribuer a: Prenom Nom"',

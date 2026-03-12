@@ -203,7 +203,7 @@ async function sendAliasGuidanceEmail(senderEmail: string | null): Promise<void>
       text: [
         'Bonjour,',
         '',
-        'Nous avons bien recu votre email vers taskpro@, mais le destinataire n\'a pas pu etre identifie automatiquement.',
+        'Nous avons bien recu votre email vers taskpro@mail.meetsync-ai.com, mais le destinataire n\'a pas pu etre identifie automatiquement.',
         'Merci de repondre a cet email en indiquant le prenom + nom de la personne a qui attribuer la tache.',
         '',
         'Exemple: "Attribuer a: Prenom Nom"',
