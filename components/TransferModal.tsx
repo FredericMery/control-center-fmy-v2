@@ -11,7 +11,7 @@ interface TransferModalProps {
   open: boolean;
   taskTitle: string;
   onClose: () => void;
-  onTransfer: (email: string) => Promise<void>;
+  onTransfer: (email: string, customMessage: string) => Promise<void>;
   isLoading: boolean;
 }
 
@@ -29,6 +29,7 @@ export default function TransferModal({
   isLoading,
 }: TransferModalProps) {
   const [email, setEmail] = useState("");
+  const [customMessage, setCustomMessage] = useState("");
   const [filtered, setFiltered] = useState<typeof SAMPLE_CONTACTS>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [contactsSupported, setContactsSupported] = useState(false);
@@ -102,8 +103,9 @@ export default function TransferModal({
     }
 
     try {
-      await onTransfer(email);
+      await onTransfer(email, customMessage);
       setEmail("");
+      setCustomMessage("");
       setFiltered([]);
       setShowSuggestions(false);
       onClose();
@@ -154,6 +156,19 @@ export default function TransferModal({
               ))}
             </div>
           )}
+        </div>
+
+        <div className="mb-6">
+          <label className="text-sm font-medium text-gray-300 block mb-2">
+            Message personnalisé (optionnel)
+          </label>
+          <textarea
+            placeholder="Ex: Merci de prioriser cette tâche aujourd'hui."
+            value={customMessage}
+            onChange={(e) => setCustomMessage(e.target.value)}
+            rows={3}
+            className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-white placeholder-gray-500 transition resize-y"
+          />
         </div>
 
         {/* Note d'info */}

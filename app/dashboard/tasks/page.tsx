@@ -396,7 +396,7 @@ export default function TasksPage() {
           setTransferModalOpen(false);
           setSelectedTaskForTransfer(null);
         }}
-        onTransfer={async (email) => {
+        onTransfer={async (email, customMessage) => {
           if (!selectedTaskForTransfer) return;
 
           setIsTransferring(true);
@@ -420,6 +420,7 @@ export default function TasksPage() {
                 taskDeadline: selectedTaskForTransfer.deadline,
                 createdAt: selectedTaskForTransfer.created_at,
                 recipientEmail: email,
+                customMessage,
               }),
             });
 

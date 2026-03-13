@@ -17,7 +17,16 @@ interface TransferRequest {
   createdAt: string;
   recipientEmail: string;
   recipientName?: string;
+  customMessage?: string;
 }
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
 export async function POST(request: NextRequest) {
   try {
@@ -84,6 +93,14 @@ export async function POST(request: NextRequest) {
         })
       : 'Non définie';
 
+    const sanitizedCustomMessage = (body.customMessage || '').trim();
+    const customMessageHtml = sanitizedCustomMessage
+      ? `<div style="background: #fff7ed; border-left: 4px solid #f59e0b; padding: 16px; border-radius: 4px; margin-bottom: 20px;">
+          <p style="margin: 0 0 6px 0; color: #92400e; font-size: 12px; text-transform: uppercase; font-weight: 700;">Message personnalisé</p>
+          <p style="margin: 0; color: #7c2d12; font-size: 14px; line-height: 1.6;">${escapeHtml(sanitizedCustomMessage).replace(/\n/g, '<br>')}</p>
+        </div>`
+      : '';
+
     console.log('📧 Préparation envoi email via Resend...');
     console.log('  - De:', `${senderDisplayName} <${senderEmail}>`);
     console.log('  - À:', body.recipientEmail);
@@ -102,6 +119,7 @@ export async function POST(request: NextRequest) {
           </div>
 
           <div style="padding: 30px; background: #f9fafb; border: 1px solid #e5e7eb; border-top: none;">
+            ${customMessageHtml}
             <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
               <h2 style="margin: 0 0 12px 0; color: #1f2937; font-size: 18px; font-weight: 600;">
                 📋 ${body.taskTitle}
