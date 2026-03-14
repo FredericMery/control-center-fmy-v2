@@ -28,6 +28,10 @@ interface NdfProfile {
   companyRecipientId: string | null;
 }
 
+type EmailType = 'facture' | 'ndf';
+
+type EmailCompanyLinksState = Record<EmailType, Record<string, string[]>>;
+
 export default function EmailSettingsForm() {
   const { t } = useI18n();
   const [settings, setSettings] = useState<EmailSetting[]>([]);
@@ -59,6 +63,10 @@ export default function EmailSettingsForm() {
   const [companyExtraJustifEmails, setCompanyExtraJustifEmails] = useState<string[]>([]);
   const [companyExtraNdfDraft, setCompanyExtraNdfDraft] = useState('');
   const [companyExtraJustifDraft, setCompanyExtraJustifDraft] = useState('');
+  const [emailCompanyLinks, setEmailCompanyLinks] = useState<EmailCompanyLinksState>({
+    facture: {},
+    ndf: {},
+  });
   const [ndfProfile, setNdfProfile] = useState<NdfProfile>({
     validatorFirstName: '',
     validatorLastName: '',
@@ -90,6 +98,100 @@ export default function EmailSettingsForm() {
   const normalizeEmails = (raw: string) => uniqueEmails(parseEmailEntries(raw));
 
   const formatEmails = (emails: string[]) => emails.join(', ');
+
+  const normalizeEmailForLookup = (value: string) =>
+    String(value || '')
+      .trim()
+      .replace(/^mailto:/i, '')
+      .toLowerCase();
+
+  const uniqueStrings = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
+
+  const buildLinksState = (
+    links: Array<{ type: EmailType; email: string; companyRecipientId: string }>
+  ): EmailCompanyLinksState => {
+    const nextState: EmailCompanyLinksState = {
+      facture: {},
+      ndf: {},
+    };
+
+    for (const link of links) {
+      const normalizedEmail = normalizeEmailForLookup(link.email);
+      if (!normalizedEmail || !link.companyRecipientId) continue;
+      const current = nextState[link.type][normalizedEmail] || [];
+      nextState[link.type][normalizedEmail] = uniqueStrings([...current, link.companyRecipientId]);
+    }
+
+    return nextState;
+  };
+
+  const replaceRecipientLinks = (
+    linksByEmail: Record<string, string[]>,
+    recipientId: string,
+    emails: string[]
+  ) => {
+    const selectedEmails = uniqueStrings(emails.map(normalizeEmailForLookup)).filter(Boolean);
+    const nextLinks: Record<string, string[]> = {};
+
+    for (const [email, companyIds] of Object.entries(linksByEmail)) {
+      const filteredIds = companyIds.filter((id) => id !== recipientId);
+      if (filteredIds.length > 0) {
+        nextLinks[email] = filteredIds;
+      }
+    }
+
+    for (const email of selectedEmails) {
+      const current = nextLinks[email] || [];
+      nextLinks[email] = uniqueStrings([...current, recipientId]);
+    }
+
+    return nextLinks;
+  };
+
+  const filterLinksToKnownEmails = (
+    linksByEmail: Record<string, string[]>,
+    emails: string[]
+  ) => {
+    const allowed = new Set(emails.map(normalizeEmailForLookup).filter(Boolean));
+
+    return Object.fromEntries(
+      Object.entries(linksByEmail).filter(([email]) => allowed.has(email))
+    );
+  };
+
+  const serializeLinksPayload = (linksByEmail: Record<string, string[]>) => {
+    return Object.entries(linksByEmail)
+      .map(([email, companyRecipientIds]) => ({
+        email,
+        companyRecipientIds: uniqueStrings(companyRecipientIds),
+      }))
+      .filter((item) => item.email && item.companyRecipientIds.length > 0);
+  };
+
+  const getLinkedEmailsForRecipient = (type: EmailType, recipientId: string) => {
+    return Object.entries(emailCompanyLinks[type])
+      .filter(([, companyIds]) => companyIds.includes(recipientId))
+      .map(([email]) => email)
+      .sort((left, right) => left.localeCompare(right));
+  };
+
+  const getCompanyNamesForEmail = (type: EmailType, email: string) => {
+    const normalizedEmail = normalizeEmailForLookup(email);
+    const linkedCompanyIds = emailCompanyLinks[type][normalizedEmail] || [];
+    const mappedNames = linkedCompanyIds
+      .map((companyId) => recipients.find((item) => item.id === companyId)?.name || '')
+      .filter(Boolean);
+
+    if (mappedNames.length > 0) {
+      return uniqueStrings(mappedNames);
+    }
+
+    const fallbackNames = recipients
+      .filter((item) => normalizeEmailForLookup(item.destination) === normalizedEmail)
+      .map((item) => item.name);
+
+    return uniqueStrings(fallbackNames);
+  };
 
   // Récupérer le token Supabase
   useEffect(() => {
@@ -216,7 +318,32 @@ export default function EmailSettingsForm() {
     fetchNdfProfile();
   }, [authToken]);
 
-  const handleSave = async (type: 'facture' | 'ndf') => {
+  useEffect(() => {
+    if (!authToken) return;
+
+    const fetchEmailCompanyLinks = async () => {
+      try {
+        const response = await fetch('/api/settings/email-company-links', {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Erreur chargement rattachements email/societe');
+        }
+
+        setEmailCompanyLinks(buildLinksState(data.links || []));
+      } catch (err: any) {
+        setError(err?.message || 'Erreur chargement rattachements email/societe');
+      }
+    };
+
+    fetchEmailCompanyLinks();
+  }, [authToken]);
+
+  const handleSave = async (type: EmailType) => {
     const rawEntries = parseEmailEntries(formData[type]);
     const invalidEmails = rawEntries.filter((entry) => !isValidEmail(entry));
     const emails = uniqueEmails(rawEntries);
@@ -257,7 +384,29 @@ export default function EmailSettingsForm() {
         throw new Error(data.error || 'Erreur sauvegarde');
       }
 
+      const nextLinksByType = filterLinksToKnownEmails(emailCompanyLinks[type], emails);
+      const linksResponse = await fetch('/api/settings/email-company-links', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          type,
+          links: serializeLinksPayload(nextLinksByType),
+        }),
+      });
+
+      const linksJson = await linksResponse.json();
+      if (!linksResponse.ok) {
+        throw new Error(linksJson.error || 'Erreur sauvegarde rattachements email/societe');
+      }
+
       setFormData((prev) => ({ ...prev, [type]: payloadEmail }));
+      setEmailCompanyLinks((prev) => ({
+        ...prev,
+        [type]: nextLinksByType,
+      }));
       setSuccess(data.message);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
@@ -348,8 +497,14 @@ export default function EmailSettingsForm() {
       const allJustifEmails = [paymentEmail, ...companyExtraJustifEmails].filter((e) => isValidEmail(e));
       const updatedNdfEmails = uniqueEmails([...normalizeEmails(formData.ndf), ...allNdfEmails]);
       const updatedPaymentEmails = uniqueEmails([...normalizeEmails(formData.facture), ...allJustifEmails]);
+      const nextNdfLinks = replaceRecipientLinks(emailCompanyLinks.ndf, data.recipient.id, allNdfEmails);
+      const nextFactureLinks = replaceRecipientLinks(
+        emailCompanyLinks.facture,
+        data.recipient.id,
+        allJustifEmails
+      );
 
-      const [saveNdfRes, saveFactureRes] = await Promise.all([
+      const [saveNdfRes, saveFactureRes, saveNdfLinksRes, saveFactureLinksRes] = await Promise.all([
         fetch('/api/settings/emails', {
           method: 'PUT',
           headers: {
@@ -366,15 +521,45 @@ export default function EmailSettingsForm() {
           },
           body: JSON.stringify({ type: 'facture', email: formatEmails(updatedPaymentEmails) }),
         }),
+        fetch('/api/settings/email-company-links', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            type: 'ndf',
+            links: serializeLinksPayload(nextNdfLinks),
+          }),
+        }),
+        fetch('/api/settings/email-company-links', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            type: 'facture',
+            links: serializeLinksPayload(nextFactureLinks),
+          }),
+        }),
       ]);
 
       const saveNdfJson = await saveNdfRes.json();
       const saveFactureJson = await saveFactureRes.json();
+      const saveNdfLinksJson = await saveNdfLinksRes.json();
+      const saveFactureLinksJson = await saveFactureLinksRes.json();
       if (!saveNdfRes.ok) {
         throw new Error(saveNdfJson.error || 'Erreur sauvegarde destinataire NDF');
       }
       if (!saveFactureRes.ok) {
         throw new Error(saveFactureJson.error || 'Erreur sauvegarde destinataire justificatif');
+      }
+      if (!saveNdfLinksRes.ok) {
+        throw new Error(saveNdfLinksJson.error || 'Erreur sauvegarde rattachements NDF');
+      }
+      if (!saveFactureLinksRes.ok) {
+        throw new Error(saveFactureLinksJson.error || 'Erreur sauvegarde rattachements justificatif');
       }
 
       if (data.recipient) {
@@ -388,6 +573,10 @@ export default function EmailSettingsForm() {
       setFormData({
         ndf: formatEmails(updatedNdfEmails),
         facture: formatEmails(updatedPaymentEmails),
+      });
+      setEmailCompanyLinks({
+        ndf: nextNdfLinks,
+        facture: nextFactureLinks,
       });
       setCompanyName('');
       setCompanyNdfEmail('');
@@ -432,6 +621,10 @@ export default function EmailSettingsForm() {
       setNdfProfile((prev) => ({
         ...prev,
         companyRecipientId: prev.companyRecipientId === id ? null : prev.companyRecipientId,
+      }));
+      setEmailCompanyLinks((prev) => ({
+        ndf: replaceRecipientLinks(prev.ndf, id, []),
+        facture: replaceRecipientLinks(prev.facture, id, []),
       }));
       setSelectedRecipientId((prev) => (prev === id ? null : prev));
     } catch (err: any) {
@@ -539,11 +732,21 @@ export default function EmailSettingsForm() {
     if (!selectedRecipientId) return;
     const recipient = recipients.find((r) => r.id === selectedRecipientId);
     if (!recipient) return;
+    const linkedNdfEmails = getLinkedEmailsForRecipient('ndf', recipient.id);
+    const linkedJustifEmails = getLinkedEmailsForRecipient('facture', recipient.id);
+    const primaryJustifEmail =
+      linkedJustifEmails.find(
+        (email) => normalizeEmailForLookup(email) === normalizeEmailForLookup(recipient.destination)
+      ) || linkedJustifEmails[0] || recipient.destination;
+    const extraJustifEmails = linkedJustifEmails.filter(
+      (email) => normalizeEmailForLookup(email) !== normalizeEmailForLookup(primaryJustifEmail)
+    );
+
     setCompanyName(recipient.name);
-    setCompanyPaymentEmail(recipient.destination);
-    setCompanyNdfEmail('');
-    setCompanyExtraNdfEmails([]);
-    setCompanyExtraJustifEmails([]);
+    setCompanyPaymentEmail(primaryJustifEmail);
+    setCompanyNdfEmail(linkedNdfEmails[0] || '');
+    setCompanyExtraNdfEmails(linkedNdfEmails.slice(linkedNdfEmails[0] ? 1 : 0));
+    setCompanyExtraJustifEmails(extraJustifEmails);
     setCompanyExtraNdfDraft('');
     setCompanyExtraJustifDraft('');
     setEditingRecipientId(recipient.id);
@@ -583,29 +786,28 @@ export default function EmailSettingsForm() {
       setIsSaving(true);
       setError(null);
 
-      const delRes = await fetch(
-        `/api/settings/expense-recipients?id=${encodeURIComponent(editingRecipientId)}`,
-        { method: 'DELETE', headers: { Authorization: `Bearer ${authToken}` } }
-      );
-      if (!delRes.ok) {
-        const delData = await delRes.json();
-        throw new Error(delData.error || 'Erreur suppression');
-      }
-
-      const createRes = await fetch('/api/settings/expense-recipients', {
-        method: 'POST',
+      const updateRes = await fetch('/api/settings/expense-recipients', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-        body: JSON.stringify({ name, destination: paymentEmail }),
+        body: JSON.stringify({ id: editingRecipientId, name, destination: paymentEmail }),
       });
-      const createData = await createRes.json();
-      if (!createRes.ok) throw new Error(createData.error || 'Erreur creation');
+      const updateJson = await updateRes.json();
+      if (!updateRes.ok) {
+        throw new Error(updateJson.error || 'Erreur mise a jour');
+      }
 
       const ndfEmail = companyNdfEmail.trim();
       const allNewNdfEmails = [
         ...(ndfEmail && isValidEmail(ndfEmail) ? [ndfEmail] : []),
         ...companyExtraNdfEmails,
       ];
-      const allNewJustifEmails = [...companyExtraJustifEmails];
+      const allNewJustifEmails = [paymentEmail, ...companyExtraJustifEmails].filter((email) => isValidEmail(email));
+      const nextNdfLinks = replaceRecipientLinks(emailCompanyLinks.ndf, editingRecipientId, allNewNdfEmails);
+      const nextFactureLinks = replaceRecipientLinks(
+        emailCompanyLinks.facture,
+        editingRecipientId,
+        allNewJustifEmails
+      );
 
       const promises: Promise<Response>[] = [];
       if (allNewNdfEmails.length > 0) {
@@ -620,7 +822,7 @@ export default function EmailSettingsForm() {
         );
       }
       if (allNewJustifEmails.length > 0) {
-        const updated = uniqueEmails([...normalizeEmails(formData.facture), paymentEmail, ...allNewJustifEmails]);
+        const updated = uniqueEmails([...normalizeEmails(formData.facture), ...allNewJustifEmails]);
         setFormData((prev) => ({ ...prev, facture: formatEmails(updated) }));
         promises.push(
           fetch('/api/settings/emails', {
@@ -630,18 +832,37 @@ export default function EmailSettingsForm() {
           })
         );
       }
+      promises.push(
+        fetch('/api/settings/email-company-links', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+          body: JSON.stringify({
+            type: 'ndf',
+            links: serializeLinksPayload(nextNdfLinks),
+          }),
+        })
+      );
+      promises.push(
+        fetch('/api/settings/email-company-links', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+          body: JSON.stringify({
+            type: 'facture',
+            links: serializeLinksPayload(nextFactureLinks),
+          }),
+        })
+      );
       await Promise.all(promises);
 
-      setRecipients((prev) => {
-        const filtered = prev.filter((r) => r.id !== editingRecipientId);
-        return createData.recipient ? [createData.recipient, ...filtered] : filtered;
-      });
-      if (ndfProfile.companyRecipientId === editingRecipientId && createData.recipient) {
-        setNdfProfile((prev) => ({ ...prev, companyRecipientId: createData.recipient.id }));
-      }
-      setSelectedRecipientId((prev) =>
-        prev === editingRecipientId && createData.recipient ? createData.recipient.id : prev
+      setRecipients((prev) =>
+        prev.map((recipient) =>
+          recipient.id === editingRecipientId ? updateJson.recipient : recipient
+        )
       );
+      setEmailCompanyLinks({
+        ndf: nextNdfLinks,
+        facture: nextFactureLinks,
+      });
 
       handleCancelCompanyForm();
       setSuccess('Societe mise a jour');
@@ -1004,20 +1225,31 @@ export default function EmailSettingsForm() {
           </div>
           {ndfEmails.length > 0 ? (
             <div className="flex flex-wrap gap-2">
-              {ndfEmails.map((email) => (
+              {ndfEmails.map((email) => {
+                const companyNames = getCompanyNamesForEmail('ndf', email);
+
+                return (
                 <div
                   key={email}
-                  className="flex items-center gap-2 rounded-full border border-violet-300/30 bg-violet-500/10 px-3 py-1"
+                  className="flex items-start gap-2 rounded-2xl border border-violet-300/30 bg-violet-500/10 px-3 py-2"
                 >
-                  <span className="text-xs text-violet-100">{email}</span>
+                  <div className="min-w-0">
+                    <p className="text-xs text-violet-100">{email}</p>
+                    <p className="text-[11px] text-violet-200/80">
+                      {companyNames.length > 0
+                        ? `Societes: ${companyNames.join(', ')}`
+                        : 'Societes: non rattachees'}
+                    </p>
+                  </div>
                   <button
                     onClick={() => handleRemoveEmail('ndf', email)}
-                    className="text-xs text-violet-200 hover:text-white"
+                    className="mt-0.5 text-xs text-violet-200 hover:text-white"
                   >
                     ✕
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="text-xs text-slate-400">Aucun email NDF configure.</p>
@@ -1066,20 +1298,31 @@ export default function EmailSettingsForm() {
           </div>
           {paymentProofEmails.length > 0 ? (
             <div className="flex flex-wrap gap-2">
-              {paymentProofEmails.map((email) => (
+              {paymentProofEmails.map((email) => {
+                const companyNames = getCompanyNamesForEmail('facture', email);
+
+                return (
                 <div
                   key={email}
-                  className="flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1"
+                  className="flex items-start gap-2 rounded-2xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2"
                 >
-                  <span className="text-xs text-emerald-100">{email}</span>
+                  <div className="min-w-0">
+                    <p className="text-xs text-emerald-100">{email}</p>
+                    <p className="text-[11px] text-emerald-200/80">
+                      {companyNames.length > 0
+                        ? `Societes: ${companyNames.join(', ')}`
+                        : 'Societes: non rattachees'}
+                    </p>
+                  </div>
                   <button
                     onClick={() => handleRemoveEmail('facture', email)}
-                    className="text-xs text-emerald-200 hover:text-white"
+                    className="mt-0.5 text-xs text-emerald-200 hover:text-white"
                   >
                     ✕
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="text-xs text-slate-400">Aucun email justificatif configure.</p>

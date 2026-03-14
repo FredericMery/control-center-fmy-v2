@@ -115,3 +115,56 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const userId = await getUserIdFromRequest(request);
+    if (!userId) {
+      return NextResponse.json({ error: 'Non authentifie' }, { status: 401 });
+    }
+
+    const body = (await request.json()) as {
+      id?: string;
+      name?: string;
+      destination?: string;
+    };
+
+    const recipientId = String(body.id || '').trim();
+    const name = String(body.name || '').trim();
+    const destination = String(body.destination || '').trim();
+
+    if (!recipientId || !name || !destination) {
+      return NextResponse.json(
+        { error: 'ID, nom destinataire et destinataire requis' },
+        { status: 400 }
+      );
+    }
+
+    const { data, error } = await supabase
+      .from('expense_recipients')
+      .update({
+        name: name.slice(0, 120),
+        destination: destination.slice(0, 180),
+      })
+      .eq('id', recipientId)
+      .eq('user_id', userId)
+      .select('id, name, destination, created_at')
+      .single();
+
+    if (error) {
+      return NextResponse.json(
+        { error: 'Erreur mise a jour destinataire depense' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      recipient: data,
+      message: 'Destinataire depense mis a jour',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erreur serveur';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
