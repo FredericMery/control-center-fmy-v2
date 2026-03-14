@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { trackApiCall, trackAppUsage } from '@/lib/tracking/analytics';
@@ -372,9 +373,19 @@ export default function ExpenseForm() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       {/* Header */}
       <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
-        <div className="max-w-2xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-slate-900">{t('expenses.captureTitle')}</h1>
-          <p className="text-sm text-slate-600">{t('expenses.captureSubtitle')}</p>
+        <div className="max-w-2xl mx-auto px-4 py-4 flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">{t('expenses.captureTitle')}</h1>
+            <p className="text-sm text-slate-600">{t('expenses.captureSubtitle')}</p>
+          </div>
+
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-white hover:text-slate-900"
+          >
+            <span aria-hidden="true">⌂</span>
+            Home
+          </Link>
         </div>
       </div>
 
