@@ -844,7 +844,7 @@ export default function EmailSettingsForm() {
           <p className="text-sm text-slate-300">Chargement des societes...</p>
         ) : recipients.length === 0 ? (
           <p className="mb-4 rounded-lg border border-dashed border-slate-600 p-4 text-center text-sm text-slate-400">
-            Aucune societe. Cliquez sur &ldquo;+ Ajouter une societe&rdquo;.
+            Aucune societe. Cliquez sur &quot;+ Ajouter une societe&quot;.
           </p>
         ) : (
           <div className="mb-4 space-y-2">
