@@ -403,8 +403,8 @@ export default function ExpenseForm() {
                 <div className="flex items-center gap-4">
                   <div className="text-4xl">💳</div>
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-900">CB Perso</h3>
-                    <p className="text-sm text-slate-600">À rembourser via note de frais mensuelle</p>
+                    <h3 className="text-lg font-semibold text-slate-900">Note de frais</h3>
+                    <p className="text-sm text-slate-600">Vous payez avec votre moyen personnel puis la societe vous rembourse.</p>
                   </div>
                 </div>
               </button>
@@ -418,8 +418,8 @@ export default function ExpenseForm() {
                 <div className="flex items-center gap-4">
                   <div className="text-4xl">🏢</div>
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-900">CB Pro</h3>
-                    <p className="text-sm text-slate-600">À envoyer directement à la comptabilité</p>
+                    <h3 className="text-lg font-semibold text-slate-900">Justificatif de paiement</h3>
+                    <p className="text-sm text-slate-600">Vous payez avec le moyen de paiement de la societe et le justificatif est transmis.</p>
                   </div>
                 </div>
               </button>
@@ -434,8 +434,8 @@ export default function ExpenseForm() {
               <h3 className="text-lg font-semibold text-slate-900">Choix de raison</h3>
               <p className="mt-1 text-sm text-slate-600">
                 {paymentMethod === 'cb_perso'
-                  ? 'Pourquoi cette depense perso doit etre suivie ce mois-ci ?'
-                  : 'Quel est le contexte de cette depense pro ?'}
+                  ? 'Pourquoi cette note de frais doit etre suivie ce mois-ci ?'
+                  : 'Quel est le contexte de ce justificatif de paiement ?'}
               </p>
             </div>
 
@@ -462,7 +462,7 @@ export default function ExpenseForm() {
           </div>
         )}
 
-        {/* ETAPE 2 BIS : DESTINATAIRE CB PERSO */}
+        {/* ETAPE 2 BIS : DESTINATAIRE NOTE DE FRAIS */}
         {step === 'recipient' && paymentMethod === 'cb_perso' && (
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
@@ -574,7 +574,7 @@ export default function ExpenseForm() {
               <p className="text-sm text-blue-900">
                 {paymentMethod === 'cb_perso' 
                   ? 'Cette dépense sera ajoutée à votre note de frais du mois'
-                  : 'Cette facture sera envoyée à la comptabilité automatiquement'}
+                  : 'Ce justificatif sera envoye automatiquement aux destinataires de justificatifs de paiement'}
               </p>
               {reason && (
                 <p className="mt-2 text-xs text-blue-800">Raison: <strong>{reason}</strong></p>
@@ -681,12 +681,12 @@ export default function ExpenseForm() {
               <h3 className="text-lg font-semibold text-emerald-900">
                 {paymentMethod === 'cb_perso'
                   ? 'Dépense enregistrée !'
-                  : 'Facture envoyée !'}
+                  : 'Justificatif envoye !'}
               </h3>
               <p className="text-sm text-emerald-800">
                 {paymentMethod === 'cb_perso'
                   ? 'Votre dépense sera incluse dans la note de frais de ce mois'
-                  : 'Votre facture a été envoyée à la comptabilité'}
+                  : 'Votre justificatif a ete envoye aux destinataires de paiement'}
               </p>
             </div>
 
