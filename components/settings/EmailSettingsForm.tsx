@@ -49,8 +49,9 @@ export default function EmailSettingsForm() {
   const [contactsEnabled, setContactsEnabled] = useState(false);
   const [recipients, setRecipients] = useState<ExpenseRecipient[]>([]);
   const [recipientsLoading, setRecipientsLoading] = useState(false);
-  const [recipientName, setRecipientName] = useState('');
-  const [recipientDestination, setRecipientDestination] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [companyNdfEmail, setCompanyNdfEmail] = useState('');
+  const [companyPaymentEmail, setCompanyPaymentEmail] = useState('');
   const [ndfProfile, setNdfProfile] = useState<NdfProfile>({
     validatorFirstName: '',
     validatorLastName: '',
@@ -234,7 +235,6 @@ export default function EmailSettingsForm() {
 
     try {
       const payloadEmail = formatEmails(emails);
-      console.log('💾 Sauvegarde des emails', type, ':', payloadEmail);
       const response = await fetch('/api/settings/emails', {
         method: 'PUT',
         headers: {
@@ -245,16 +245,11 @@ export default function EmailSettingsForm() {
       });
 
       const data = await response.json();
-      console.log('📦 Réponse:', data);
 
       if (!response.ok) {
-        const errorMsg = data.error || 'Erreur sauvegarde';
-        console.error('❌ Erreur:', errorMsg);
-        setError(errorMsg);
-        return;
+        throw new Error(data.error || 'Erreur sauvegarde');
       }
 
-      console.log('✅ Sauvegardé avec succès');
       setFormData((prev) => ({ ...prev, [type]: payloadEmail }));
       setSuccess(data.message);
       setTimeout(() => setSuccess(null), 3000);
@@ -301,34 +296,76 @@ export default function EmailSettingsForm() {
     setError(null);
   };
 
-  const handleAddRecipient = async () => {
+  const handleCreateCompany = async () => {
     if (!authToken) {
       setError('Non authentifie. Veuillez vous reconnecter.');
       return;
     }
 
-    const name = recipientName.trim();
-    const destination = recipientDestination.trim();
-    if (!name || !destination) {
-      setError('Nom destinataire et destinataire requis');
+    const name = companyName.trim();
+    const ndfEmail = companyNdfEmail.trim();
+    const paymentEmail = companyPaymentEmail.trim();
+
+    if (!name || !ndfEmail || !paymentEmail) {
+      setError('Nom societe, email NDF et email justificatif sont requis');
+      return;
+    }
+
+    if (!isValidEmail(ndfEmail) || !isValidEmail(paymentEmail)) {
+      setError('Email NDF ou justificatif invalide');
       return;
     }
 
     try {
       setIsSaving(true);
       setError(null);
+
       const response = await fetch('/api/settings/expense-recipients', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
         },
-        body: JSON.stringify({ name, destination }),
+        body: JSON.stringify({
+          name,
+          destination: paymentEmail,
+        }),
       });
 
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || 'Erreur creation destinataire');
+      }
+
+      const updatedNdfEmails = uniqueEmails([...normalizeEmails(formData.ndf), ndfEmail]);
+      const updatedPaymentEmails = uniqueEmails([...normalizeEmails(formData.facture), paymentEmail]);
+
+      const [saveNdfRes, saveFactureRes] = await Promise.all([
+        fetch('/api/settings/emails', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({ type: 'ndf', email: formatEmails(updatedNdfEmails) }),
+        }),
+        fetch('/api/settings/emails', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({ type: 'facture', email: formatEmails(updatedPaymentEmails) }),
+        }),
+      ]);
+
+      const saveNdfJson = await saveNdfRes.json();
+      const saveFactureJson = await saveFactureRes.json();
+      if (!saveNdfRes.ok) {
+        throw new Error(saveNdfJson.error || 'Erreur sauvegarde destinataire NDF');
+      }
+      if (!saveFactureRes.ok) {
+        throw new Error(saveFactureJson.error || 'Erreur sauvegarde destinataire justificatif');
       }
 
       if (data.recipient) {
@@ -338,12 +375,18 @@ export default function EmailSettingsForm() {
           companyRecipientId: prev.companyRecipientId || data.recipient.id,
         }));
       }
-      setRecipientName('');
-      setRecipientDestination('');
-      setSuccess('Destinataire ajoute');
+
+      setFormData({
+        ndf: formatEmails(updatedNdfEmails),
+        facture: formatEmails(updatedPaymentEmails),
+      });
+      setCompanyName('');
+      setCompanyNdfEmail('');
+      setCompanyPaymentEmail('');
+      setSuccess('Societe creee avec destinataires NDF et justificatif');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err?.message || 'Erreur creation destinataire');
+      setError(err?.message || 'Erreur creation societe');
     } finally {
       setIsSaving(false);
     }
@@ -444,12 +487,12 @@ export default function EmailSettingsForm() {
       <div className="rounded-2xl border border-cyan-300/20 bg-gradient-to-r from-slate-900/80 via-slate-900/75 to-cyan-950/60 p-4 sm:p-5">
         <h2 className="text-2xl font-semibold tracking-tight text-white">Parametrage Depenses</h2>
         <p className="mt-1 text-sm text-slate-300">
-          Organisez votre flux en 3 etapes: societe, destinataires de notes de frais, puis destinataires de justificatifs de paiement.
+          Flux simple: creez une societe (avec 1 email NDF + 1 email justificatif), puis ajoutez autant de destinataires que vous voulez.
         </p>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          <span className="rounded-full border border-cyan-300/25 bg-cyan-500/15 px-3 py-1">1. Societe</span>
-          <span className="rounded-full border border-violet-300/25 bg-violet-500/15 px-3 py-1">2. Notes de frais</span>
-          <span className="rounded-full border border-emerald-300/25 bg-emerald-500/15 px-3 py-1">3. Justificatifs de paiement</span>
+          <span className="rounded-full border border-cyan-300/25 bg-cyan-500/15 px-3 py-1">1. Creer societe</span>
+          <span className="rounded-full border border-violet-300/25 bg-violet-500/15 px-3 py-1">2. Ajouter des destinataires NDF</span>
+          <span className="rounded-full border border-emerald-300/25 bg-emerald-500/15 px-3 py-1">3. Ajouter des destinataires justificatifs</span>
         </div>
       </div>
 
@@ -469,36 +512,43 @@ export default function EmailSettingsForm() {
         <div className="flex items-start gap-3">
           <div className="mt-0.5 rounded-lg bg-cyan-500/20 px-2 py-1 text-xs font-semibold text-cyan-100">ETAPE 1</div>
           <div>
-            <h3 className="text-lg font-semibold text-white">Societe</h3>
+            <h3 className="text-lg font-semibold text-white">Creer une societe</h3>
             <p className="text-xs text-slate-300">
-              Creez vos societes destinataires. Elles seront proposees dans le parcours Note de frais.
+              Cette action cree la societe et ajoute automatiquement 1 destinataire NDF + 1 destinataire justificatif.
             </p>
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
           <input
             type="text"
             placeholder="Nom societe (ex: Entreprise ABC)"
-            value={recipientName}
-            onChange={(e) => setRecipientName(e.target.value)}
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
             className="w-full rounded-lg border border-slate-600 bg-slate-900 px-4 py-2.5 text-sm text-white placeholder:text-slate-400 outline-none focus:border-cyan-400"
           />
           <input
-            type="text"
-            placeholder="Email principal (ex: compta@abc.com)"
-            value={recipientDestination}
-            onChange={(e) => setRecipientDestination(e.target.value)}
+            type="email"
+            placeholder="Email NDF (ex: rh@abc.com)"
+            value={companyNdfEmail}
+            onChange={(e) => setCompanyNdfEmail(e.target.value)}
+            className="w-full rounded-lg border border-slate-600 bg-slate-900 px-4 py-2.5 text-sm text-white placeholder:text-slate-400 outline-none focus:border-violet-400"
+          />
+          <input
+            type="email"
+            placeholder="Email justificatif (ex: compta@abc.com)"
+            value={companyPaymentEmail}
+            onChange={(e) => setCompanyPaymentEmail(e.target.value)}
             className="w-full rounded-lg border border-slate-600 bg-slate-900 px-4 py-2.5 text-sm text-white placeholder:text-slate-400 outline-none focus:border-cyan-400"
           />
         </div>
 
         <button
-          onClick={handleAddRecipient}
+          onClick={handleCreateCompany}
           disabled={isSaving}
           className="mt-3 w-full rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:opacity-60"
         >
-          {isSaving ? t('common.loading') : '+ Ajouter la societe'}
+          {isSaving ? t('common.loading') : '+ Creer la societe et ses 2 destinataires'}
         </button>
 
         <div className="mt-5 rounded-xl border border-white/10 bg-slate-900/70 p-4">
@@ -599,9 +649,9 @@ export default function EmailSettingsForm() {
         <div className="flex items-start gap-3">
           <div className="mt-0.5 rounded-lg bg-violet-500/20 px-2 py-1 text-xs font-semibold text-violet-100">ETAPE 2</div>
           <div>
-            <h3 className="text-lg font-semibold text-white">Destinataires Note de frais</h3>
+            <h3 className="text-lg font-semibold text-white">Ajouter des destinataires NDF</h3>
             <p className="text-xs text-slate-300">
-              Cas d usage: paiement avec le moyen personnel de l utilisateur, puis remboursement par la societe.
+              Ajoutez autant d emails que necessaire pour les notes de frais.
             </p>
           </div>
         </div>
@@ -659,9 +709,9 @@ export default function EmailSettingsForm() {
         <div className="flex items-start gap-3">
           <div className="mt-0.5 rounded-lg bg-emerald-500/20 px-2 py-1 text-xs font-semibold text-emerald-100">ETAPE 3</div>
           <div>
-            <h3 className="text-lg font-semibold text-white">Destinataires Justificatif de paiement</h3>
+            <h3 className="text-lg font-semibold text-white">Ajouter des destinataires justificatif</h3>
             <p className="text-xs text-slate-300">
-              Cas d usage: paiement avec le moyen de paiement de la societe, envoi direct du justificatif.
+              Ajoutez autant d emails que necessaire pour les justificatifs de paiement.
             </p>
           </div>
         </div>
