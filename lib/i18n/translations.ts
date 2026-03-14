@@ -8,6 +8,7 @@ const fr: TranslationTable = {
   'common.save': 'Sauvegarder',
   'common.cancel': 'Annuler',
   'common.back': 'Retour',
+  'common.home': 'Accueil',
   'common.share': 'Partager',
   'common.settings': 'Parametres',
 
@@ -378,6 +379,7 @@ const en: TranslationTable = {
   'common.back': 'Back',
   'common.share': 'Share',
   'common.settings': 'Settings',
+  'common.home': 'Home',
 
   'login.password': 'Password',
   'login.signIn': 'Sign in',
@@ -749,6 +751,7 @@ const es: TranslationTable = {
   'nav.settings': 'Configuracion',
   'nav.control': 'Control',
 
+  'common.home': 'Inicio',
   'common.enabled': 'Activado',
   'common.disabled': 'Desactivado',
 

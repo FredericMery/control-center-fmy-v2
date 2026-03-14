@@ -361,7 +361,7 @@ export default function ExpensesListPage() {
               href="/dashboard"
               className="rounded-lg border border-slate-600 bg-slate-900/70 px-4 py-2 text-sm font-semibold text-white transition-colors hover:border-slate-500 hover:bg-slate-800"
             >
-              Accueil
+              {t('common.home')}
             </Link>
             <Link
               href="/expenses"

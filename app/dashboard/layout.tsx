@@ -76,40 +76,51 @@ export default function DashboardLayout({
             </div>
           </Link>
 
-          <nav className="flex max-w-[65vw] items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-slate-900/70 p-1 text-sm sm:max-w-none">
-            <Link
-              href="/dashboard"
-              className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
-                pathname === "/dashboard"
-                  ? "bg-cyan-500/20 text-cyan-100"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              {t('nav.tasks')}
-            </Link>
+          <div className="flex items-center gap-2">
+            <nav className="flex max-w-[52vw] items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-slate-900/70 p-1 text-sm sm:max-w-none">
+              <Link
+                href="/dashboard"
+                className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
+                  pathname === "/dashboard"
+                    ? "bg-cyan-500/20 text-cyan-100"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                {t('nav.tasks')}
+              </Link>
 
-            <Link
-              href="/dashboard/memoire"
-              className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
-                pathname.startsWith("/dashboard/memoire")
-                  ? "bg-cyan-500/20 text-cyan-100"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              {t('nav.memory')}
-            </Link>
+              <Link
+                href="/dashboard/memoire"
+                className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
+                  pathname.startsWith("/dashboard/memoire")
+                    ? "bg-cyan-500/20 text-cyan-100"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                {t('nav.memory')}
+              </Link>
 
-            <Link
-              href="/dashboard/settings"
-              className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
-                pathname.startsWith("/dashboard/settings")
-                  ? "bg-cyan-500/20 text-cyan-100"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              {t('nav.settings')}
-            </Link>
-          </nav>
+              <Link
+                href="/dashboard/settings"
+                className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
+                  pathname.startsWith("/dashboard/settings")
+                    ? "bg-cyan-500/20 text-cyan-100"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                {t('nav.settings')}
+              </Link>
+            </nav>
+
+            {pathname !== "/dashboard" && (
+              <Link
+                href="/dashboard"
+                className="shrink-0 rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-3 py-2 text-sm font-medium text-cyan-100 transition hover:border-cyan-300/35 hover:bg-cyan-400/20 hover:text-white"
+              >
+                {t('common.home')}
+              </Link>
+            )}
+          </div>
         </div>
       </header>
 
