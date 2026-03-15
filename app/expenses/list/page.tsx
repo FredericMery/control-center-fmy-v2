@@ -38,13 +38,6 @@ type ExpenseReportResponse = {
 export default function ExpensesListPage() {
   const { t, language } = useI18n();
   const now = new Date();
-  const previousMonthInfo = useMemo(() => {
-    const date = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    return {
-      month: date.getMonth() + 1,
-      year: date.getFullYear(),
-    };
-  }, [now]);
   const [report, setReport] = useState<ExpenseReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +61,6 @@ export default function ExpensesListPage() {
   const [reimbursedFullName, setReimbursedFullName] = useState('');
   const [ndfValidatorFullName, setNdfValidatorFullName] = useState('');
   const [ndfCompanyName, setNdfCompanyName] = useState('');
-  const [lastAutoSelectKey, setLastAutoSelectKey] = useState<string | null>(null);
 
   useEffect(() => {
     fetchExpenses();
@@ -139,65 +131,23 @@ export default function ExpensesListPage() {
     );
   }, [filteredRows]);
 
-  const ndfEligibleRows = useMemo(() => {
-    return filteredRows.filter(
-      (row) =>
+  const companyNdfEligibleRows = useMemo(() => {
+    const rows = report?.rows || [];
+    return rows.filter((row) => {
+      const companyOk =
+        selectedRecipient === 'all' || (row.recipient_name || '').trim() === selectedRecipient;
+      return (
+        companyOk &&
         row.payment_method === 'cb_perso' &&
         ['pending', 'pending_ndf'].includes(String(row.status || '').toLowerCase())
-    );
-  }, [filteredRows]);
+      );
+    });
+  }, [report, selectedRecipient]);
 
-  const ndfEligibleIds = useMemo(() => ndfEligibleRows.map((row) => row.id), [ndfEligibleRows]);
-
-  useEffect(() => {
-    const eligibleSet = new Set(ndfEligibleIds);
-    setSelectedNdfExpenseIds((prev) => prev.filter((id) => eligibleSet.has(id)));
-  }, [ndfEligibleIds]);
-
-  useEffect(() => {
-    const isPreviousMonthView =
-      selectedMonth === previousMonthInfo.month && selectedYear === previousMonthInfo.year;
-
-    if (!isPreviousMonthView) {
-      setLastAutoSelectKey(null);
-      return;
-    }
-
-    const selectionScopeKey = `${selectedYear}-${selectedMonth}-${selectedCardType}-${selectedRecipient}-${ndfEligibleIds.join('|')}`;
-    if (selectionScopeKey === lastAutoSelectKey) return;
-
-    setSelectedNdfExpenseIds(ndfEligibleIds);
-    setLastAutoSelectKey(selectionScopeKey);
-  }, [
-    selectedMonth,
-    selectedYear,
-    selectedCardType,
-    selectedRecipient,
-    previousMonthInfo.month,
-    previousMonthInfo.year,
-    ndfEligibleIds,
-    lastAutoSelectKey,
-  ]);
-
-  const selectAllEligibleNdf = () => {
-    setSelectedNdfExpenseIds(ndfEligibleIds);
-  };
-
-  const clearNdfSelection = () => {
-    setSelectedNdfExpenseIds([]);
-  };
-
-  const toggleNdfExpense = (expense: ExpenseRow) => {
-    const selectable =
-      expense.payment_method === 'cb_perso' &&
-      ['pending', 'pending_ndf'].includes(String(expense.status || '').toLowerCase());
-
-    if (!selectable) return;
-
-    setSelectedNdfExpenseIds((prev) =>
-      prev.includes(expense.id) ? prev.filter((id) => id !== expense.id) : [...prev, expense.id]
-    );
-  };
+  const companyNdfEligibleIds = useMemo(
+    () => companyNdfEligibleRows.map((row) => row.id),
+    [companyNdfEligibleRows]
+  );
 
   const closeModal = () => {
     setSelectedExpense(null);
@@ -242,14 +192,14 @@ export default function ExpensesListPage() {
     }
   };
 
-  const previewNdf = async () => {
-    if (selectedNdfExpenseIds.length === 0) {
-      setNdfMessage('Selectionnez au moins une ligne CB Perso a inclure dans la NDF.');
-      return;
-    }
+  const previewNdf = async (expenseIdsOverride?: string[], emailOverride?: string) => {
+    const expenseIds =
+      Array.isArray(expenseIdsOverride) && expenseIdsOverride.length > 0
+        ? expenseIdsOverride
+        : selectedNdfExpenseIds;
 
-    if (!reimbursedFullName.trim()) {
-      setNdfMessage('Saisissez le nom et prenom de la personne remboursee.');
+    if (expenseIds.length === 0) {
+      setNdfMessage('Selectionnez au moins une ligne CB Perso a inclure dans la NDF.');
       return;
     }
 
@@ -262,8 +212,8 @@ export default function ExpensesListPage() {
         body: JSON.stringify({
           month: selectedMonth,
           year: selectedYear,
-          email: ndfToEmail,
-          expenseIds: selectedNdfExpenseIds,
+          email: emailOverride ?? ndfToEmail,
+          expenseIds,
         }),
       });
 
@@ -300,6 +250,30 @@ export default function ExpensesListPage() {
     } finally {
       setIsPreviewingNdf(false);
     }
+  };
+
+  const handleCreateMyNdf = async () => {
+    if (selectedRecipient === 'all') {
+      setNdfMessage('Selectionnez d abord une entreprise dans le filtre Destinataire.');
+      setShowNdfModal(true);
+      return;
+    }
+
+    if (companyNdfEligibleIds.length === 0) {
+      setNdfMessage('Aucune ligne NDF non envoyee pour cette entreprise sur le mois selectionne.');
+      setShowNdfModal(true);
+      return;
+    }
+
+    setShowNdfModal(true);
+    setNdfMessage(null);
+    setSelectedNdfExpenseIds(companyNdfEligibleIds);
+    setNdfToEmail('');
+    if (!ndfSubject) {
+      setNdfSubject(`Note de frais ${String(selectedMonth).padStart(2, '0')}/${selectedYear}`);
+    }
+
+    await previewNdf(companyNdfEligibleIds, '');
   };
 
   const sendNdf = async () => {
@@ -461,56 +435,17 @@ export default function ExpensesListPage() {
             <div className="flex flex-wrap justify-end gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setShowNdfModal(true);
-                  setNdfMessage(null);
-                  if (!ndfSubject) {
-                    setNdfSubject(`Note de frais ${String(selectedMonth).padStart(2, '0')}/${selectedYear}`);
-                  }
-                }}
-                className="rounded-lg border border-cyan-400/50 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-500/20"
-              >
-                Previsualiser NDF
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowNdfModal(true);
-                  setNdfMessage(null);
-                  if (!ndfSubject) {
-                    setNdfSubject(`Note de frais ${String(selectedMonth).padStart(2, '0')}/${selectedYear}`);
-                  }
-                }}
+                onClick={handleCreateMyNdf}
                 className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
               >
-                Creer NDF
+                Creer ma note de frais
               </button>
             </div>
 
             <div className="rounded-lg border border-slate-700 bg-slate-900/70 px-4 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-slate-300">
-                  <strong className="text-white">NDF:</strong> {selectedNdfExpenseIds.length} ligne(s) selectionnee(s) sur {ndfEligibleIds.length} eligible(s).
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={selectAllEligibleNdf}
-                    className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
-                  >
-                    Tout cocher
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearNdfSelection}
-                    className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
-                  >
-                    Tout decocher
-                  </button>
-                </div>
-              </div>
-              <p className="mt-2 text-[11px] text-slate-400">
-                Les lignes deja envoyees sont grisees et ne peuvent plus etre selectionnees.
+              <p className="text-xs text-slate-300">
+                <strong className="text-white">NDF automatique:</strong> {companyNdfEligibleIds.length} ligne(s) CB Perso non envoyee(s) trouvee(s)
+                {selectedRecipient === 'all' ? ' (choisissez une entreprise pour generer la NDF).' : ' pour l entreprise selectionnee.'}
               </p>
             </div>
 
@@ -534,7 +469,6 @@ export default function ExpensesListPage() {
                 <table className="w-full min-w-[700px] text-sm">
                   <thead className="bg-slate-800/80 text-slate-300">
                     <tr>
-                      <th className="px-4 py-3 text-center font-semibold">NDF</th>
                       <th className="px-4 py-3 text-left font-semibold">Date</th>
                       <th className="px-4 py-3 text-left font-semibold">Type</th>
                       <th className="px-4 py-3 text-center font-semibold">Mail</th>
@@ -552,18 +486,6 @@ export default function ExpensesListPage() {
                         }`}
                         onClick={() => setSelectedExpense(expense)}
                       >
-                        <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={selectedNdfExpenseIds.includes(expense.id)}
-                            disabled={
-                              expense.payment_method !== 'cb_perso' ||
-                              !['pending', 'pending_ndf'].includes(String(expense.status || '').toLowerCase())
-                            }
-                            onChange={() => toggleNdfExpense(expense)}
-                            className="h-4 w-4 rounded border-slate-500 bg-slate-800 text-cyan-400 focus:ring-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
-                          />
-                        </td>
                         <td className="px-4 py-3">
                           {expense.invoice_date
                             ? new Date(expense.invoice_date).toLocaleDateString(locale)
@@ -818,7 +740,7 @@ export default function ExpensesListPage() {
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={previewNdf}
+                    onClick={() => previewNdf()}
                     disabled={isPreviewingNdf}
                     className="flex-1 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-60"
                   >
