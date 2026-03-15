@@ -45,12 +45,16 @@ export async function POST(request: NextRequest) {
       bodyText?: string;
       expenseIds?: string[];
       reimbursedFullName?: string;
+      companyName?: string;
+      companyDestination?: string;
     };
 
     const now = new Date();
     const month = Number(body.month || now.getMonth() + 1);
     const year = Number(body.year || now.getFullYear());
     const providedEmail = String(body.email || '').trim();
+    const providedCompanyName = String(body.companyName || '').trim();
+    const providedCompanyDestination = String(body.companyDestination || '').trim();
     const subject = String(body.subject || `Note de frais ${String(month).padStart(2, '0')}/${year}`).trim();
     const bodyText = String(body.bodyText || '').trim();
     const reimbursedFullName = String(body.reimbursedFullName || '').trim().slice(0, 120);
@@ -60,26 +64,6 @@ export async function POST(request: NextRequest) {
 
     if (!reimbursedFullName) {
       return NextResponse.json({ error: 'Nom et prenom de la personne remboursee requis' }, { status: 400 });
-    }
-
-    let recipientsSource = providedEmail;
-    if (!recipientsSource) {
-      const { data: setting } = await supabase
-        .from('email_settings')
-        .select('email')
-        .eq('user_id', userId)
-        .eq('type', 'ndf')
-        .maybeSingle();
-
-      recipientsSource = String(setting?.email || '').trim();
-    }
-
-    const recipientEmails = normalizeRecipientList(recipientsSource);
-    if (recipientEmails.length === 0) {
-      return NextResponse.json(
-        { error: 'Aucune adresse email NDF valide configuree' },
-        { status: 400 }
-      );
     }
 
     const { start, end } = getMonthRange(year, month);
@@ -125,15 +109,25 @@ export async function POST(request: NextRequest) {
       .eq('user_id', userId)
       .maybeSingle();
 
-    let company: { name: string; destination: string } | null = null;
-    if (ndfProfile?.company_recipient_id) {
-      const { data: companyRow } = await supabase
-        .from('expense_recipients')
-        .select('name, destination')
-        .eq('id', ndfProfile.company_recipient_id)
-        .eq('user_id', userId)
-        .maybeSingle();
-      company = companyRow || null;
+    const company = await resolveCompanyForNdf(
+      userId,
+      providedCompanyName,
+      providedCompanyDestination,
+      ndfProfile?.company_recipient_id || null
+    );
+
+    const linkedRecipients = company?.id
+      ? await getCompanyLinkedNdfEmails(userId, company.id)
+      : [];
+    const fallbackRecipients = await getGlobalNdfEmails(userId);
+    const recipientEmails = normalizeRecipientList(
+      providedEmail || linkedRecipients.join(', ') || fallbackRecipients.join(', ')
+    );
+    if (recipientEmails.length === 0) {
+      return NextResponse.json(
+        { error: 'Aucune adresse email NDF valide configuree' },
+        { status: 400 }
+      );
     }
 
     const validatorFullName = `${String(ndfProfile?.validator_first_name || '').trim()} ${String(
@@ -249,6 +243,65 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : 'Erreur serveur';
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+async function getGlobalNdfEmails(userId: string): Promise<string[]> {
+  const { data: setting } = await supabase
+    .from('email_settings')
+    .select('email')
+    .eq('user_id', userId)
+    .eq('type', 'ndf')
+    .maybeSingle();
+
+  return normalizeRecipientList(String(setting?.email || '').trim());
+}
+
+async function getCompanyLinkedNdfEmails(userId: string, companyRecipientId: string): Promise<string[]> {
+  const { data: links } = await supabase
+    .from('email_company_links')
+    .select('email')
+    .eq('user_id', userId)
+    .eq('type', 'ndf')
+    .eq('company_recipient_id', companyRecipientId);
+
+  return normalizeRecipientList((links || []).map((link) => String(link.email || '')).join(', '));
+}
+
+async function resolveCompanyForNdf(
+  userId: string,
+  companyName: string,
+  companyDestination: string,
+  fallbackCompanyRecipientId: string | null
+): Promise<{ id: string; name: string; destination: string } | null> {
+  if (companyName) {
+    let query = supabase
+      .from('expense_recipients')
+      .select('id, name, destination')
+      .eq('user_id', userId)
+      .eq('name', companyName)
+      .limit(1);
+
+    if (companyDestination) {
+      query = query.eq('destination', companyDestination);
+    }
+
+    const { data: rows } = await query;
+    if (rows && rows.length > 0) {
+      return rows[0];
+    }
+  }
+
+  if (fallbackCompanyRecipientId) {
+    const { data: companyRow } = await supabase
+      .from('expense_recipients')
+      .select('id, name, destination')
+      .eq('id', fallbackCompanyRecipientId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    return companyRow || null;
+  }
+
+  return null;
 }
 
 function normalizeRecipientList(raw: string): string[] {

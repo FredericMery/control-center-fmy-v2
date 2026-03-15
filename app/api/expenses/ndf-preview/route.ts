@@ -27,12 +27,16 @@ export async function POST(request: NextRequest) {
       year?: number;
       email?: string;
       expenseIds?: string[];
+      companyName?: string;
+      companyDestination?: string;
     };
 
     const now = new Date();
     const month = Number(body.month || now.getMonth() + 1);
     const year = Number(body.year || now.getFullYear());
     const providedEmail = String(body.email || '').trim();
+    const providedCompanyName = String(body.companyName || '').trim();
+    const providedCompanyDestination = String(body.companyDestination || '').trim();
 
     if (!Number.isFinite(month) || month < 1 || month > 12 || !Number.isFinite(year) || year < 2000) {
       return NextResponse.json({ error: 'Mois/annee invalides' }, { status: 400 });
@@ -78,31 +82,27 @@ export async function POST(request: NextRequest) {
       { totalHt: 0, totalTax: 0, totalTtc: 0 }
     );
 
-    const { data: setting } = await supabase
-      .from('email_settings')
-      .select('email')
-      .eq('user_id', userId)
-      .eq('type', 'ndf')
-      .maybeSingle();
-
     const { data: ndfProfile } = await supabase
       .from('user_ndf_settings')
       .select('validator_first_name, validator_last_name, company_recipient_id')
       .eq('user_id', userId)
       .maybeSingle();
 
-    let company: { name: string; destination: string } | null = null;
-    if (ndfProfile?.company_recipient_id) {
-      const { data: companyRow } = await supabase
-        .from('expense_recipients')
-        .select('name, destination')
-        .eq('id', ndfProfile.company_recipient_id)
-        .eq('user_id', userId)
-        .maybeSingle();
-      company = companyRow || null;
-    }
+    const company = await resolveCompanyForNdf(
+      userId,
+      providedCompanyName,
+      providedCompanyDestination,
+      ndfProfile?.company_recipient_id || null
+    );
 
-    const toRecipients = normalizeRecipientList(providedEmail || String(setting?.email || '').trim());
+    const linkedRecipients = company?.id
+      ? await getCompanyLinkedNdfEmails(userId, company.id)
+      : [];
+
+    const fallbackRecipients = await getGlobalNdfEmails(userId);
+    const toRecipients = normalizeRecipientList(
+      providedEmail || linkedRecipients.join(', ') || fallbackRecipients.join(', ')
+    );
     const toEmail = toRecipients.join(', ');
 
     const subject = `Note de frais ${String(month).padStart(2, '0')}/${year}`;
@@ -141,6 +141,65 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : 'Erreur serveur';
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+async function getGlobalNdfEmails(userId: string): Promise<string[]> {
+  const { data: setting } = await supabase
+    .from('email_settings')
+    .select('email')
+    .eq('user_id', userId)
+    .eq('type', 'ndf')
+    .maybeSingle();
+
+  return normalizeRecipientList(String(setting?.email || '').trim());
+}
+
+async function getCompanyLinkedNdfEmails(userId: string, companyRecipientId: string): Promise<string[]> {
+  const { data: links } = await supabase
+    .from('email_company_links')
+    .select('email')
+    .eq('user_id', userId)
+    .eq('type', 'ndf')
+    .eq('company_recipient_id', companyRecipientId);
+
+  return normalizeRecipientList((links || []).map((link) => String(link.email || '')).join(', '));
+}
+
+async function resolveCompanyForNdf(
+  userId: string,
+  companyName: string,
+  companyDestination: string,
+  fallbackCompanyRecipientId: string | null
+): Promise<{ id: string; name: string; destination: string } | null> {
+  if (companyName) {
+    let query = supabase
+      .from('expense_recipients')
+      .select('id, name, destination')
+      .eq('user_id', userId)
+      .eq('name', companyName)
+      .limit(1);
+
+    if (companyDestination) {
+      query = query.eq('destination', companyDestination);
+    }
+
+    const { data: rows } = await query;
+    if (rows && rows.length > 0) {
+      return rows[0];
+    }
+  }
+
+  if (fallbackCompanyRecipientId) {
+    const { data: companyRow } = await supabase
+      .from('expense_recipients')
+      .select('id, name, destination')
+      .eq('id', fallbackCompanyRecipientId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    return companyRow || null;
+  }
+
+  return null;
 }
 
 function getMonthRange(year: number, month: number) {

@@ -109,6 +109,17 @@ export default function ExpensesListPage() {
     return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
   }, [report]);
 
+  const selectedCompanyDestination = useMemo(() => {
+    if (selectedRecipient === 'all') return '';
+    const row = (report?.rows || []).find(
+      (item) =>
+        (item.recipient_name || '').trim() === selectedRecipient &&
+        String(item.recipient_destination || '').trim()
+    );
+
+    return String(row?.recipient_destination || '').trim();
+  }, [report, selectedRecipient]);
+
   const filteredRows = useMemo(() => {
     const rows = report?.rows || [];
     return rows.filter((row) => {
@@ -214,6 +225,8 @@ export default function ExpensesListPage() {
           year: selectedYear,
           email: emailOverride ?? ndfToEmail,
           expenseIds,
+          companyName: selectedRecipient === 'all' ? '' : selectedRecipient,
+          companyDestination: selectedCompanyDestination,
         }),
       });
 
@@ -297,6 +310,8 @@ export default function ExpensesListPage() {
           bodyText: ndfBody,
           expenseIds: selectedNdfExpenseIds,
           reimbursedFullName,
+          companyName: selectedRecipient === 'all' ? '' : selectedRecipient,
+          companyDestination: selectedCompanyDestination,
         }),
       });
 
