@@ -110,6 +110,17 @@ export default function DashboardLayout({
               >
                 {t('nav.settings')}
               </Link>
+
+              <Link
+                href="/dashboard/agenda"
+                className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
+                  pathname.startsWith("/dashboard/agenda")
+                    ? "bg-cyan-500/20 text-cyan-100"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                Agenda
+              </Link>
             </nav>
 
             {pathname !== "/dashboard" && (
