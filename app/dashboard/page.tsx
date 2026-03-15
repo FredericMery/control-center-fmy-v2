@@ -288,6 +288,7 @@ export default function DashboardPage() {
     if (moduleId === 'pro') return { value: proTodoCount, label: t('dashboard.proToLaunch') };
     if (moduleId === 'perso') return { value: persoTodoCount, label: t('dashboard.persoToLaunch') };
     if (moduleId === 'memoire') return { value: activeMemoryCount, label: t('dashboard.activeMemories') };
+    if (moduleId === 'planning') return { value: 'IA', label: 'Planification intelligente' };
     return { value: visionCountMonth, label: t('dashboard.visionCalls', { month: monthName }) };
   };
 
@@ -902,6 +903,15 @@ export default function DashboardPage() {
                       className="inline-flex min-h-9 items-center rounded-lg bg-amber-400 px-2.5 py-1.5 text-[11px] font-semibold text-slate-950 transition hover:bg-amber-300 sm:px-3 sm:text-xs"
                     >
                       {t('dashboard.capture')}
+                    </Link>
+                  )}
+
+                  {card.id === 'planning' && (
+                    <Link
+                      href="/dashboard/agenda/assistant"
+                      className="inline-flex min-h-9 items-center rounded-lg bg-teal-400 px-2.5 py-1.5 text-[11px] font-semibold text-slate-950 transition hover:bg-teal-300 sm:px-3 sm:text-xs"
+                    >
+                      Ouvrir
                     </Link>
                   )}
                 </div>
