@@ -11,7 +11,7 @@ const supabase = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const DEFAULT_TASK_INBOUND_ADDRESS = 'taskpro@mail.meetsync-ai.com';
-const DEFAULT_AGENDA_INBOUND_ADDRESS = 'agend@mail.meetsync-ai.com';
+const DEFAULT_AGENDA_INBOUND_ADDRESS = 'agenda@mail.meetsync-ai.com';
 
 export async function POST(request: NextRequest) {
   try {
