@@ -11,6 +11,7 @@ const supabase = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const DEFAULT_TASK_INBOUND_ADDRESS = 'taskpro@mail.meetsync-ai.com';
+const DEFAULT_AGENDA_INBOUND_ADDRESS = 'agend@mail.meetsync-ai.com';
 
 export async function POST(request: NextRequest) {
   try {
@@ -35,8 +36,13 @@ export async function POST(request: NextRequest) {
 
     const eventData = normalizeEventData(payload as Record<string, unknown>);
 
-    const inboundAddress = String(
+    const taskInboundAddress = String(
       process.env.RESEND_TASK_INBOUND_ADDRESS || DEFAULT_TASK_INBOUND_ADDRESS
+    )
+      .trim()
+      .toLowerCase();
+    const agendaInboundAddress = String(
+      process.env.RESEND_AGENDA_INBOUND_ADDRESS || DEFAULT_AGENDA_INBOUND_ADDRESS
     )
       .trim()
       .toLowerCase();
@@ -47,12 +53,14 @@ export async function POST(request: NextRequest) {
       ...extractEmailList(eventData.bcc),
     ];
 
-    const addressedToTaskInbox = recipientEmails.some((email) => email === inboundAddress);
-    if (!addressedToTaskInbox) {
+    const addressedToTaskInbox = recipientEmails.some((email) => email === taskInboundAddress);
+    const addressedToAgendaInbox = recipientEmails.some((email) => email === agendaInboundAddress);
+    if (!addressedToTaskInbox && !addressedToAgendaInbox) {
       return NextResponse.json({
         ok: true,
-        skipped: 'not-task-inbox',
-        expectedInboundAddress: inboundAddress,
+        skipped: 'not-supported-inbox',
+        expectedTaskInboundAddress: taskInboundAddress,
+        expectedAgendaInboundAddress: agendaInboundAddress,
         receivedRecipients: recipientEmails,
       });
     }
@@ -75,6 +83,26 @@ export async function POST(request: NextRequest) {
     });
     const userId = userMatch?.id || null;
     if (!userId) {
+      if (addressedToAgendaInbox) {
+        await createInboundCalendarLog({
+          userId: null,
+          inboxAddress: agendaInboundAddress,
+          senderEmail,
+          subject,
+          eventUid: null,
+          status: 'skipped',
+          message: 'Utilisateur introuvable pour invitation agenda',
+          payload: eventData,
+        });
+
+        return NextResponse.json({
+          ok: true,
+          skipped: 'unknown-sender-agenda-invite',
+          senderEmail,
+          expectedAgendaInboundAddress: agendaInboundAddress,
+        });
+      }
+
       const titleForPending = buildTaskTitle(subject, bodyForAi);
       const fallbackDeadline = resolveTaskDeadline(null, eventData.date || eventData.created_at);
       const senderName = extractSenderName(eventData.from);
@@ -125,7 +153,57 @@ export async function POST(request: NextRequest) {
         ok: true,
         skipped: 'unknown-sender-guidance-sent',
         senderEmail,
-        expectedInboundAddress: inboundAddress,
+        expectedTaskInboundAddress: taskInboundAddress,
+        expectedAgendaInboundAddress: agendaInboundAddress,
+      });
+    }
+
+    if (addressedToAgendaInbox) {
+      const calendarUpsert = await upsertAgendaEventFromInboundEmail({
+        userId,
+        eventData,
+        senderEmail,
+      });
+
+      if (!calendarUpsert.ok) {
+        await createInboundCalendarLog({
+          userId,
+          inboxAddress: agendaInboundAddress,
+          senderEmail,
+          subject,
+          eventUid: null,
+          status: 'error',
+          message: calendarUpsert.error,
+          payload: eventData,
+        });
+
+        return NextResponse.json(
+          {
+            error: 'Invitation agenda non exploitable',
+            details: calendarUpsert.error,
+          },
+          { status: 422 }
+        );
+      }
+
+      await createInboundCalendarLog({
+        userId,
+        inboxAddress: agendaInboundAddress,
+        senderEmail,
+        subject,
+        eventUid: String(calendarUpsert.event?.source_event_id || ''),
+        status: 'processed',
+        message: 'Invitation agenda importee',
+        payload: eventData,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        calendarEvent: calendarUpsert.event,
+        matchedUser: {
+          score: userMatch?.score || null,
+          reason: userMatch?.reason || null,
+        },
       });
     }
 
@@ -177,6 +255,337 @@ export async function POST(request: NextRequest) {
     console.error('resend inbound webhook error', error);
     return NextResponse.json({ error: 'Erreur serveur webhook' }, { status: 500 });
   }
+}
+
+async function createInboundCalendarLog(args: {
+  userId: string | null;
+  inboxAddress: string;
+  senderEmail: string | null;
+  subject: string;
+  eventUid: string | null;
+  status: 'processed' | 'skipped' | 'error';
+  message: string;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    await supabase.from('inbound_calendar_logs').insert({
+      user_id: args.userId,
+      inbox_address: args.inboxAddress,
+      sender_email: args.senderEmail,
+      subject: truncate(args.subject || '', 500) || null,
+      event_uid: truncate(args.eventUid || '', 255) || null,
+      status: args.status,
+      message: truncate(args.message || '', 1000) || null,
+      payload: args.payload,
+    });
+  } catch (error) {
+    console.error('create inbound calendar log failed', error);
+  }
+}
+
+async function upsertAgendaEventFromInboundEmail(args: {
+  userId: string;
+  eventData: Record<string, unknown>;
+  senderEmail: string;
+}): Promise<{ ok: true; event: Record<string, unknown> } | { ok: false; error: string }> {
+  const icsText = extractIcsTextFromInboundPayload(args.eventData);
+  if (!icsText) {
+    return { ok: false, error: 'Aucun contenu ICS detecte' };
+  }
+
+  const parsed = parseFirstIcsEvent(icsText);
+  if (!parsed) {
+    return { ok: false, error: 'Impossible de parser VEVENT' };
+  }
+
+  if (!parsed.startAt || !parsed.endAt) {
+    return { ok: false, error: 'Horaires manquants dans le VEVENT' };
+  }
+
+  const sourceEventId = parsed.uid || `mail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const payload = {
+    user_id: args.userId,
+    source_id: null,
+    source_provider: 'manual',
+    source_event_id: sourceEventId,
+    title: truncate(parsed.title || 'Rendez-vous pro', 220),
+    description: parsed.description || null,
+    location: parsed.location || null,
+    start_at: parsed.startAt,
+    end_at: parsed.endAt,
+    timezone: parsed.timezone || 'Europe/Paris',
+    all_day: parsed.allDay,
+    status: parsed.status,
+    organizer_email: parsed.organizerEmail || args.senderEmail,
+    attendees: parsed.attendees,
+    category: 'pro',
+    event_type: 'reunion',
+    priority: 3,
+    is_read_only: false,
+    is_blocking: true,
+    created_by_ai: false,
+    ai_context: {},
+    raw_payload: args.eventData,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('calendar_events')
+    .upsert(payload, {
+      onConflict: 'source_provider,source_event_id,user_id',
+    })
+    .select('id,title,start_at,end_at,status,source_provider,source_event_id')
+    .single();
+
+  if (error) {
+    console.error('agenda inbound -> upsert calendar event failed', error);
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true, event: (data || {}) as Record<string, unknown> };
+}
+
+function extractIcsTextFromInboundPayload(eventData: Record<string, unknown>): string | null {
+  const directFields: unknown[] = [
+    eventData['text'],
+    eventData['text_body'],
+    eventData['html'],
+    eventData['raw'],
+    eventData['raw_text'],
+  ];
+
+  for (const field of directFields) {
+    const text = normalizeTextOrEmpty(field);
+    if (text.includes('BEGIN:VCALENDAR') && text.includes('BEGIN:VEVENT')) {
+      return text;
+    }
+  }
+
+  const attachments = Array.isArray(eventData['attachments']) ? eventData['attachments'] : [];
+  for (const attachment of attachments) {
+    if (!attachment || typeof attachment !== 'object') continue;
+    const record = attachment as Record<string, unknown>;
+    const fileName = String(record['filename'] || record['name'] || '').toLowerCase();
+    const contentType = String(
+      record['content_type'] || record['contentType'] || record['type'] || ''
+    ).toLowerCase();
+
+    const isIcsAttachment =
+      fileName.endsWith('.ics') ||
+      contentType.includes('text/calendar') ||
+      contentType.includes('application/ics');
+
+    if (!isIcsAttachment) continue;
+
+    const rawContent = record['content'] ?? record['data'] ?? record['raw'] ?? '';
+    const plain = normalizeTextOrEmpty(rawContent);
+    if (plain.includes('BEGIN:VCALENDAR') && plain.includes('BEGIN:VEVENT')) {
+      return plain;
+    }
+
+    const maybeDecoded = decodeBase64ToText(String(rawContent || ''));
+    if (maybeDecoded.includes('BEGIN:VCALENDAR') && maybeDecoded.includes('BEGIN:VEVENT')) {
+      return maybeDecoded;
+    }
+  }
+
+  return null;
+}
+
+type ParsedIcsEvent = {
+  uid: string;
+  title: string;
+  description: string;
+  location: string;
+  startAt: string | null;
+  endAt: string | null;
+  timezone: string | null;
+  allDay: boolean;
+  status: 'confirmed' | 'tentative' | 'cancelled';
+  organizerEmail: string | null;
+  attendees: Array<{ email?: string; name?: string; response?: string }>;
+};
+
+function parseFirstIcsEvent(icsText: string): ParsedIcsEvent | null {
+  const unfoldedLines = unfoldIcsLines(icsText);
+  const startIndex = unfoldedLines.findIndex((line) => line.toUpperCase() === 'BEGIN:VEVENT');
+  if (startIndex === -1) return null;
+
+  const endIndex = unfoldedLines.findIndex(
+    (line, index) => index > startIndex && line.toUpperCase() === 'END:VEVENT'
+  );
+  if (endIndex === -1) return null;
+
+  const eventLines = unfoldedLines.slice(startIndex + 1, endIndex);
+  const props: Record<string, Array<{ value: string; params: Record<string, string> }>> = {};
+
+  for (const line of eventLines) {
+    const parsed = parseIcsLine(line);
+    if (!parsed) continue;
+    const key = parsed.key.toUpperCase();
+    if (!props[key]) props[key] = [];
+    props[key].push({ value: parsed.value, params: parsed.params });
+  }
+
+  const dtStart = props['DTSTART']?.[0];
+  const dtEnd = props['DTEND']?.[0];
+
+  const start = parseIcsDateValue(dtStart?.value || '', dtStart?.params || {});
+  const end = parseIcsDateValue(dtEnd?.value || '', dtEnd?.params || {});
+
+  let endAt = end.iso;
+  if (!endAt && start.iso) {
+    const fallbackEnd = new Date(start.iso);
+    fallbackEnd.setMinutes(fallbackEnd.getMinutes() + 60);
+    endAt = fallbackEnd.toISOString();
+  }
+
+  const attendees = (props['ATTENDEE'] || []).map((entry) => {
+    const email = extractMailto(entry.value);
+    const name = normalizeText(entry.params['CN']);
+    const response = normalizeText(entry.params['PARTSTAT']);
+    return {
+      email: email || undefined,
+      name: name || undefined,
+      response: response || undefined,
+    };
+  });
+
+  const statusRaw = normalizeText(props['STATUS']?.[0]?.value).toUpperCase();
+  const status: 'confirmed' | 'tentative' | 'cancelled' =
+    statusRaw === 'CANCELLED'
+      ? 'cancelled'
+      : statusRaw === 'TENTATIVE'
+        ? 'tentative'
+        : 'confirmed';
+
+  return {
+    uid: normalizeText(props['UID']?.[0]?.value),
+    title: normalizeText(props['SUMMARY']?.[0]?.value),
+    description: normalizeText(props['DESCRIPTION']?.[0]?.value).replace(/\\n/g, '\n'),
+    location: normalizeText(props['LOCATION']?.[0]?.value),
+    startAt: start.iso,
+    endAt,
+    timezone: start.timezone || null,
+    allDay: start.allDay,
+    status,
+    organizerEmail: extractMailto(props['ORGANIZER']?.[0]?.value || ''),
+    attendees,
+  };
+}
+
+function parseIcsLine(line: string): { key: string; params: Record<string, string>; value: string } | null {
+  const separator = line.indexOf(':');
+  if (separator <= 0) return null;
+
+  const left = line.slice(0, separator);
+  const value = line.slice(separator + 1);
+  const [rawKey, ...paramParts] = left.split(';');
+  const key = normalizeText(rawKey).toUpperCase();
+  if (!key) return null;
+
+  const params: Record<string, string> = {};
+  for (const part of paramParts) {
+    const eq = part.indexOf('=');
+    if (eq <= 0) continue;
+    const pKey = part.slice(0, eq).toUpperCase().trim();
+    const pValue = part.slice(eq + 1).trim();
+    if (pKey) params[pKey] = pValue;
+  }
+
+  return { key, params, value };
+}
+
+function unfoldIcsLines(content: string): string[] {
+  const normalized = String(content || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+  const unfolded: string[] = [];
+
+  for (const line of lines) {
+    if (!line) continue;
+    if ((line.startsWith(' ') || line.startsWith('\t')) && unfolded.length > 0) {
+      unfolded[unfolded.length - 1] += line.slice(1);
+      continue;
+    }
+    unfolded.push(line);
+  }
+
+  return unfolded;
+}
+
+function parseIcsDateValue(value: string, params: Record<string, string>): {
+  iso: string | null;
+  timezone: string | null;
+  allDay: boolean;
+} {
+  const raw = normalizeText(value);
+  if (!raw) return { iso: null, timezone: null, allDay: false };
+
+  const timezone = normalizeText(params['TZID']) || null;
+
+  if (/^\d{8}$/.test(raw)) {
+    const year = Number(raw.slice(0, 4));
+    const month = Number(raw.slice(4, 6));
+    const day = Number(raw.slice(6, 8));
+    const iso = new Date(Date.UTC(year, month - 1, day, 0, 0, 0)).toISOString();
+    return { iso, timezone, allDay: true };
+  }
+
+  const match = raw.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z)?$/);
+  if (!match) {
+    return { iso: null, timezone, allDay: false };
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6] || '0');
+  const isUtc = Boolean(match[7]);
+
+  const timestamp = isUtc
+    ? Date.UTC(year, month - 1, day, hour, minute, second)
+    : Date.UTC(year, month - 1, day, hour, minute, second);
+  return { iso: new Date(timestamp).toISOString(), timezone, allDay: false };
+}
+
+function decodeBase64ToText(value: string): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    return Buffer.from(raw, 'base64').toString('utf8');
+  } catch {
+    return '';
+  }
+}
+
+function normalizeTextOrEmpty(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (!value) return '';
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '';
+    }
+  }
+  return String(value);
+}
+
+function extractMailto(value: string): string | null {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const mailtoMatch = raw.match(/mailto:([^;\s]+)/i);
+  if (mailtoMatch?.[1]) {
+    return normalizeEmail(mailtoMatch[1]);
+  }
+
+  return extractSingleEmail(raw);
 }
 
 function isWebhookAuthorized(request: NextRequest, rawBody: string): boolean {

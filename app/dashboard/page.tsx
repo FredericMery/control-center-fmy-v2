@@ -908,10 +908,10 @@ export default function DashboardPage() {
 
                   {card.id === 'planning' && (
                     <Link
-                      href="/dashboard/agenda/assistant"
+                      href="/dashboard/agenda/pro"
                       className="inline-flex min-h-9 items-center rounded-lg bg-teal-400 px-2.5 py-1.5 text-[11px] font-semibold text-slate-950 transition hover:bg-teal-300 sm:px-3 sm:text-xs"
                     >
-                      Ouvrir
+                      Choisir RDV
                     </Link>
                   )}
                 </div>

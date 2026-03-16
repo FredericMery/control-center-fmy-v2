@@ -16,13 +16,25 @@ type SourceRow = {
   last_sync_error?: string | null;
 };
 
+type InboundCalendarLog = {
+  id: string;
+  sender_email: string | null;
+  subject: string | null;
+  event_uid: string | null;
+  status: 'processed' | 'skipped' | 'error';
+  message: string | null;
+  created_at: string;
+};
+
 export default function CalendarSettingsPage() {
   const searchParams = useSearchParams();
   const user = useAuthStore((s) => s.user);
 
   const [email, setEmail] = useState('');
   const [sources, setSources] = useState<SourceRow[]>([]);
+  const [inboundLogs, setInboundLogs] = useState<InboundCalendarLog[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
+  const [loadingInboundLogs, setLoadingInboundLogs] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [activeSourceActionId, setActiveSourceActionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,8 +89,29 @@ export default function CalendarSettingsPage() {
     }
   };
 
+  const loadInboundLogs = async () => {
+    setLoadingInboundLogs(true);
+    try {
+      const response = await fetch('/api/calendar/inbound/logs', {
+        headers: await getAuthHeaders(false),
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        throw new Error(json?.error || 'Impossible de charger les logs inbound');
+      }
+
+      setInboundLogs((json.logs || []) as InboundCalendarLog[]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur inconnue');
+      setInboundLogs([]);
+    } finally {
+      setLoadingInboundLogs(false);
+    }
+  };
+
   useEffect(() => {
     loadSources();
+    loadInboundLogs();
   }, []);
 
   const connectMicrosoft = async () => {
@@ -129,6 +162,7 @@ export default function CalendarSettingsPage() {
 
       setSuccessMessage(`Synchronisation terminee (${Number(json?.synced || 0)} element(s)).`);
       await loadSources();
+      await loadInboundLogs();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
@@ -153,6 +187,7 @@ export default function CalendarSettingsPage() {
 
       setSuccessMessage('Source Microsoft deconnectee.');
       await loadSources();
+      await loadInboundLogs();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
@@ -266,6 +301,42 @@ export default function CalendarSettingsPage() {
                     Deconnecter
                   </button>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-white">Derniers imports email agenda</h2>
+          <button
+            onClick={loadInboundLogs}
+            disabled={loadingInboundLogs}
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
+          >
+            {loadingInboundLogs ? 'Chargement...' : 'Rafraichir'}
+          </button>
+        </div>
+
+        {loadingInboundLogs ? (
+          <p className="text-sm text-slate-400">Chargement des logs...</p>
+        ) : inboundLogs.length === 0 ? (
+          <p className="text-sm text-slate-400">Aucun log inbound pour le moment.</p>
+        ) : (
+          <div className="space-y-2">
+            {inboundLogs.map((log) => (
+              <div key={log.id} className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-slate-300">
+                    {new Date(log.created_at).toLocaleString('fr-FR')}
+                  </p>
+                  <p className="text-[11px] uppercase tracking-wide text-cyan-200">{log.status}</p>
+                </div>
+                <p className="text-sm text-white">{log.subject || '(sans objet)'}</p>
+                <p className="text-xs text-slate-400">Expediteur: {log.sender_email || 'inconnu'}</p>
+                {log.event_uid && <p className="text-xs text-slate-400">UID: {log.event_uid}</p>}
+                {log.message && <p className="text-xs text-amber-300">{log.message}</p>}
               </div>
             ))}
           </div>
