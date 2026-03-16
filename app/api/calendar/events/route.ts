@@ -25,12 +25,28 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const startAt = searchParams.get('startAt');
     const endAt = searchParams.get('endAt');
+    const category = searchParams.get('category') || undefined;
+    const sourceProviders = (searchParams.get('sourceProviders') || '')
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean);
+    const statuses = (searchParams.get('statuses') || '')
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean);
 
     if (!startAt || !endAt) {
       return NextResponse.json({ error: 'startAt and endAt are required' }, { status: 400 });
     }
 
-    const events = await listCalendarEvents({ userId, startAt, endAt });
+    const events = await listCalendarEvents({
+      userId,
+      startAt,
+      endAt,
+      category,
+      sourceProviders,
+      status: statuses,
+    });
     return NextResponse.json({ events });
   } catch (error) {
     return NextResponse.json(

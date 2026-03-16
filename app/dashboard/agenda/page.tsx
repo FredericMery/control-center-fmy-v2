@@ -28,6 +28,12 @@ export default function AgendaPage() {
 
         <div className="flex items-center gap-2">
           <Link
+            href="/dashboard/agenda/pro"
+            className="rounded-xl border border-emerald-300/30 bg-emerald-400/15 px-4 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/25"
+          >
+            Vue pro
+          </Link>
+          <Link
             href="/dashboard/agenda/assistant"
             className="rounded-xl border border-cyan-300/30 bg-cyan-400/15 px-4 py-2 text-sm font-medium text-cyan-100 transition hover:bg-cyan-400/25"
           >

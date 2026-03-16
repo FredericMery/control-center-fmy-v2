@@ -34,7 +34,11 @@ function getAuthorizeUrl() {
   return `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize`;
 }
 
-export function getMicrosoftAuthUrl(args: { state: string; prompt?: 'select_account' | 'consent' }) {
+export function getMicrosoftAuthUrl(args: {
+  state: string;
+  prompt?: 'select_account' | 'consent';
+  loginHint?: string;
+}) {
   const { clientId, redirectUri } = getMicrosoftConfig();
   const params = new URLSearchParams({
     client_id: clientId,
@@ -46,6 +50,7 @@ export function getMicrosoftAuthUrl(args: { state: string; prompt?: 'select_acco
   });
 
   if (args.prompt) params.set('prompt', args.prompt);
+  if (args.loginHint) params.set('login_hint', args.loginHint);
   return `${getAuthorizeUrl()}?${params.toString()}`;
 }
 

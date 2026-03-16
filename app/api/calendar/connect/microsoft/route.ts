@@ -24,9 +24,15 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const redirectPath = searchParams.get('redirectPath') || '/dashboard/agenda/connecteurs';
+    const loginHintRaw = (searchParams.get('loginHint') || '').trim();
+    const loginHint = loginHintRaw.includes('@') ? loginHintRaw.slice(0, 255) : undefined;
     const state = Buffer.from(JSON.stringify({ userId, redirectPath })).toString('base64url');
 
-    const authorizationUrl = getMicrosoftAuthUrl({ state, prompt: 'select_account' });
+    const authorizationUrl = getMicrosoftAuthUrl({
+      state,
+      prompt: 'select_account',
+      loginHint,
+    });
     return NextResponse.json({ authorizationUrl });
   } catch (error) {
     return NextResponse.json(

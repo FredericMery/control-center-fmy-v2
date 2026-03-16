@@ -843,6 +843,13 @@ export default function SettingsPage() {
                     🔔 {t("settings.notifications")}
                   </button>
 
+                  <button
+                    onClick={() => router.push('/dashboard/settings/calendar')}
+                    className="min-h-11 rounded-xl bg-teal-400 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-teal-300"
+                  >
+                    Calendrier pro
+                  </button>
+
                   <a
                     href="/docs/notice-utilisation-control-center.pdf"
                     target="_blank"
