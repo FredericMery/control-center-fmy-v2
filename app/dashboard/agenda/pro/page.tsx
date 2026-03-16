@@ -79,6 +79,24 @@ export default function AgendaProPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Link href="/dashboard/agenda" className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
+          Agenda
+        </Link>
+        <Link href="/dashboard/agenda/pro" className="rounded-lg border border-emerald-300/30 bg-emerald-500/25 px-3 py-1.5 text-xs text-emerald-100">
+          Vue pro
+        </Link>
+        <Link href="/dashboard/agenda/assistant" className="rounded-lg border border-cyan-300/30 bg-cyan-400/15 px-3 py-1.5 text-xs text-cyan-100 hover:bg-cyan-400/25">
+          Assistant
+        </Link>
+        <Link href="/dashboard/agenda/connecteurs" className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
+          Connecteurs
+        </Link>
+        <Link href="/dashboard/agenda/preferences" className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
+          Preferences
+        </Link>
+      </div>
+
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-white">Rendez-vous pro</h1>

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from 'react';
+import Link from 'next/link';
 import { useAgendaStore } from '@/store/agendaStore';
 
 export default function AgendaAssistantPage() {
@@ -14,6 +15,24 @@ export default function AgendaAssistantPage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6">
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Link href="/dashboard/agenda" className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
+          Agenda
+        </Link>
+        <Link href="/dashboard/agenda/pro" className="rounded-lg border border-emerald-300/30 bg-emerald-400/15 px-3 py-1.5 text-xs text-emerald-100 hover:bg-emerald-400/25">
+          Vue pro
+        </Link>
+        <Link href="/dashboard/agenda/assistant" className="rounded-lg border border-cyan-300/30 bg-cyan-500/25 px-3 py-1.5 text-xs text-cyan-100">
+          Assistant
+        </Link>
+        <Link href="/dashboard/agenda/connecteurs" className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
+          Connecteurs
+        </Link>
+        <Link href="/dashboard/agenda/preferences" className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
+          Preferences
+        </Link>
+      </div>
+
       <h1 className="text-2xl font-semibold text-white">Assistant de planification</h1>
       <p className="mt-1 text-sm text-slate-300">Decrivez votre besoin et l&apos;IA propose les meilleurs creneaux.</p>
 

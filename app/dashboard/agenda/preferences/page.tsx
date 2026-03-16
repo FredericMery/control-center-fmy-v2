@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { useAgendaStore } from '@/store/agendaStore';
 
 export default function AgendaPreferencesPage() {
@@ -35,6 +36,24 @@ export default function AgendaPreferencesPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Link href="/dashboard/agenda" className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
+          Agenda
+        </Link>
+        <Link href="/dashboard/agenda/pro" className="rounded-lg border border-emerald-300/30 bg-emerald-400/15 px-3 py-1.5 text-xs text-emerald-100 hover:bg-emerald-400/25">
+          Vue pro
+        </Link>
+        <Link href="/dashboard/agenda/assistant" className="rounded-lg border border-cyan-300/30 bg-cyan-400/15 px-3 py-1.5 text-xs text-cyan-100 hover:bg-cyan-400/25">
+          Assistant
+        </Link>
+        <Link href="/dashboard/agenda/connecteurs" className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
+          Connecteurs
+        </Link>
+        <Link href="/dashboard/agenda/preferences" className="rounded-lg border border-white/20 bg-slate-800 px-3 py-1.5 text-xs text-white">
+          Preferences
+        </Link>
+      </div>
+
       <h1 className="text-2xl font-semibold text-white">Preferences de planification</h1>
       <p className="mt-1 text-sm text-slate-300">Definissez vos regles de disponibilite.</p>
 
