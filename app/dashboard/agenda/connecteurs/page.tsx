@@ -1,23 +1,61 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAgendaStore } from '@/store/agendaStore';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 
 export default function AgendaConnecteursPage() {
   const { loading, error, sources, loadSources, syncSource } = useAgendaStore();
+  const [isConnectingMicrosoft, setIsConnectingMicrosoft] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+
+  const oauthErrorMessage = useMemo(() => {
+    const oauthError = searchParams.get('error');
+    if (!oauthError) return null;
+
+    switch (oauthError) {
+      case 'oauth_denied':
+        return 'Connexion Microsoft annulee.';
+      case 'oauth_invalid':
+        return 'Reponse OAuth invalide.';
+      case 'oauth_state':
+        return 'Session OAuth invalide ou expiree. Reessayez.';
+      case 'oauth_callback':
+        return 'Echec du callback Microsoft. Verifiez la configuration OAuth.';
+      default:
+        return 'Erreur de connexion Microsoft.';
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     loadSources();
   }, [loadSources]);
 
   const connectMicrosoft = async () => {
-    const response = await fetch('/api/calendar/connect/microsoft', {
-      headers: await getAuthHeaders(false),
-    });
-    const json = await response.json();
-    if (response.ok && json.authorizationUrl) {
-      window.location.href = json.authorizationUrl;
+    setConnectError(null);
+    setIsConnectingMicrosoft(true);
+
+    try {
+      const response = await fetch('/api/calendar/connect/microsoft?redirectPath=/dashboard/agenda/connecteurs', {
+        headers: await getAuthHeaders(false),
+      });
+
+      const json = await response.json();
+      if (!response.ok) {
+        throw new Error(json?.error || 'Impossible de lancer la connexion Microsoft');
+      }
+
+      if (!json?.authorizationUrl) {
+        throw new Error('URL d\'autorisation Microsoft manquante');
+      }
+
+      window.location.assign(json.authorizationUrl);
+    } catch (err) {
+      setConnectError(err instanceof Error ? err.message : 'Erreur inconnue');
+    } finally {
+      setIsConnectingMicrosoft(false);
     }
   };
 
@@ -32,6 +70,12 @@ export default function AgendaConnecteursPage() {
         </div>
       )}
 
+      {(oauthErrorMessage || connectError) && (
+        <div className="mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+          {oauthErrorMessage || connectError}
+        </div>
+      )}
+
       <div className="mt-5 rounded-2xl border border-white/10 bg-slate-900/70 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -40,9 +84,10 @@ export default function AgendaConnecteursPage() {
           </div>
           <button
             onClick={connectMicrosoft}
+            disabled={isConnectingMicrosoft}
             className="rounded-xl border border-cyan-300/30 bg-cyan-400/15 px-4 py-2 text-sm font-medium text-cyan-100 transition hover:bg-cyan-400/25"
           >
-            Connecter Microsoft
+            {isConnectingMicrosoft ? 'Connexion...' : 'Connecter Microsoft'}
           </button>
         </div>
       </div>
