@@ -291,7 +291,7 @@ async function upsertAgendaEventFromInboundEmail(args: {
   eventData: Record<string, unknown>;
   senderEmail: string;
 }): Promise<{ ok: true; event: Record<string, unknown> } | { ok: false; error: string }> {
-  const icsText = extractIcsTextFromInboundPayload(args.eventData);
+  const icsText = await extractIcsTextFromInboundPayload(args.eventData);
   if (!icsText) {
     return { ok: false, error: 'Aucun contenu ICS detecte' };
   }
@@ -349,7 +349,9 @@ async function upsertAgendaEventFromInboundEmail(args: {
   return { ok: true, event: (data || {}) as Record<string, unknown> };
 }
 
-function extractIcsTextFromInboundPayload(eventData: Record<string, unknown>): string | null {
+async function extractIcsTextFromInboundPayload(
+  eventData: Record<string, unknown>
+): Promise<string | null> {
   const directFields: unknown[] = [
     eventData['text'],
     eventData['text_body'],
@@ -393,7 +395,95 @@ function extractIcsTextFromInboundPayload(eventData: Record<string, unknown>): s
     }
   }
 
+  const resendFallback = await extractIcsTextViaResendReceiving(eventData);
+  if (resendFallback) {
+    return resendFallback;
+  }
+
   return null;
+}
+
+async function extractIcsTextViaResendReceiving(
+  eventData: Record<string, unknown>
+): Promise<string | null> {
+  if (!process.env.RESEND_API_KEY) return null;
+
+  const emailId = normalizeText(eventData['email_id'] || eventData['id']);
+  if (!emailId) return null;
+
+  try {
+    const received = await resend.emails.receiving.get(emailId);
+    const receiveData = (received as { data?: Record<string, unknown> | null })?.data || null;
+
+    const fromText = normalizeTextOrEmpty(receiveData?.['text']);
+    if (fromText.includes('BEGIN:VCALENDAR') && fromText.includes('BEGIN:VEVENT')) {
+      return fromText;
+    }
+
+    const fromHtml = normalizeTextOrEmpty(receiveData?.['html']);
+    if (fromHtml.includes('BEGIN:VCALENDAR') && fromHtml.includes('BEGIN:VEVENT')) {
+      return fromHtml;
+    }
+
+    const rawDownloadUrl = normalizeText(
+      (receiveData?.['raw'] as Record<string, unknown> | null)?.['download_url']
+    );
+    if (rawDownloadUrl) {
+      const rawText = await downloadTextFromUrl(rawDownloadUrl);
+      if (rawText.includes('BEGIN:VCALENDAR') && rawText.includes('BEGIN:VEVENT')) {
+        return rawText;
+      }
+    }
+  } catch (error) {
+    console.warn('resend inbound -> receiving.get failed', { emailId, error });
+  }
+
+  try {
+    const listed = await resend.emails.receiving.attachments.list({ emailId });
+    const attachments =
+      ((listed as { data?: { data?: Array<Record<string, unknown>> } | null })?.data?.data || []);
+
+    for (const attachment of attachments) {
+      const fileName = normalizeText(attachment['filename']).toLowerCase();
+      const contentType = normalizeText(attachment['content_type']).toLowerCase();
+      const isIcsAttachment =
+        fileName.endsWith('.ics') ||
+        contentType.includes('text/calendar') ||
+        contentType.includes('application/ics');
+
+      if (!isIcsAttachment) continue;
+
+      const downloadUrl = normalizeText(attachment['download_url']);
+      if (!downloadUrl) continue;
+
+      const downloaded = await downloadTextFromUrl(downloadUrl);
+      if (downloaded.includes('BEGIN:VCALENDAR') && downloaded.includes('BEGIN:VEVENT')) {
+        return downloaded;
+      }
+    }
+  } catch (error) {
+    console.warn('resend inbound -> receiving.attachments.list failed', { emailId, error });
+  }
+
+  return null;
+}
+
+async function downloadTextFromUrl(url: string): Promise<string> {
+  const safeUrl = normalizeText(url);
+  if (!safeUrl) return '';
+
+  try {
+    const response = await fetch(safeUrl, {
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY || ''}`,
+      },
+      cache: 'no-store',
+    });
+    if (!response.ok) return '';
+    return await response.text();
+  } catch {
+    return '';
+  }
 }
 
 type ParsedIcsEvent = {
@@ -1010,7 +1100,7 @@ async function findUserMatchForInboundEmail(args: {
 async function findUserMatchForAgendaInvite(
   eventData: Record<string, unknown>
 ): Promise<InboundUserMatch | null> {
-  const icsText = extractIcsTextFromInboundPayload(eventData);
+  const icsText = await extractIcsTextFromInboundPayload(eventData);
   if (!icsText) return null;
 
   const parsed = parseFirstIcsEvent(icsText);
