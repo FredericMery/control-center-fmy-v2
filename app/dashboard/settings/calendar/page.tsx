@@ -447,6 +447,8 @@ export default function CalendarSettingsPage() {
       </div>
 
       <div className="mt-5 rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-white">Derniers imports email agenda</h2>
           <button
             onClick={loadInboundLogs}
             disabled={loadingInboundLogs}
