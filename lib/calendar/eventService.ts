@@ -7,6 +7,32 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+function sanitizeCalendarEventTitle(value: unknown): string {
+  const raw = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!raw) return '';
+
+  let title = raw;
+  for (let i = 0; i < 5; i += 1) {
+    const next = title.replace(/^\s*(re|fwd?|tr)\s*:\s*/i, '').trim();
+    if (next === title) break;
+    title = next;
+  }
+
+  const invitationMatch = title.match(/invitation\s+a\s+l[’']?evenement\s+suivant\s*[:\-]\s*(.+)$/i);
+  if (invitationMatch?.[1]) {
+    title = invitationMatch[1].trim();
+  }
+
+  const modifiedMatch = title.match(/l[’']?evenement\s+(.+?)\s+a\s+ete\s+modifie/i);
+  if (modifiedMatch?.[1]) {
+    title = modifiedMatch[1].trim();
+  }
+
+  return title.replace(/^[-:\s]+|[-:\s]+$/g, '').trim();
+}
+
 export async function upsertNormalizedEvents(events: NormalizedEvent[]): Promise<{
   created: number;
   updated: number;
@@ -54,7 +80,10 @@ export async function listCalendarEvents(args: {
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data || []) as CalendarEvent[];
+  return ((data || []) as CalendarEvent[]).map((event) => ({
+    ...event,
+    title: sanitizeCalendarEventTitle(event.title) || event.title,
+  }));
 }
 
 export async function createInternalEvent(userId: string, input: CalendarEventInput): Promise<CalendarEvent> {

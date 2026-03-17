@@ -6,6 +6,32 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+function sanitizeCalendarEventTitle(value: unknown): string {
+  const raw = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!raw) return '';
+
+  let title = raw;
+  for (let i = 0; i < 5; i += 1) {
+    const next = title.replace(/^\s*(re|fwd?|tr)\s*:\s*/i, '').trim();
+    if (next === title) break;
+    title = next;
+  }
+
+  const invitationMatch = title.match(/invitation\s+a\s+l[’']?evenement\s+suivant\s*[:\-]\s*(.+)$/i);
+  if (invitationMatch?.[1]) {
+    title = invitationMatch[1].trim();
+  }
+
+  const modifiedMatch = title.match(/l[’']?evenement\s+(.+?)\s+a\s+ete\s+modifie/i);
+  if (modifiedMatch?.[1]) {
+    title = modifiedMatch[1].trim();
+  }
+
+  return title.replace(/^[-:\s]+|[-:\s]+$/g, '').trim();
+}
+
 function toDate(value: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) throw new Error('Invalid date value');
@@ -67,7 +93,7 @@ export async function getBusyBlocks(userId: string, range: DateRange): Promise<B
     startAt: String(row.start_at),
     endAt: String(row.end_at),
     sourceEventId: String(row.id),
-    label: String(row.title || ''),
+    label: sanitizeCalendarEventTitle(row.title) || String(row.title || ''),
   }));
 }
 
