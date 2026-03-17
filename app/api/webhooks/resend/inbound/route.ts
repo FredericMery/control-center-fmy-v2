@@ -306,13 +306,15 @@ async function upsertAgendaEventFromInboundEmail(args: {
   }
 
   const sourceEventId = parsed.uid || `mail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const subjectFallback = normalizeText(args.eventData['subject']);
+  const cleanedTitle = cleanAgendaMeetingTitle(parsed.title || subjectFallback || 'Rendez-vous pro');
 
   const payload = {
     user_id: args.userId,
     source_id: null,
     source_provider: 'manual',
     source_event_id: sourceEventId,
-    title: truncate(parsed.title || 'Rendez-vous pro', 220),
+    title: truncate(cleanedTitle || 'Rendez-vous pro', 220),
     description: parsed.description || null,
     location: parsed.location || null,
     start_at: parsed.startAt,
@@ -866,6 +868,32 @@ function buildTaskTitle(subject: string, plainText: string): string {
   }
 
   return 'Tache depuis email';
+}
+
+function cleanAgendaMeetingTitle(value: string): string {
+  const raw = normalizeText(value);
+  if (!raw) return '';
+
+  // Remove mail thread prefixes (RE, FW, TR, etc.) repeatedly.
+  let title = raw;
+  for (let i = 0; i < 5; i += 1) {
+    const next = title.replace(/^\s*(re|fwd?|tr)\s*:\s*/i, '').trim();
+    if (next === title) break;
+    title = next;
+  }
+
+  // Outlook FR wrappers: "X vous a envoye une invitation a l'evenement suivant : Nom"
+  const invitationMatch = title.match(/invitation\s+a\s+l[’']?evenement\s+suivant\s*[:\-]\s*(.+)$/i);
+  if (invitationMatch?.[1]) {
+    title = invitationMatch[1].trim();
+  }
+
+  const modifiedMatch = title.match(/l[’']?evenement\s+(.+?)\s+a\s+ete\s+modifie/i);
+  if (modifiedMatch?.[1]) {
+    title = modifiedMatch[1].trim();
+  }
+
+  return title.replace(/^[-:\s]+|[-:\s]+$/g, '').trim();
 }
 
 type TaskEmailAnalysis = {
