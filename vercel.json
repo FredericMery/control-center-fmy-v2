@@ -3,10 +3,6 @@
     {
       "path": "/api/notifications/check-overdue",
       "schedule": "0 7 * * *"
-    },
-    {
-      "path": "/api/calendar/sync/microsoft?limit=150",
-      "schedule": "*/15 * * * *"
     }
   ]
 }
