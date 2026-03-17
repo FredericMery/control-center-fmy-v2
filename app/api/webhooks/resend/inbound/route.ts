@@ -81,7 +81,10 @@ export async function POST(request: NextRequest) {
       subject,
       body: bodyForAi,
     });
-    const userId = userMatch?.id || null;
+    const agendaInviteMatch = addressedToAgendaInbox
+      ? await findUserMatchForAgendaInvite(eventData)
+      : null;
+    const userId = userMatch?.id || agendaInviteMatch?.id || null;
     if (!userId) {
       if (addressedToAgendaInbox) {
         await createInboundCalendarLog({
@@ -1002,6 +1005,46 @@ async function findUserMatchForInboundEmail(args: {
   }
 
   return best;
+}
+
+async function findUserMatchForAgendaInvite(
+  eventData: Record<string, unknown>
+): Promise<InboundUserMatch | null> {
+  const icsText = extractIcsTextFromInboundPayload(eventData);
+  if (!icsText) return null;
+
+  const parsed = parseFirstIcsEvent(icsText);
+  if (!parsed) return null;
+
+  const attendeeEmails = Array.from(
+    new Set(
+      (parsed.attendees || [])
+        .map((attendee) => normalizeEmail(attendee.email))
+        .filter((email): email is string => Boolean(email))
+    )
+  );
+
+  for (const email of attendeeEmails) {
+    const aliasUserId = await findUserIdByAliasEmail(email);
+    if (aliasUserId) {
+      return {
+        id: aliasUserId,
+        score: 140,
+        reason: 'agenda-ics-attendee-alias',
+      };
+    }
+
+    const directUserId = await findUserIdByEmail(email);
+    if (directUserId) {
+      return {
+        id: directUserId,
+        score: 130,
+        reason: 'agenda-ics-attendee-email',
+      };
+    }
+  }
+
+  return null;
 }
 
 async function findPotentialUserForAliasReview(args: {
