@@ -17,6 +17,7 @@ type AgendaEvent = {
   end_at: string;
   source_provider: string;
   status: string;
+  planner_type?: 'pro' | 'perso';
 };
 
 type ProposalSlot = {

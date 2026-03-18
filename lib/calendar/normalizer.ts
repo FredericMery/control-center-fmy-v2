@@ -1,4 +1,5 @@
 import { NormalizedEvent } from '@/lib/calendar/types';
+import { zonedDateTimeToUtcIso } from '@/lib/calendar/timezone';
 
 function safeString(input: unknown): string {
   return String(input ?? '').trim();
@@ -9,8 +10,27 @@ function safeNullableString(input: unknown): string | null {
   return value ? value : null;
 }
 
-function toIsoString(input: unknown): string {
-  const date = new Date(String(input));
+function toIsoString(input: unknown, timezone?: string | null): string {
+  const raw = String(input ?? '').trim();
+  if (!raw) {
+    throw new Error('Invalid date in provider payload');
+  }
+
+  // If payload includes a floating datetime and a timezone, convert from that timezone to UTC.
+  const floatingMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (floatingMatch && timezone) {
+    const dayKey = `${floatingMatch[1]}-${floatingMatch[2]}-${floatingMatch[3]}`;
+    const hhmm = `${floatingMatch[4]}:${floatingMatch[5]}`;
+    const seconds = Number(floatingMatch[6] || '0');
+    const baseIso = zonedDateTimeToUtcIso(dayKey, hhmm, timezone);
+    const baseDate = new Date(baseIso);
+    if (!Number.isNaN(baseDate.getTime())) {
+      baseDate.setUTCSeconds(baseDate.getUTCSeconds() + seconds);
+      return baseDate.toISOString();
+    }
+  }
+
+  const date = new Date(raw);
   if (Number.isNaN(date.getTime())) {
     throw new Error('Invalid date in provider payload');
   }
@@ -63,14 +83,20 @@ export function normalizeProviderEvent(args: {
 }): NormalizedEvent {
   const { userId, sourceId, sourceProvider, sourceEventId, payload, defaults } = args;
 
-  const startAt = toIsoString(payload.start_at ?? (payload.start as Record<string, unknown> | undefined)?.dateTime ?? payload.start);
-  const endAt = toIsoString(payload.end_at ?? (payload.end as Record<string, unknown> | undefined)?.dateTime ?? payload.end);
-
   const timezone =
     safeNullableString(payload.timezone) ||
     safeNullableString((payload.start as Record<string, unknown> | undefined)?.timeZone) ||
     defaults?.timezone ||
     'Europe/Paris';
+
+  const startAt = toIsoString(
+    payload.start_at ?? (payload.start as Record<string, unknown> | undefined)?.dateTime ?? payload.start,
+    timezone
+  );
+  const endAt = toIsoString(
+    payload.end_at ?? (payload.end as Record<string, unknown> | undefined)?.dateTime ?? payload.end,
+    timezone
+  );
 
   const normalized: NormalizedEvent = {
     user_id: userId,

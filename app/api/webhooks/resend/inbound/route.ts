@@ -4,6 +4,7 @@ import { callOpenAi } from '@/lib/ai/client';
 import { createHmac, timingSafeEqual } from 'crypto';
 import PostalMime from 'postal-mime';
 import { Resend } from 'resend';
+import { zonedDateTimeToUtcIso } from '@/lib/calendar/timezone';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -702,10 +703,22 @@ function parseIcsDateValue(value: string, params: Record<string, string>): {
   const second = Number(match[6] || '0');
   const isUtc = Boolean(match[7]);
 
-  const timestamp = isUtc
-    ? Date.UTC(year, month - 1, day, hour, minute, second)
-    : Date.UTC(year, month - 1, day, hour, minute, second);
-  return { iso: new Date(timestamp).toISOString(), timezone, allDay: false };
+  if (isUtc) {
+    const timestamp = Date.UTC(year, month - 1, day, hour, minute, second);
+    return { iso: new Date(timestamp).toISOString(), timezone, allDay: false };
+  }
+
+  // Floating ICS times must be interpreted in event TZ (or default user TZ), then converted to UTC.
+  const tz = timezone || 'Europe/Paris';
+  const dayKey = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const hhmm = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  const baseIso = zonedDateTimeToUtcIso(dayKey, hhmm, tz);
+  const baseDate = new Date(baseIso);
+  if (Number.isNaN(baseDate.getTime())) {
+    return { iso: null, timezone: tz, allDay: false };
+  }
+  baseDate.setUTCSeconds(baseDate.getUTCSeconds() + second);
+  return { iso: baseDate.toISOString(), timezone: tz, allDay: false };
 }
 
 function decodeBase64ToText(value: string): string {

@@ -52,9 +52,11 @@ export async function GET(request: NextRequest) {
     const professionalEmails = await getProfessionalEmailsForUser(supabase, userId);
 
     const taggedEvents = events.map((event) => {
-      const computedPlannerType =
-        (event as { planner_type?: 'pro' | 'perso' | null }).planner_type ||
-        inferPlannerTypeFromOrganizer(event.organizer_email, professionalEmails);
+      const computedPlannerType = inferPlannerTypeFromOrganizer(
+        event.organizer_email,
+        professionalEmails,
+        event.attendees
+      );
       return {
         ...event,
         planner_type: computedPlannerType,

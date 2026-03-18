@@ -29,14 +29,11 @@ function isoDaysFromNow(days: number) {
   return now.toISOString();
 }
 
-function getDayLabel(startAt: string): string {
-  const date = new Date(startAt);
-  const today = new Date();
-  const tomorrow = new Date();
-  tomorrow.setDate(today.getDate() + 1);
-  if (date.toDateString() === today.toDateString()) return "Aujourd'hui";
-  if (date.toDateString() === tomorrow.toDateString()) return 'Demain';
-  return date.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long' });
+function toDateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function formatTime(dateStr: string): string {
@@ -55,15 +52,6 @@ function startOfDay(date: Date): Date {
 
 function isSameDay(left: Date, right: Date): boolean {
   return left.toDateString() === right.toDateString();
-}
-
-function getEventDuration(startAt: string, endAt: string): string {
-  const diff = new Date(endAt).getTime() - new Date(startAt).getTime();
-  const minutes = Math.round(diff / 60000);
-  if (minutes < 60) return `${minutes}min`;
-  const hours = Math.floor(minutes / 60);
-  const rem = minutes % 60;
-  return rem === 0 ? `${hours}h` : `${hours}h${String(rem).padStart(2, '0')}`;
 }
 
 function expandEventForDisplay(event: AgendaEventLike): DisplayAgendaEvent[] {
@@ -124,14 +112,6 @@ function expandEventForDisplay(event: AgendaEventLike): DisplayAgendaEvent[] {
   return segments;
 }
 
-const PROVIDER_DOT: Record<string, string> = {
-  microsoft: 'bg-blue-500',
-  google: 'bg-red-500',
-  blackwaves: 'bg-emerald-500',
-  manual: 'bg-purple-500',
-  hplus: 'bg-amber-500',
-};
-
 const PROVIDER_LABEL: Record<string, string> = {
   microsoft: 'Microsoft',
   google: 'Google',
@@ -140,17 +120,12 @@ const PROVIDER_LABEL: Record<string, string> = {
   hplus: 'Interne',
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  confirmed: 'Confirme',
-  tentative: 'Provisoire',
-  cancelled: 'Annule',
-};
-
 export default function AgendaPage() {
   const { loading, error, events, sources, loadEvents, loadSources } = useAgendaStore();
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
   const [selectedPlannerType, setSelectedPlannerType] = useState<'all' | 'pro' | 'perso'>('all');
   const [selectedLens, setSelectedLens] = useState<'all' | 'active' | 'multi'>('all');
+  const [planningDate, setPlanningDate] = useState<string>(() => toDateInputValue(new Date()));
   const [currentTime, setCurrentTime] = useState<number | null>(null);
 
   useEffect(() => {
@@ -223,22 +198,38 @@ export default function AgendaPage() {
     });
   }, [currentTime, displayEvents, selectedLens, selectedPlannerType, selectedProvider]);
 
-  const groupedEvents = useMemo(() => {
-    const groups: Record<string, DisplayAgendaEvent[]> = {};
-    filteredDisplayEvents.forEach((event) => {
-      const key = event.displayDateKey;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(event);
+  const planningDayEvents = useMemo(() => {
+    const dayStart = new Date(`${planningDate}T00:00:00`).getTime();
+    const dayEnd = new Date(`${planningDate}T23:59:59.999`).getTime();
+
+    return filteredDisplayEvents
+      .filter((event) => {
+        const eventStart = new Date(event.start_at).getTime();
+        const eventEnd = new Date(event.end_at).getTime();
+        return eventStart <= dayEnd && eventEnd >= dayStart;
+      })
+      .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+  }, [filteredDisplayEvents, planningDate]);
+
+  const planningRows = useMemo(() => {
+    return Array.from({ length: 12 }).map((_, index) => {
+      const hour = index + 7;
+      const slotStart = new Date(`${planningDate}T${String(hour).padStart(2, '0')}:00:00`).getTime();
+      const slotEnd = new Date(`${planningDate}T${String(hour + 1).padStart(2, '0')}:00:00`).getTime();
+
+      const slotEvents = planningDayEvents.filter((event) => {
+        const start = new Date(event.start_at).getTime();
+        const end = new Date(event.end_at).getTime();
+        return start < slotEnd && end > slotStart;
+      });
+
+      return {
+        hour,
+        pro: slotEvents.filter((event) => event.planner_type === 'pro'),
+        perso: slotEvents.filter((event) => event.planner_type === 'perso'),
+      };
     });
-    return Object.entries(groups)
-      .map(([key, dayEvents]) => [
-        key,
-        [...dayEvents].sort(
-          (left, right) => new Date(left.displayAnchorAt).getTime() - new Date(right.displayAnchorAt).getTime(),
-        ),
-      ] as const)
-      .sort(([a], [b]) => new Date(a).getTime() - new Date(b).getTime());
-  }, [filteredDisplayEvents]);
+  }, [planningDate, planningDayEvents]);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
@@ -336,29 +327,37 @@ export default function AgendaPage() {
         </div>
       </div>
 
-      {/* Events list */}
+      {/* Planning view */}
       <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-white">Prochains rendez-vous</h2>
+            <h2 className="text-base font-semibold text-white">Planning lisible par creneau horaire</h2>
             <p className="mt-1 text-xs text-slate-500">
-              Filtre en direct par source et par type de suivi.
+              Lecture directe des disponibilites entre 07h et 19h.
             </p>
           </div>
-          <button
-            onClick={() => loadEvents(isoDaysFromNow(-1), isoDaysFromNow(14))}
-            disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
-          >
-            {loading ? (
-              <>
-                <span className="h-3 w-3 animate-spin rounded-full border border-slate-400 border-t-transparent" />
-                Chargement
-              </>
-            ) : (
-              'Rafraichir'
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={planningDate}
+              onChange={(event) => setPlanningDate(event.target.value)}
+              className="rounded-lg border border-white/15 bg-slate-950/70 px-3 py-1.5 text-xs text-white"
+            />
+            <button
+              onClick={() => loadEvents(isoDaysFromNow(-1), isoDaysFromNow(14))}
+              disabled={loading}
+              className="flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <span className="h-3 w-3 animate-spin rounded-full border border-slate-400 border-t-transparent" />
+                  Chargement
+                </>
+              ) : (
+                'Rafraichir'
+              )}
+            </button>
+          </div>
         </div>
 
         <div className="mb-4 flex flex-wrap gap-2 border-b border-white/8 pb-4">
@@ -429,7 +428,7 @@ export default function AgendaPage() {
               </div>
             ))}
           </div>
-        ) : groupedEvents.length === 0 ? (
+        ) : planningDayEvents.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-center">
             <div className="mb-3 text-4xl">📅</div>
             <p className="text-sm font-medium text-slate-300">Aucun evenement pour ce filtre</p>
@@ -438,67 +437,45 @@ export default function AgendaPage() {
             </p>
           </div>
         ) : (
-          <div className="space-y-5">
-            {groupedEvents.map(([dayKey, dayEvents]) => (
-              <div key={dayKey}>
-                {/* Day separator */}
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    {getDayLabel(dayEvents[0].displayAnchorAt)}
-                  </span>
-                  <span className="flex-1 border-t border-white/8" />
-                  <span className="text-xs text-slate-600">
-                    {dayEvents.length} RDV
-                  </span>
+          <div className="overflow-hidden rounded-xl border border-white/10">
+            <div className="grid grid-cols-[90px_1fr_1fr] border-b border-white/10 bg-slate-950/80 px-3 py-2 text-xs uppercase tracking-wide text-slate-400">
+              <span>Heure</span>
+              <span className="text-blue-200">RDV PRO</span>
+              <span className="text-fuchsia-200">RDV PERSO</span>
+            </div>
+
+            {planningRows.map((row) => (
+              <div key={row.hour} className="grid grid-cols-[90px_1fr_1fr] border-b border-white/5 px-3 py-2">
+                <span className="text-sm text-slate-300">{String(row.hour).padStart(2, '0')}:00</span>
+
+                <div className="pr-2">
+                  {row.pro.length === 0 ? (
+                    <span className="text-xs text-slate-600">-</span>
+                  ) : (
+                    <div className="space-y-1">
+                      {row.pro.map((event) => (
+                        <div key={`${row.hour}-pro-${event.id}`} className="rounded-md border border-blue-300/30 bg-blue-400/10 px-2 py-1 text-xs text-blue-100">
+                          <p className="truncate">{event.title}</p>
+                          <p className="text-[10px] text-blue-200/85">{formatTime(event.start_at)} - {formatTime(event.end_at)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-2">
-                  {dayEvents.map((event) => (
-                    <div
-                      key={event.id}
-                      className={`flex items-start gap-3 rounded-xl border p-3 transition hover:bg-slate-900/60 ${event.planner_type === 'pro' ? 'border-blue-300/25 bg-blue-400/5 hover:border-blue-300/40' : event.planner_type === 'perso' ? 'border-fuchsia-300/25 bg-fuchsia-400/5 hover:border-fuchsia-300/40' : event.isMultiDay ? 'border-cyan-300/25 bg-cyan-400/5 hover:border-cyan-300/40' : 'border-white/10 bg-slate-950/60 hover:border-white/20'}`}
-                    >
-                      {/* Provider dot */}
-                      <div className="mt-1 shrink-0">
-                        <span
-                          className={`block h-2.5 w-2.5 rounded-full ${PROVIDER_DOT[event.source_provider] ?? 'bg-slate-500'}`}
-                        />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate text-sm font-medium text-white">{event.title}</p>
-                          {event.isMultiDay && (
-                            <span className="rounded-full border border-cyan-300/30 bg-cyan-400/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-cyan-100">
-                              Multi-jours
-                            </span>
-                          )}
-                          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">
-                            {STATUS_LABEL[event.status] ?? event.status}
-                          </span>
-                          {event.planner_type && (
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide ${event.planner_type === 'pro' ? 'bg-blue-400/15 text-blue-100' : 'bg-fuchsia-400/15 text-fuchsia-100'}`}>
-                              {event.planner_type === 'pro' ? 'PRO' : 'PERSO'}
-                            </span>
-                          )}
+                <div>
+                  {row.perso.length === 0 ? (
+                    <span className="text-xs text-slate-600">-</span>
+                  ) : (
+                    <div className="space-y-1">
+                      {row.perso.map((event) => (
+                        <div key={`${row.hour}-perso-${event.id}`} className="rounded-md border border-fuchsia-300/30 bg-fuchsia-400/10 px-2 py-1 text-xs text-fuchsia-100">
+                          <p className="truncate">{event.title}</p>
+                          <p className="text-[10px] text-fuchsia-200/85">{formatTime(event.start_at)} - {formatTime(event.end_at)}</p>
                         </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-400">
-                          <span>{event.timeLabel}</span>
-                          <span className="text-slate-600">
-                            {getEventDuration(event.start_at, event.end_at)}
-                          </span>
-                          <span className="uppercase tracking-wide text-slate-600">
-                            {PROVIDER_LABEL[event.source_provider] ?? event.source_provider}
-                          </span>
-                        </div>
-                        {event.spanLabel && (
-                          <p className="mt-1 text-[11px] uppercase tracking-wide text-cyan-300/80">
-                            {event.spanLabel}
-                          </p>
-                        )}
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             ))}

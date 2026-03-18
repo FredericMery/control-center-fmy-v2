@@ -6,12 +6,28 @@ function normalizeEmail(value: unknown): string {
   return String(value || '').trim().toLowerCase();
 }
 
-export function inferPlannerTypeFromOrganizer(organizerEmail: string | null, proEmails: string[]): PlannerType {
+export function inferPlannerTypeFromOrganizer(
+  organizerEmail: string | null,
+  proEmails: string[],
+  attendees?: Array<{ email?: string | null }>
+): PlannerType {
   const normalizedOrganizer = normalizeEmail(organizerEmail);
-  if (!normalizedOrganizer) return 'perso';
 
   const proSet = new Set(proEmails.map((email) => normalizeEmail(email)).filter(Boolean));
-  return proSet.has(normalizedOrganizer) ? 'pro' : 'perso';
+  if (normalizedOrganizer && proSet.has(normalizedOrganizer)) {
+    return 'pro';
+  }
+
+  if (Array.isArray(attendees)) {
+    for (const attendee of attendees) {
+      const attendeeEmail = normalizeEmail(attendee?.email);
+      if (attendeeEmail && proSet.has(attendeeEmail)) {
+        return 'pro';
+      }
+    }
+  }
+
+  return 'perso';
 }
 
 export async function getProfessionalEmailsForUser(
