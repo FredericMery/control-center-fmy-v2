@@ -124,33 +124,15 @@ function SlotCell({
   );
 }
 
-function StatCard({ label, value, sub }: { label: string; value: number; sub: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-      <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="mt-2 text-3xl font-semibold text-white">{value}</p>
-      <p className="mt-1 text-xs text-slate-500">{sub}</p>
-    </div>
-  );
-}
-
 export default function AgendaPage() {
-  const { loading, error, events, sources, loadEvents, loadSources } = useAgendaStore();
+  const { loading, error, events, loadEvents, loadSources } = useAgendaStore();
   const [viewMode, setViewMode] = useState<ViewMode>('1day');
   const [planningDate, setPlanningDate] = useState<string>(() => toDateKey(new Date()));
-  const [currentTime, setCurrentTime] = useState<number | null>(null);
 
   useEffect(() => {
     loadSources();
     loadEvents(isoDaysFromNow(-1), isoDaysFromNow(14));
   }, [loadEvents, loadSources]);
-
-  useEffect(() => {
-    const update = () => setCurrentTime(Date.now());
-    update();
-    const id = window.setInterval(update, 60000);
-    return () => window.clearInterval(id);
-  }, []);
 
   // Days to render (1 or 5)
   const displayDays = useMemo((): string[] => {
@@ -175,27 +157,6 @@ export default function AgendaPage() {
     });
   }, [events, displayDays]);
 
-  const todayCount = useMemo(() => {
-    const today = toDateKey(new Date());
-    return events.filter((e) => toDateKey(new Date(e.start_at)) === today).length;
-  }, [events]);
-
-  const activeNowCount = useMemo(() => {
-    if (currentTime === null) return 0;
-    return events.filter((e) => {
-      const s = new Date(e.start_at).getTime();
-      const en = new Date(e.end_at).getTime();
-      return s <= currentTime && en >= currentTime;
-    }).length;
-  }, [currentTime, events]);
-
-  const nextEvent = useMemo(() => {
-    if (currentTime === null) return null;
-    return [...events]
-      .filter((e) => new Date(e.end_at).getTime() >= currentTime)
-      .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())[0] ?? null;
-  }, [currentTime, events]);
-
   const gridCols = viewMode === '1day' ? '80px 1fr 1fr' : `80px repeat(5, 1fr)`;
 
   return (
@@ -204,25 +165,8 @@ export default function AgendaPage() {
 
       {/* Header */}
       <div className="mb-6 overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-2xl">
-            <p className="text-xs uppercase tracking-[0.24em] text-cyan-200/75">Agenda intelligent</p>
-            <h1 className="mt-2 text-3xl font-semibold text-white">
-              Suivi clair des rendez-vous, y compris sur plusieurs jours
-            </h1>
-            <p className="mt-2 text-sm text-slate-300">
-              {new Date().toLocaleDateString('fr-FR', {
-                weekday: 'long',
-                day: '2-digit',
-                month: 'long',
-                year: 'numeric',
-              })}
-              {' · '}
-              {nextEvent
-                ? `prochain jalon : ${nextEvent.title} à ${formatTime(nextEvent.start_at)}`
-                : 'aucun rendez-vous à venir sur la période'}
-            </p>
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs uppercase tracking-[0.24em] text-cyan-200/75">Agenda intelligent</p>
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href="/dashboard/agenda/new"
@@ -257,31 +201,6 @@ export default function AgendaPage() {
           {error}
         </div>
       )}
-
-      {/* Stats */}
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Sources actives"
-          value={sources.filter((s) => s.is_enabled).length}
-          sub={`${sources.length} configurée${sources.length > 1 ? 's' : ''}`}
-        />
-        <StatCard label="Aujourd'hui" value={todayCount} sub="rendez-vous" />
-        <StatCard label="En cours" value={activeNowCount} sub="rendez-vous actuellement ouverts" />
-        <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Multi-jours</p>
-          <p className="mt-2 text-3xl font-semibold text-white">{multiDayEvents.length}</p>
-          <p className="mt-1 text-xs text-slate-500">
-            {loading ? (
-              <span className="inline-flex items-center gap-1.5 text-cyan-300">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
-                Synchronisation…
-              </span>
-            ) : (
-              `${events.length} événements distincts sur 14 jours`
-            )}
-          </p>
-        </div>
-      </div>
 
       {/* Planning */}
       <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
