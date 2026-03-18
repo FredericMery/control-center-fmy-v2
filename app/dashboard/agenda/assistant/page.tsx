@@ -26,13 +26,28 @@ function ScoreBar({ score }: { score: number }) {
 export default function AgendaAssistantPage() {
   const { loading, error, proposal, askScheduler, confirmSlot } = useAgendaStore();
   const [prompt, setPrompt] = useState('');
+  const [eventType, setEventType] = useState<'pro' | 'perso'>('pro');
+  const [mode, setMode] = useState<'direct' | 'proposal'>('proposal');
+  const [durationMinutes, setDurationMinutes] = useState(45);
+  const [participants, setParticipants] = useState('');
+  const [periodStart, setPeriodStart] = useState('');
+  const [periodEnd, setPeriodEnd] = useState('');
   const [confirmedSlot, setConfirmedSlot] = useState<string | null>(null);
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!prompt.trim()) return;
+    if (!prompt.trim() && !participants.trim()) return;
     setConfirmedSlot(null);
-    await askScheduler(prompt);
+    await askScheduler(prompt, {
+      mode,
+      eventType,
+      durationMinutes,
+      participants: participants.split(',').map((value) => value.trim()).filter(Boolean),
+      period:
+        periodStart && periodEnd
+          ? { startAt: new Date(periodStart).toISOString(), endAt: new Date(periodEnd).toISOString() }
+          : undefined,
+    });
   };
 
   const handleConfirm = async (slot: Parameters<typeof confirmSlot>[0]) => {
@@ -54,6 +69,72 @@ export default function AgendaAssistantPage() {
       )}
 
       <form onSubmit={onSubmit} className="mt-5 rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+        <div className="mb-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="text-xs text-slate-300">
+            Type
+            <select
+              value={eventType}
+              onChange={(e) => setEventType(e.target.value as 'pro' | 'perso')}
+              className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950/70 px-2.5 py-2 text-sm text-white"
+            >
+              <option value="pro">PRO</option>
+              <option value="perso">PERSO</option>
+            </select>
+          </label>
+          <label className="text-xs text-slate-300">
+            Mode
+            <select
+              value={mode}
+              onChange={(e) => setMode(e.target.value as 'direct' | 'proposal')}
+              className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950/70 px-2.5 py-2 text-sm text-white"
+            >
+              <option value="proposal">Proposition (PENDING_CONFIRMATION)</option>
+              <option value="direct">Validation directe (CONFIRMED)</option>
+            </select>
+          </label>
+          <label className="text-xs text-slate-300">
+            Duree (min)
+            <input
+              type="number"
+              min={15}
+              step={15}
+              value={durationMinutes}
+              onChange={(e) => setDurationMinutes(Number(e.target.value) || 45)}
+              className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950/70 px-2.5 py-2 text-sm text-white"
+            />
+          </label>
+          <label className="text-xs text-slate-300">
+            Participants
+            <input
+              value={participants}
+              onChange={(e) => setParticipants(e.target.value)}
+              placeholder="a@x.com, b@y.com"
+              className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950/70 px-2.5 py-2 text-sm text-white"
+            />
+          </label>
+        </div>
+
+        <div className="mb-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-xs text-slate-300">
+            Periode debut (ISO)
+            <input
+              type="datetime-local"
+              value={periodStart}
+              onChange={(e) => setPeriodStart(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950/70 px-2.5 py-2 text-sm text-white"
+            />
+          </label>
+          <label className="text-xs text-slate-300">
+            Periode fin (ISO)
+            <input
+              type="datetime-local"
+              value={periodEnd}
+              onChange={(e) => setPeriodEnd(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950/70 px-2.5 py-2 text-sm text-white"
+            />
+          </label>
+        </div>
+
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
@@ -102,11 +183,14 @@ export default function AgendaAssistantPage() {
               <p className="mt-0.5 text-xs text-slate-400">
                 {proposal.slots.length} créneau{proposal.slots.length > 1 ? 'x' : ''} proposé{proposal.slots.length > 1 ? 's' : ''} — sélectionnez-en un pour confirmer.
               </p>
+              <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-500">
+                {proposal.eventType} · {proposal.mode === 'direct' ? 'validation directe' : 'pending confirmation'}
+              </p>
             </div>
           </div>
 
           <div className="space-y-2">
-            {proposal.slots.slice(0, 6).map((slot) => {
+            {proposal.slots.slice(0, 3).map((slot) => {
               const key = `${slot.startAt}-${slot.endAt}`;
               const isConfirmed = confirmedSlot === key;
               return (

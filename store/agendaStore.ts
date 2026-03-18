@@ -30,6 +30,16 @@ type AgendaProposal = {
   requestId: string;
   title: string;
   slots: ProposalSlot[];
+  mode: 'direct' | 'proposal';
+  eventType: 'pro' | 'perso';
+};
+
+type AskSchedulerOptions = {
+  period?: { startAt: string; endAt: string };
+  durationMinutes?: number;
+  participants?: string[];
+  mode?: 'direct' | 'proposal';
+  eventType?: 'pro' | 'perso';
 };
 
 type AgendaPreferences = {
@@ -42,6 +52,8 @@ type AgendaPreferences = {
   max_meetings_per_day: number;
   allow_meetings_on_weekends: boolean;
   timezone: string;
+  professional_email?: string | null;
+  holiday_country?: string;
 };
 
 type AgendaState = {
@@ -56,7 +68,7 @@ type AgendaState = {
   loadEvents: (startAt: string, endAt: string) => Promise<void>;
   loadPreferences: () => Promise<void>;
   savePreferences: (prefs: Partial<AgendaPreferences>) => Promise<void>;
-  askScheduler: (prompt: string) => Promise<void>;
+  askScheduler: (prompt: string, options?: AskSchedulerOptions) => Promise<void>;
   confirmSlot: (slot: ProposalSlot) => Promise<void>;
 };
 
@@ -161,13 +173,13 @@ export const useAgendaStore = create<AgendaState>((set, get) => ({
     }
   },
 
-  askScheduler: async (prompt) => {
+  askScheduler: async (prompt, options) => {
     set({ loading: true, error: null });
     try {
       const response = await fetch('/api/calendar/schedule', {
         method: 'POST',
         headers: await getAuthHeaders(true),
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, ...options }),
       });
       const json = await parseJson(response);
       set({
@@ -175,6 +187,8 @@ export const useAgendaStore = create<AgendaState>((set, get) => ({
           requestId: json.requestId,
           title: json.proposal?.title || 'Proposition',
           slots: json.proposal?.rankedSlots || [],
+          mode: json.mode === 'direct' ? 'direct' : 'proposal',
+          eventType: json.targetEventType === 'perso' ? 'perso' : 'pro',
         },
         loading: false,
       });
@@ -201,6 +215,7 @@ export const useAgendaStore = create<AgendaState>((set, get) => ({
         body: JSON.stringify({
           requestId: proposal.requestId,
           slot,
+          mode: proposal.mode,
         }),
       });
       await parseJson(response);

@@ -12,6 +12,7 @@ type AgendaEventLike = {
   end_at: string;
   source_provider: string;
   status: string;
+  planner_type?: 'pro' | 'perso';
 };
 
 type DisplayAgendaEvent = AgendaEventLike & {
@@ -148,6 +149,7 @@ const STATUS_LABEL: Record<string, string> = {
 export default function AgendaPage() {
   const { loading, error, events, sources, loadEvents, loadSources } = useAgendaStore();
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
+  const [selectedPlannerType, setSelectedPlannerType] = useState<'all' | 'pro' | 'perso'>('all');
   const [selectedLens, setSelectedLens] = useState<'all' | 'active' | 'multi'>('all');
   const [currentTime, setCurrentTime] = useState<number | null>(null);
 
@@ -205,6 +207,9 @@ export default function AgendaPage() {
       if (selectedProvider !== 'all' && event.source_provider !== selectedProvider) {
         return false;
       }
+      if (selectedPlannerType !== 'all' && event.planner_type !== selectedPlannerType) {
+        return false;
+      }
       if (selectedLens === 'active') {
         if (currentTime === null) return false;
         const start = new Date(event.start_at).getTime();
@@ -216,7 +221,7 @@ export default function AgendaPage() {
       }
       return true;
     });
-  }, [currentTime, displayEvents, selectedLens, selectedProvider]);
+  }, [currentTime, displayEvents, selectedLens, selectedPlannerType, selectedProvider]);
 
   const groupedEvents = useMemo(() => {
     const groups: Record<string, DisplayAgendaEvent[]> = {};
@@ -259,10 +264,22 @@ export default function AgendaPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link
+              href="/dashboard/agenda/new"
+              className="rounded-xl border border-slate-200/25 bg-slate-100/10 px-4 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-100/20"
+            >
+              + Nouveau RDV
+            </Link>
+            <Link
               href="/dashboard/agenda/pro"
               className="rounded-xl border border-emerald-300/30 bg-emerald-400/15 px-4 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/25"
             >
               Ouvrir la vue pro
+            </Link>
+            <Link
+              href="/dashboard/agenda/propositions"
+              className="rounded-xl border border-amber-300/30 bg-amber-400/15 px-4 py-2 text-sm font-medium text-amber-100 transition hover:bg-amber-400/25"
+            >
+              Propositions en cours
             </Link>
             <Link
               href="/dashboard/agenda/assistant"
@@ -365,6 +382,25 @@ export default function AgendaPage() {
           </button>
           <div className="mx-1 h-8 w-px bg-white/8" />
           <button
+            onClick={() => setSelectedPlannerType('all')}
+            className={`rounded-full px-3 py-1.5 text-xs transition ${selectedPlannerType === 'all' ? 'bg-slate-200 text-slate-950' : 'border border-white/10 bg-slate-950/60 text-slate-300 hover:border-white/20'}`}
+          >
+            PRO + PERSO
+          </button>
+          <button
+            onClick={() => setSelectedPlannerType('pro')}
+            className={`rounded-full px-3 py-1.5 text-xs transition ${selectedPlannerType === 'pro' ? 'bg-blue-300 text-slate-950' : 'border border-white/10 bg-slate-950/60 text-slate-300 hover:border-white/20'}`}
+          >
+            PRO
+          </button>
+          <button
+            onClick={() => setSelectedPlannerType('perso')}
+            className={`rounded-full px-3 py-1.5 text-xs transition ${selectedPlannerType === 'perso' ? 'bg-fuchsia-300 text-slate-950' : 'border border-white/10 bg-slate-950/60 text-slate-300 hover:border-white/20'}`}
+          >
+            PERSO
+          </button>
+          <div className="mx-1 h-8 w-px bg-white/8" />
+          <button
             onClick={() => setSelectedProvider('all')}
             className={`rounded-full px-3 py-1.5 text-xs transition ${selectedProvider === 'all' ? 'bg-slate-200 text-slate-950' : 'border border-white/10 bg-slate-950/60 text-slate-300 hover:border-white/20'}`}
           >
@@ -420,7 +456,7 @@ export default function AgendaPage() {
                   {dayEvents.map((event) => (
                     <div
                       key={event.id}
-                      className={`flex items-start gap-3 rounded-xl border p-3 transition hover:bg-slate-900/60 ${event.isMultiDay ? 'border-cyan-300/25 bg-cyan-400/5 hover:border-cyan-300/40' : 'border-white/10 bg-slate-950/60 hover:border-white/20'}`}
+                      className={`flex items-start gap-3 rounded-xl border p-3 transition hover:bg-slate-900/60 ${event.planner_type === 'pro' ? 'border-blue-300/25 bg-blue-400/5 hover:border-blue-300/40' : event.planner_type === 'perso' ? 'border-fuchsia-300/25 bg-fuchsia-400/5 hover:border-fuchsia-300/40' : event.isMultiDay ? 'border-cyan-300/25 bg-cyan-400/5 hover:border-cyan-300/40' : 'border-white/10 bg-slate-950/60 hover:border-white/20'}`}
                     >
                       {/* Provider dot */}
                       <div className="mt-1 shrink-0">
@@ -440,6 +476,11 @@ export default function AgendaPage() {
                           <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">
                             {STATUS_LABEL[event.status] ?? event.status}
                           </span>
+                          {event.planner_type && (
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide ${event.planner_type === 'pro' ? 'bg-blue-400/15 text-blue-100' : 'bg-fuchsia-400/15 text-fuchsia-100'}`}>
+                              {event.planner_type === 'pro' ? 'PRO' : 'PERSO'}
+                            </span>
+                          )}
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-400">
                           <span>{event.timeLabel}</span>

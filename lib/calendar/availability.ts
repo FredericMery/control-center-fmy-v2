@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { BusyBlock, DateRange, ParsedSchedulingIntent, RankedSlot, SchedulingPreferences } from '@/lib/calendar/types';
+import { listDayKeysInRange, zonedDateTimeToUtcIso } from '@/lib/calendar/timezone';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -42,9 +43,9 @@ function addMinutes(date: Date, minutes: number): Date {
   return new Date(date.getTime() + minutes * 60 * 1000);
 }
 
-function parseTimeOnDate(date: Date, time: string): Date {
-  const [hh, mm] = String(time || '00:00').split(':').map((v) => Number(v));
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), hh || 0, mm || 0, 0, 0));
+function parseTimeOnDayKey(dayKey: string, time: string, timezone: string): Date {
+  const [hh, mm] = String(time || '00:00').slice(0, 5).split(':').map((v) => Number(v));
+  return new Date(zonedDateTimeToUtcIso(dayKey, `${String(hh || 0).padStart(2, '0')}:${String(mm || 0).padStart(2, '0')}`, timezone));
 }
 
 export async function getSchedulingPreferences(userId: string): Promise<SchedulingPreferences> {
@@ -71,6 +72,8 @@ export async function getSchedulingPreferences(userId: string): Promise<Scheduli
     preferred_meeting_windows: [],
     avoid_back_to_back: true,
     timezone: 'Europe/Paris',
+    professional_email: null,
+    holiday_country: 'FR',
     metadata: {},
   };
 }
@@ -134,18 +137,18 @@ function includeProtectedAndLunchBlocks(
   preferences: SchedulingPreferences,
   blocks: BusyBlock[]
 ): BusyBlock[] {
-  const start = toDate(range.startAt);
-  const end = toDate(range.endAt);
   const output = [...blocks];
+  const timezone = String(preferences.timezone || 'Europe/Paris');
+  const dayKeys = listDayKeysInRange(range.startAt, range.endAt, timezone);
 
-  for (let d = new Date(start); d < end; d = addMinutes(d, 24 * 60)) {
-    const dayStart = parseTimeOnDate(d, String(preferences.day_start_time).slice(0, 5));
-    const dayEnd = parseTimeOnDate(d, String(preferences.day_end_time).slice(0, 5));
+  for (const dayKey of dayKeys) {
+    const dayStart = parseTimeOnDayKey(dayKey, String(preferences.day_start_time), timezone);
+    const dayEnd = parseTimeOnDayKey(dayKey, String(preferences.day_end_time), timezone);
 
     if (preferences.lunch_start_time && preferences.lunch_end_time) {
       output.push({
-        startAt: parseTimeOnDate(d, String(preferences.lunch_start_time).slice(0, 5)).toISOString(),
-        endAt: parseTimeOnDate(d, String(preferences.lunch_end_time).slice(0, 5)).toISOString(),
+        startAt: parseTimeOnDayKey(dayKey, String(preferences.lunch_start_time), timezone).toISOString(),
+        endAt: parseTimeOnDayKey(dayKey, String(preferences.lunch_end_time), timezone).toISOString(),
         isProtected: true,
         label: 'Lunch break',
       });
@@ -162,8 +165,8 @@ function includeProtectedAndLunchBlocks(
       const to = String(b.endTime || '');
       if (!from || !to) continue;
       output.push({
-        startAt: parseTimeOnDate(d, from).toISOString(),
-        endAt: parseTimeOnDate(d, to).toISOString(),
+        startAt: parseTimeOnDayKey(dayKey, from, timezone).toISOString(),
+        endAt: parseTimeOnDayKey(dayKey, to, timezone).toISOString(),
         isProtected: true,
         label: String(b.label || 'Protected block'),
       });
@@ -254,14 +257,32 @@ export function rankSlots(
       const reasons: string[] = [];
 
       if (!preferences.allow_meetings_on_weekends) {
-        const day = start.getUTCDay();
+        const day = Number(
+          new Intl.DateTimeFormat('en-US', {
+            timeZone: String(preferences.timezone || 'Europe/Paris'),
+            weekday: 'short',
+          }).format(start) === 'Sun'
+            ? 0
+            : new Intl.DateTimeFormat('en-US', {
+                timeZone: String(preferences.timezone || 'Europe/Paris'),
+                weekday: 'short',
+              }).format(start) === 'Sat'
+              ? 6
+              : 1
+        );
         if (day === 0 || day === 6) {
           score -= 60;
           reasons.push('Weekend penalized');
         }
       }
 
-      const hour = start.getUTCHours();
+      const hour = Number(
+        new Intl.DateTimeFormat('en-US', {
+          timeZone: String(preferences.timezone || 'Europe/Paris'),
+          hour: '2-digit',
+          hour12: false,
+        }).format(start)
+      );
       if (hour >= 17) {
         score -= 20;
         reasons.push('Late meeting penalty');

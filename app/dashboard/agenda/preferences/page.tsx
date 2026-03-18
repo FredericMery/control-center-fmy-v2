@@ -12,6 +12,8 @@ export default function AgendaPreferencesPage() {
   const bufferRef = useRef<HTMLInputElement | null>(null);
   const durationRef = useRef<HTMLInputElement | null>(null);
   const weekendRef = useRef<HTMLInputElement | null>(null);
+  const professionalEmailRef = useRef<HTMLInputElement | null>(null);
+  const holidayCountryRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     loadPreferences();
@@ -25,6 +27,8 @@ export default function AgendaPreferencesPage() {
       minimum_buffer_minutes: Number(bufferRef.current?.value || 15),
       default_meeting_duration_minutes: Number(durationRef.current?.value || 60),
       allow_meetings_on_weekends: Boolean(weekendRef.current?.checked),
+      professional_email: professionalEmailRef.current?.value?.trim().toLowerCase() || null,
+      holiday_country: (holidayCountryRef.current?.value || 'FR').trim().toUpperCase(),
     });
   };
 
@@ -33,6 +37,8 @@ export default function AgendaPreferencesPage() {
   const bufferDefault = Number(preferences?.minimum_buffer_minutes || 15);
   const durationDefault = Number(preferences?.default_meeting_duration_minutes || 60);
   const weekendDefault = Boolean(preferences?.allow_meetings_on_weekends);
+  const professionalEmailDefault = String(preferences?.professional_email || '');
+  const holidayCountryDefault = String(preferences?.holiday_country || 'FR');
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
@@ -70,6 +76,30 @@ export default function AgendaPreferencesPage() {
               type="time"
               defaultValue={dayEndDefault}
               className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950/70 px-3 py-2 text-white"
+            />
+          </label>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="text-sm text-slate-200">
+            Email professionnel de reference
+            <input
+              ref={professionalEmailRef}
+              type="email"
+              defaultValue={professionalEmailDefault}
+              placeholder="prenom.nom@entreprise.com"
+              className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950/70 px-3 py-2 text-white"
+            />
+          </label>
+
+          <label className="text-sm text-slate-200">
+            Pays jours feries (ISO)
+            <input
+              ref={holidayCountryRef}
+              type="text"
+              maxLength={2}
+              defaultValue={holidayCountryDefault}
+              className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950/70 px-3 py-2 uppercase text-white"
             />
           </label>
         </div>

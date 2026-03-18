@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-type AgendaNavKey = 'overview' | 'pro' | 'assistant' | 'connectors' | 'preferences';
+type AgendaNavKey = 'overview' | 'pro' | 'assistant' | 'multi' | 'dayplan' | 'proposals' | 'connectors' | 'preferences';
 
 const ITEMS: Array<{ key: AgendaNavKey; href: string; label: string; helper: string }> = [
   {
@@ -20,6 +20,24 @@ const ITEMS: Array<{ key: AgendaNavKey; href: string; label: string; helper: str
     href: '/dashboard/agenda/assistant',
     label: 'Assistant',
     helper: 'Proposition automatique de creneaux',
+  },
+  {
+    key: 'multi',
+    href: '/dashboard/agenda/multi',
+    label: 'Multi-jours',
+    helper: 'Vue 3, 5 ou 7 jours avec scroll horizontal',
+  },
+  {
+    key: 'dayplan',
+    href: '/dashboard/agenda/journee',
+    label: 'Journee',
+    helper: 'Colonnes disponible/non disponible 7h-19h',
+  },
+  {
+    key: 'proposals',
+    href: '/dashboard/agenda/propositions',
+    label: 'Propositions',
+    helper: 'Pipeline IA: cree, envoye, relance, confirme',
   },
   {
     key: 'connectors',

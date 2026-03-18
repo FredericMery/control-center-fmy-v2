@@ -52,7 +52,9 @@ export interface CalendarEvent {
   organizer_email: string | null;
   attendees: Array<{ email?: string; name?: string; response?: string }>;
   category: string | null;
+  planner_type: 'pro' | 'perso' | null;
   event_type: string | null;
+  workflow_status: 'confirmed' | 'pending_confirmation' | 'relance_sent' | 'finalized' | 'cancelled';
   priority: number;
   is_read_only: boolean;
   is_blocking: boolean;
@@ -83,7 +85,9 @@ export interface CalendarEventInput {
   organizer_email?: string | null;
   attendees?: Array<{ email?: string; name?: string; response?: string }>;
   category?: string | null;
+  planner_type?: 'pro' | 'perso' | null;
   event_type?: string | null;
+  workflow_status?: 'confirmed' | 'pending_confirmation' | 'relance_sent' | 'finalized' | 'cancelled';
   priority?: number;
   is_read_only?: boolean;
   is_blocking?: boolean;
@@ -129,6 +133,8 @@ export interface SchedulingPreferences {
   preferred_meeting_windows: Array<Record<string, unknown>>;
   avoid_back_to_back: boolean;
   timezone: string;
+  professional_email?: string | null;
+  holiday_country?: string;
   metadata: Record<string, unknown>;
 }
 

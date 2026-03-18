@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createInternalEvent, listCalendarEvents } from '@/lib/calendar/eventService';
+import { getProfessionalEmailsForUser, inferPlannerTypeFromOrganizer } from '@/lib/calendar/plannerType';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest) {
     const startAt = searchParams.get('startAt');
     const endAt = searchParams.get('endAt');
     const category = searchParams.get('category') || undefined;
+    const plannerType = searchParams.get('plannerType') as 'pro' | 'perso' | null;
     const sourceProviders = (searchParams.get('sourceProviders') || '')
       .split(',')
       .map((v) => v.trim())
@@ -47,7 +49,23 @@ export async function GET(request: NextRequest) {
       sourceProviders,
       status: statuses,
     });
-    return NextResponse.json({ events });
+    const professionalEmails = await getProfessionalEmailsForUser(supabase, userId);
+
+    const taggedEvents = events.map((event) => {
+      const computedPlannerType =
+        (event as { planner_type?: 'pro' | 'perso' | null }).planner_type ||
+        inferPlannerTypeFromOrganizer(event.organizer_email, professionalEmails);
+      return {
+        ...event,
+        planner_type: computedPlannerType,
+      };
+    });
+
+    const filtered = plannerType
+      ? taggedEvents.filter((event) => event.planner_type === plannerType)
+      : taggedEvents;
+
+    return NextResponse.json({ events: filtered });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },
@@ -68,6 +86,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'event is required' }, { status: 400 });
     }
 
+    const requestedType = String(event.type || event.planner_type || '').toLowerCase();
+    const plannerType: 'pro' | 'perso' = requestedType === 'pro' ? 'pro' : 'perso';
+    const professionalEmails = await getProfessionalEmailsForUser(supabase, userId);
+    const professionalEmail = professionalEmails[0] || null;
+
     const created = await createInternalEvent(userId, {
       user_id: userId,
       source_provider: 'hplus',
@@ -80,7 +103,13 @@ export async function POST(request: NextRequest) {
       attendees: Array.isArray(event.attendees) ? event.attendees : [],
       is_blocking: event.isBlocking ?? true,
       status: event.status || 'confirmed',
-      raw_payload: event,
+      organizer_email: event.organizer_email ? String(event.organizer_email) : plannerType === 'pro' ? professionalEmail : null,
+      category: plannerType,
+      event_type: plannerType === 'pro' ? 'meeting' : 'personal',
+      raw_payload: {
+        ...event,
+        planner_type: plannerType,
+      },
     });
 
     return NextResponse.json({ ok: true, event: created });

@@ -24,35 +24,74 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const prompt = String(body?.prompt || '').trim();
+    const periodStartAt = body?.period?.startAt ? String(body.period.startAt) : null;
+    const periodEndAt = body?.period?.endAt ? String(body.period.endAt) : null;
+    const durationMinutes = Number(body?.durationMinutes || 0) || null;
+    const participants = Array.isArray(body?.participants)
+      ? body.participants.map((value: unknown) => String(value).trim().toLowerCase()).filter(Boolean)
+      : [];
+    const proposalMode = String(body?.mode || 'proposal') === 'direct' ? 'direct' : 'proposal';
+    const targetEventType = String(body?.eventType || 'pro') === 'perso' ? 'perso' : 'pro';
 
-    if (!prompt) {
-      return NextResponse.json({ error: 'prompt is required' }, { status: 400 });
+    const computedPrompt = prompt || [
+      `Rendez-vous ${targetEventType}`,
+      durationMinutes ? `${durationMinutes} min` : '',
+      participants.length > 0 ? `avec ${participants.join(', ')}` : '',
+    ].filter(Boolean).join(' ');
+
+    if (!computedPrompt) {
+      return NextResponse.json({ error: 'prompt or structured fields are required' }, { status: 400 });
     }
 
-    const explicitRange = body?.startAt && body?.endAt
-      ? { startAt: String(body.startAt), endAt: String(body.endAt) }
+    const explicitRange = periodStartAt && periodEndAt
+      ? { startAt: periodStartAt, endAt: periodEndAt }
+      : body?.startAt && body?.endAt
+        ? { startAt: String(body.startAt), endAt: String(body.endAt) }
       : undefined;
 
-    const { intent, proposal } = await generateScheduleProposal(userId, prompt, explicitRange);
+    const { intent, proposal } = await generateScheduleProposal(userId, computedPrompt, explicitRange);
+
+    const intentWithOverrides = {
+      ...intent,
+      durationMinutes: durationMinutes || intent.durationMinutes,
+      attendees: participants.length > 0 ? participants : intent.attendees,
+      dateRange: explicitRange || intent.dateRange,
+      category: targetEventType,
+    };
+
+    const topSlots = (proposal.rankedSlots || []).slice(0, 3);
 
     const { data, error } = await supabase
       .from('scheduling_requests')
       .insert({
         user_id: userId,
-        request_text: prompt,
-        parsed_intent: intent,
-        requested_duration_minutes: intent.durationMinutes,
-        requested_date_range: intent.dateRange,
-        requested_attendees: intent.attendees,
-        proposed_slots: proposal.rankedSlots,
+        request_text: computedPrompt,
+        parsed_intent: intentWithOverrides,
+        requested_duration_minutes: intentWithOverrides.durationMinutes,
+        requested_date_range: intentWithOverrides.dateRange,
+        requested_attendees: intentWithOverrides.attendees,
+        proposed_slots: topSlots,
         status: 'proposed',
+        workflow_status: 'created',
+        progression: 20,
+        proposal_mode: proposalMode,
+        target_event_type: targetEventType,
       })
       .select('id')
       .single();
 
     if (error) throw new Error(error.message);
 
-    return NextResponse.json({ requestId: data.id, intent, proposal });
+    return NextResponse.json({
+      requestId: data.id,
+      intent: intentWithOverrides,
+      proposal: {
+        ...proposal,
+        rankedSlots: topSlots,
+      },
+      mode: proposalMode,
+      targetEventType,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },

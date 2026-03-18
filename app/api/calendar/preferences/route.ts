@@ -53,6 +53,8 @@ export async function PUT(request: NextRequest) {
       preferred_meeting_windows: Array.isArray(body?.preferred_meeting_windows) ? body.preferred_meeting_windows : [],
       avoid_back_to_back: body?.avoid_back_to_back ?? true,
       timezone: String(body?.timezone || 'Europe/Paris'),
+      professional_email: body?.professional_email ? String(body.professional_email).toLowerCase() : null,
+      holiday_country: body?.holiday_country ? String(body.holiday_country).toUpperCase() : 'FR',
       metadata: body?.metadata || {},
     };
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createMicrosoftEvent } from '@/lib/calendar/connectors/microsoft';
 import { createInternalEvent } from '@/lib/calendar/eventService';
+import { getProfessionalEmailsForUser } from '@/lib/calendar/plannerType';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,6 +33,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const requestId = String(body?.requestId || '');
     const slot = body?.slot;
+    const explicitMode = String(body?.mode || '').trim();
 
     if (!requestId || !slot?.startAt || !slot?.endAt) {
       return NextResponse.json({ error: 'requestId and slot are required' }, { status: 400 });
@@ -52,6 +54,10 @@ export async function POST(request: NextRequest) {
     const participants = Array.isArray(parsedIntent.attendees)
       ? parsedIntent.attendees
       : [];
+    const proposalMode = explicitMode || reqData.proposal_mode || 'proposal';
+    const targetEventType = reqData.target_event_type === 'perso' ? 'perso' : 'pro';
+    const professionalEmails = await getProfessionalEmailsForUser(supabase, userId);
+    const professionalEmail = professionalEmails[0] || null;
 
     const { data: source } = await supabase
       .from('calendar_sources')
@@ -62,7 +68,7 @@ export async function POST(request: NextRequest) {
       .order('updated_at', { ascending: false })
       .maybeSingle();
 
-    if (source?.access_token) {
+    if (source?.access_token && proposalMode === 'direct') {
       await createMicrosoftEvent({
         accessToken: source.access_token,
         calendarId: source.external_calendar_id || undefined,
@@ -85,22 +91,52 @@ export async function POST(request: NextRequest) {
       timezone: 'Europe/Paris',
       attendees: participants.map((email: string) => ({ email })),
       is_blocking: true,
-      status: 'confirmed',
+      status: proposalMode === 'direct' ? 'confirmed' : 'tentative',
+      workflow_status: proposalMode === 'direct' ? 'confirmed' : 'pending_confirmation',
+      planner_type: targetEventType,
+      category: targetEventType,
+      organizer_email: targetEventType === 'pro' ? professionalEmail : null,
       created_by_ai: true,
       raw_payload: { requestId },
     });
+
+    if (proposalMode !== 'direct') {
+      const relanceDeadline = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+      await supabase.from('tasks').insert({
+        user_id: userId,
+        title: `Relancer participants pour: ${title}`,
+        type: targetEventType,
+        status: 'todo',
+        deadline: relanceDeadline.toISOString(),
+        archived: false,
+      });
+    }
 
     await supabase
       .from('scheduling_requests')
       .update({
         selected_slot: slot,
-        status: 'confirmed',
+        status: proposalMode === 'direct' ? 'confirmed' : 'proposed',
+        workflow_status: proposalMode === 'direct' ? 'confirmed' : 'sent',
+        progression: proposalMode === 'direct' ? 100 : 40,
+        first_sent_at: proposalMode === 'direct' ? null : new Date().toISOString(),
+        next_relance_at:
+          proposalMode === 'direct'
+            ? null
+            : new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
         linked_event_id: internalEvent.id,
       })
       .eq('id', requestId)
       .eq('user_id', userId);
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      event: {
+        id: internalEvent.id,
+        status: internalEvent.status,
+        workflow_status: internalEvent.workflow_status,
+      },
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },

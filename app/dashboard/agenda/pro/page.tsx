@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import AgendaNav from '@/components/agenda/AgendaNav';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 
@@ -224,7 +225,19 @@ export default function AgendaProPage() {
             <h1 className="mt-2 text-3xl font-semibold text-white">Rendez-vous business lisibles en un coup d&apos;oeil</h1>
             <p className="mt-1 text-sm capitalize text-slate-300">{humanDate}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/dashboard/agenda/new"
+              className="rounded-lg border border-slate-200/25 bg-slate-100/10 px-3 py-2 text-sm text-slate-100 transition hover:bg-slate-100/20"
+            >
+              + Nouveau RDV
+            </Link>
+            <Link
+              href="/dashboard/agenda/propositions"
+              className="rounded-lg border border-amber-300/30 bg-amber-400/15 px-3 py-2 text-sm text-amber-100 transition hover:bg-amber-400/25"
+            >
+              Propositions
+            </Link>
             <button
               onClick={() => navigateDay(-1)}
               disabled={loading}
