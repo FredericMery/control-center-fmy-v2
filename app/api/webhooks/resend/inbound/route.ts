@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { callOpenAi } from '@/lib/ai/client';
 import { createHmac, timingSafeEqual } from 'crypto';
+import PostalMime from 'postal-mime';
 import { Resend } from 'resend';
 
 const supabase = createClient(
@@ -364,8 +365,9 @@ async function extractIcsTextFromInboundPayload(
 
   for (const field of directFields) {
     const text = normalizeTextOrEmpty(field);
-    if (text.includes('BEGIN:VCALENDAR') && text.includes('BEGIN:VEVENT')) {
-      return text;
+    const extracted = extractEmbeddedIcsText(text);
+    if (extracted) {
+      return extracted;
     }
   }
 
@@ -387,13 +389,15 @@ async function extractIcsTextFromInboundPayload(
 
     const rawContent = record['content'] ?? record['data'] ?? record['raw'] ?? '';
     const plain = normalizeTextOrEmpty(rawContent);
-    if (plain.includes('BEGIN:VCALENDAR') && plain.includes('BEGIN:VEVENT')) {
-      return plain;
+    const extractedPlain = extractEmbeddedIcsText(plain);
+    if (extractedPlain) {
+      return extractedPlain;
     }
 
     const maybeDecoded = decodeBase64ToText(String(rawContent || ''));
-    if (maybeDecoded.includes('BEGIN:VCALENDAR') && maybeDecoded.includes('BEGIN:VEVENT')) {
-      return maybeDecoded;
+    const extractedDecoded = extractEmbeddedIcsText(maybeDecoded);
+    if (extractedDecoded) {
+      return extractedDecoded;
     }
   }
 
@@ -418,13 +422,15 @@ async function extractIcsTextViaResendReceiving(
     const receiveData = (received as { data?: Record<string, unknown> | null })?.data || null;
 
     const fromText = normalizeTextOrEmpty(receiveData?.['text']);
-    if (fromText.includes('BEGIN:VCALENDAR') && fromText.includes('BEGIN:VEVENT')) {
-      return fromText;
+    const extractedText = extractEmbeddedIcsText(fromText);
+    if (extractedText) {
+      return extractedText;
     }
 
     const fromHtml = normalizeTextOrEmpty(receiveData?.['html']);
-    if (fromHtml.includes('BEGIN:VCALENDAR') && fromHtml.includes('BEGIN:VEVENT')) {
-      return fromHtml;
+    const extractedHtml = extractEmbeddedIcsText(fromHtml);
+    if (extractedHtml) {
+      return extractedHtml;
     }
 
     const rawDownloadUrl = normalizeText(
@@ -432,8 +438,9 @@ async function extractIcsTextViaResendReceiving(
     );
     if (rawDownloadUrl) {
       const rawText = await downloadTextFromUrl(rawDownloadUrl);
-      if (rawText.includes('BEGIN:VCALENDAR') && rawText.includes('BEGIN:VEVENT')) {
-        return rawText;
+      const extractedRaw = await extractIcsTextFromMimeEmail(rawText);
+      if (extractedRaw) {
+        return extractedRaw;
       }
     }
   } catch (error) {
@@ -459,8 +466,9 @@ async function extractIcsTextViaResendReceiving(
       if (!downloadUrl) continue;
 
       const downloaded = await downloadTextFromUrl(downloadUrl);
-      if (downloaded.includes('BEGIN:VCALENDAR') && downloaded.includes('BEGIN:VEVENT')) {
-        return downloaded;
+      const extractedDownloaded = extractEmbeddedIcsText(downloaded);
+      if (extractedDownloaded) {
+        return extractedDownloaded;
       }
     }
   } catch (error) {
@@ -486,6 +494,60 @@ async function downloadTextFromUrl(url: string): Promise<string> {
   } catch {
     return '';
   }
+}
+
+function extractEmbeddedIcsText(value: string): string | null {
+  const raw = String(value || '');
+  if (!raw) return null;
+
+  const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const match = normalized.match(/BEGIN:VCALENDAR[\s\S]*?END:VCALENDAR/i);
+  if (!match?.[0]) return null;
+
+  return match[0].trim();
+}
+
+async function extractIcsTextFromMimeEmail(rawEmail: string): Promise<string | null> {
+  const embedded = extractEmbeddedIcsText(rawEmail);
+  if (embedded) return embedded;
+
+  const raw = String(rawEmail || '').trim();
+  if (!raw) return null;
+
+  try {
+    const parsed = await PostalMime.parse(raw, {
+      attachmentEncoding: 'utf8',
+      rfc822Attachments: true,
+    });
+
+    const textCandidate = extractEmbeddedIcsText(parsed.text || '');
+    if (textCandidate) return textCandidate;
+
+    const htmlCandidate = extractEmbeddedIcsText(parsed.html || '');
+    if (htmlCandidate) return htmlCandidate;
+
+    for (const attachment of parsed.attachments || []) {
+      const fileName = normalizeText(attachment.filename).toLowerCase();
+      const mimeType = normalizeText(attachment.mimeType).toLowerCase();
+      const isIcsAttachment =
+        fileName.endsWith('.ics') ||
+        mimeType.includes('text/calendar') ||
+        mimeType.includes('application/ics');
+
+      if (!isIcsAttachment) continue;
+
+      const content =
+        typeof attachment.content === 'string'
+          ? attachment.content
+          : Buffer.from(new Uint8Array(attachment.content)).toString('utf8');
+      const extracted = extractEmbeddedIcsText(content);
+      if (extracted) return extracted;
+    }
+  } catch (error) {
+    console.warn('resend inbound -> MIME calendar extraction failed', error);
+  }
+
+  return null;
 }
 
 type ParsedIcsEvent = {

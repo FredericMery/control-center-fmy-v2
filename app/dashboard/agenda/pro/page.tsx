@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import AgendaNav from '@/components/agenda/AgendaNav';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 
 type ProEvent = {
@@ -12,6 +12,13 @@ type ProEvent = {
   location: string | null;
   source_provider: string;
   status: string;
+};
+
+type DisplayProEvent = ProEvent & {
+  displayAnchorAt: string;
+  isMultiDay: boolean;
+  timeLabel: string;
+  spanLabel: string | null;
 };
 
 function toIsoRange(dateValue: string) {
@@ -29,9 +36,9 @@ function todayInputValue() {
 }
 
 function addDays(dateStr: string, delta: number): string {
-  const d = new Date(`${dateStr}T12:00:00`);
-  d.setDate(d.getDate() + delta);
-  return d.toISOString().split('T')[0];
+  const date = new Date(`${dateStr}T12:00:00`);
+  date.setDate(date.getDate() + delta);
+  return date.toISOString().split('T')[0];
 }
 
 function getEventDuration(startAt: string, endAt: string): string {
@@ -41,6 +48,67 @@ function getEventDuration(startAt: string, endAt: string): string {
   const hours = Math.floor(minutes / 60);
   const rem = minutes % 60;
   return rem === 0 ? `${hours}h` : `${hours}h${String(rem).padStart(2, '0')}`;
+}
+
+function formatShortDate(date: Date): string {
+  return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+}
+
+function isSameDay(left: Date, right: Date): boolean {
+  return left.toDateString() === right.toDateString();
+}
+
+function startOfDay(date: Date): Date {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function getDisplayEventForDate(event: ProEvent, date: string): DisplayProEvent {
+  const start = new Date(event.start_at);
+  const end = new Date(event.end_at);
+  const selectedDay = new Date(`${date}T12:00:00`);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return {
+      ...event,
+      displayAnchorAt: event.start_at,
+      isMultiDay: false,
+      timeLabel: `${new Date(event.start_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} – ${new Date(event.end_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`,
+      spanLabel: null,
+    };
+  }
+
+  if (isSameDay(start, end)) {
+    return {
+      ...event,
+      displayAnchorAt: event.start_at,
+      isMultiDay: false,
+      timeLabel: `${start.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`,
+      spanLabel: null,
+    };
+  }
+
+  const isStartDay = isSameDay(start, selectedDay);
+  const isEndDay = isSameDay(end, selectedDay);
+
+  let timeLabel = 'Se poursuit';
+  let displayAnchorAt = startOfDay(selectedDay).toISOString();
+
+  if (isStartDay) {
+    timeLabel = `Débute à ${start.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    displayAnchorAt = event.start_at;
+  } else if (isEndDay) {
+    timeLabel = `Se termine à ${end.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  return {
+    ...event,
+    displayAnchorAt,
+    isMultiDay: true,
+    timeLabel,
+    spanLabel: `${formatShortDate(start)} → ${formatShortDate(end)}`,
+  };
 }
 
 const STATUS_CARD: Record<string, string> = {
@@ -67,6 +135,7 @@ export default function AgendaProPage() {
   const [loading, setLoading] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [viewFilter, setViewFilter] = useState<'all' | 'confirmed' | 'tentative' | 'multi'>('all');
 
   const humanDate = useMemo(() => {
     const today = todayInputValue();
@@ -113,94 +182,175 @@ export default function AgendaProPage() {
     loadForDate(newDate);
   };
 
+  const jumpToDate = (nextDate: string) => {
+    setDate(nextDate);
+    loadForDate(nextDate);
+  };
+
   const sortedEvents = useMemo(
-    () => [...events].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()),
-    [events],
+    () => [...events]
+      .map((event) => getDisplayEventForDate(event, date))
+      .sort((a, b) => new Date(a.displayAnchorAt).getTime() - new Date(b.displayAnchorAt).getTime()),
+    [date, events],
   );
 
-  const confirmedCount = sortedEvents.filter((e) => e.status === 'confirmed').length;
+  const filteredEvents = useMemo(() => {
+    if (viewFilter === 'confirmed') {
+      return sortedEvents.filter((event) => event.status === 'confirmed');
+    }
+    if (viewFilter === 'tentative') {
+      return sortedEvents.filter((event) => event.status === 'tentative');
+    }
+    if (viewFilter === 'multi') {
+      return sortedEvents.filter((event) => event.isMultiDay);
+    }
+    return sortedEvents;
+  }, [sortedEvents, viewFilter]);
+
+  const confirmedCount = sortedEvents.filter((event) => event.status === 'confirmed').length;
+  const tentativeCount = sortedEvents.filter((event) => event.status === 'tentative').length;
+  const multiDayCount = sortedEvents.filter((event) => event.isMultiDay).length;
   const isToday = date === todayInputValue();
+  const firstEvent = filteredEvents[0] || null;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
-      {/* Nav tabs */}
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Link href="/dashboard/agenda" className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
-          Vue générale
-        </Link>
-        <Link href="/dashboard/agenda/pro" className="rounded-lg border border-emerald-300/30 bg-emerald-500/25 px-3 py-1.5 text-xs font-medium text-emerald-100">
-          Vue pro
-        </Link>
-        <Link href="/dashboard/agenda/assistant" className="rounded-lg border border-cyan-300/30 bg-cyan-400/15 px-3 py-1.5 text-xs text-cyan-100 hover:bg-cyan-400/25">
-          Assistant
-        </Link>
-        <Link href="/dashboard/agenda/connecteurs" className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
-          Connecteurs
-        </Link>
-        <Link href="/dashboard/agenda/preferences" className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">
-          Préférences
-        </Link>
-      </div>
+      <AgendaNav active="pro" />
 
-      {/* Header */}
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-white">Rendez-vous pro</h1>
-          <p className="mt-0.5 text-sm capitalize text-slate-300">{humanDate}</p>
-        </div>
-        {/* Day navigation */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => navigateDay(-1)}
-            disabled={loading}
-            className="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
-          >
-            ← Préc.
-          </button>
-          {!isToday && (
+      <div className="mb-5 overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.2),_transparent_36%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(2,6,23,0.92))] p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.24em] text-emerald-200/75">Vue pro</p>
+            <h1 className="mt-2 text-3xl font-semibold text-white">Rendez-vous business lisibles en un coup d&apos;oeil</h1>
+            <p className="mt-1 text-sm capitalize text-slate-300">{humanDate}</p>
+          </div>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => { const t = todayInputValue(); setDate(t); loadForDate(t); }}
-              className="rounded-lg border border-white/20 bg-slate-800/60 px-3 py-2 text-xs text-slate-300 transition hover:bg-slate-700"
+              onClick={() => navigateDay(-1)}
+              disabled={loading}
+              className="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
             >
-              Aujourd&apos;hui
+              ← Prec.
             </button>
-          )}
+            {!isToday && (
+              <button
+                onClick={() => jumpToDate(todayInputValue())}
+                className="rounded-lg border border-white/20 bg-slate-800/60 px-3 py-2 text-xs text-slate-300 transition hover:bg-slate-700"
+              >
+                Aujourd&apos;hui
+              </button>
+            )}
+            <button
+              onClick={() => navigateDay(1)}
+              disabled={loading}
+              className="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              Suiv. →
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
           <button
-            onClick={() => navigateDay(1)}
-            disabled={loading}
-            className="rounded-lg border border-white/15 px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
+            onClick={() => jumpToDate(todayInputValue())}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-200 transition hover:border-white/20"
           >
-            Suiv. →
+            Aujourd&apos;hui
+          </button>
+          <button
+            onClick={() => jumpToDate(addDays(todayInputValue(), 1))}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-200 transition hover:border-white/20"
+          >
+            Demain
+          </button>
+          <button
+            onClick={() => jumpToDate(addDays(todayInputValue(), 7))}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-200 transition hover:border-white/20"
+          >
+            Dans 7 jours
           </button>
         </div>
       </div>
 
-      {/* Date picker */}
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Rendez-vous</p>
+          <p className="mt-2 text-3xl font-semibold text-white">{sortedEvents.length}</p>
+          <p className="mt-1 text-xs text-slate-500">sur la journee selectionnee</p>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Confirmes</p>
+          <p className="mt-2 text-3xl font-semibold text-white">{confirmedCount}</p>
+          <p className="mt-1 text-xs text-slate-500">{tentativeCount} provisoire{tentativeCount > 1 ? 's' : ''}</p>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Multi-jours</p>
+          <p className="mt-2 text-3xl font-semibold text-white">{multiDayCount}</p>
+          <p className="mt-1 text-xs text-slate-500">repere immediat sur la journee</p>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-400">Premier jalon</p>
+          <p className="mt-2 text-sm font-semibold text-white">{firstEvent ? firstEvent.title : 'Aucun'}</p>
+          <p className="mt-1 text-xs text-slate-500">{firstEvent ? firstEvent.timeLabel : 'Journee libre'}</p>
+        </div>
+      </div>
+
       <div className="mb-5 rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-sm text-slate-300">
-            Choisir une date
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => { setDate(e.target.value); loadForDate(e.target.value); }}
-              className="rounded-lg border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-white"
-            />
-          </label>
-          <button
-            onClick={() => loadForDate(date)}
-            disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg border border-white/15 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
-          >
-            {loading ? (
-              <>
-                <span className="h-3 w-3 animate-spin rounded-full border border-slate-400 border-t-transparent" />
-                Chargement
-              </>
-            ) : (
-              'Rafraîchir'
-            )}
-          </button>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1 text-sm text-slate-300">
+              Choisir une date
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  loadForDate(e.target.value);
+                }}
+                className="rounded-lg border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-white"
+              />
+            </label>
+            <button
+              onClick={() => loadForDate(date)}
+              disabled={loading}
+              className="flex items-center gap-1.5 rounded-lg border border-white/15 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <span className="h-3 w-3 animate-spin rounded-full border border-slate-400 border-t-transparent" />
+                  Chargement
+                </>
+              ) : (
+                'Rafraichir'
+              )}
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setViewFilter('all')}
+              className={`rounded-full px-3 py-1.5 text-xs transition ${viewFilter === 'all' ? 'bg-white text-slate-950' : 'border border-white/10 bg-slate-950/60 text-slate-300 hover:border-white/20'}`}
+            >
+              Tous
+            </button>
+            <button
+              onClick={() => setViewFilter('confirmed')}
+              className={`rounded-full px-3 py-1.5 text-xs transition ${viewFilter === 'confirmed' ? 'bg-emerald-300 text-slate-950' : 'border border-white/10 bg-slate-950/60 text-slate-300 hover:border-white/20'}`}
+            >
+              Confirmes
+            </button>
+            <button
+              onClick={() => setViewFilter('tentative')}
+              className={`rounded-full px-3 py-1.5 text-xs transition ${viewFilter === 'tentative' ? 'bg-amber-300 text-slate-950' : 'border border-white/10 bg-slate-950/60 text-slate-300 hover:border-white/20'}`}
+            >
+              Provisoires
+            </button>
+            <button
+              onClick={() => setViewFilter('multi')}
+              className={`rounded-full px-3 py-1.5 text-xs transition ${viewFilter === 'multi' ? 'bg-emerald-400 text-slate-950' : 'border border-white/10 bg-slate-950/60 text-slate-300 hover:border-white/20'}`}
+            >
+              Multi-jours
+            </button>
+          </div>
         </div>
       </div>
 
@@ -210,13 +360,10 @@ export default function AgendaProPage() {
         </div>
       )}
 
-      {/* Events */}
       <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold text-white">
-            {sortedEvents.length > 0
-              ? `${sortedEvents.length} rendez-vous`
-              : 'Rendez-vous'}
+            {filteredEvents.length > 0 ? `${filteredEvents.length} rendez-vous` : 'Rendez-vous'}
           </h2>
           {confirmedCount > 0 && (
             <span className="text-xs text-emerald-300">
@@ -227,37 +374,45 @@ export default function AgendaProPage() {
 
         {loading && !hasLoaded ? (
           <div className="space-y-2">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
+            {[...Array(3)].map((_, index) => (
+              <div key={index} className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
                 <div className="h-4 w-48 animate-pulse rounded bg-slate-700/60" />
                 <div className="mt-2 h-3 w-28 animate-pulse rounded bg-slate-700/40" />
               </div>
             ))}
           </div>
-        ) : sortedEvents.length === 0 ? (
+        ) : filteredEvents.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <div className="mb-2 text-3xl">✅</div>
-            <p className="text-sm font-medium text-slate-300">Aucun rendez-vous pro</p>
-            <p className="mt-1 text-xs text-slate-500">Journée libre !</p>
+            <p className="text-sm font-medium text-slate-300">Aucun rendez-vous pour ce filtre</p>
+            <p className="mt-1 text-xs text-slate-500">Essayez un autre statut ou une autre date.</p>
           </div>
         ) : (
           <div className="space-y-2">
-            {sortedEvents.map((event) => (
+            {filteredEvents.map((event) => (
               <div
                 key={event.id}
-                className={`rounded-xl border p-3 transition ${STATUS_CARD[event.status] ?? 'border-white/10 bg-slate-950/60'}`}
+                className={`rounded-xl border p-3 transition ${event.isMultiDay ? 'border-emerald-300/35 bg-emerald-400/10' : STATUS_CARD[event.status] ?? 'border-white/10 bg-slate-950/60'}`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-white">{event.title}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-white">{event.title}</p>
+                      {event.isMultiDay && (
+                        <span className="rounded-full border border-emerald-300/35 bg-emerald-400/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-100">
+                          Multi-jours
+                        </span>
+                      )}
+                    </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-300">
-                      <span>
-                        {new Date(event.start_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                        {' – '}
-                        {new Date(event.end_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                      <span>{event.timeLabel}</span>
                       <span className="text-slate-500">{getEventDuration(event.start_at, event.end_at)}</span>
                     </div>
+                    {event.spanLabel && (
+                      <p className="mt-1 text-[11px] uppercase tracking-wide text-emerald-300/80">
+                        {event.spanLabel}
+                      </p>
+                    )}
                     {event.location && (
                       <p className="mt-1 text-xs text-slate-400">📍 {event.location}</p>
                     )}

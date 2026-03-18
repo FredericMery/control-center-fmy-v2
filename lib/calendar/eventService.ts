@@ -64,8 +64,8 @@ export async function listCalendarEvents(args: {
     .select('*')
     .eq('user_id', args.userId)
     .is('deleted_at', null)
-    .gte('start_at', args.startAt)
-    .lte('end_at', args.endAt)
+    .lte('start_at', args.endAt)
+    .gte('end_at', args.startAt)
     .order('start_at', { ascending: true });
 
   if (args.sourceProviders && args.sourceProviders.length > 0) {
