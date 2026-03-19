@@ -288,6 +288,7 @@ export default function DashboardPage() {
     if (moduleId === 'pro') return { value: proTodoCount, label: t('dashboard.proToLaunch') };
     if (moduleId === 'perso') return { value: persoTodoCount, label: t('dashboard.persoToLaunch') };
     if (moduleId === 'memoire') return { value: activeMemoryCount, label: t('dashboard.activeMemories') };
+    if (moduleId === 'courrier') return { value: '📬', label: 'Gestionnaire courrier' };
     if (moduleId === 'planning') return { value: 'IA', label: 'Planification intelligente' };
     return { value: visionCountMonth, label: t('dashboard.visionCalls', { month: monthName }) };
   };

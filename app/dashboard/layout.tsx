@@ -121,6 +121,17 @@ export default function DashboardLayout({
               >
                 Agenda
               </Link>
+
+              <Link
+                href="/dashboard/courrier"
+                className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
+                  pathname.startsWith("/dashboard/courrier")
+                    ? "bg-violet-500/20 text-violet-100"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                📬 Courrier
+              </Link>
             </nav>
 
             {pathname !== "/dashboard" && (
