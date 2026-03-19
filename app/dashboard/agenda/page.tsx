@@ -58,6 +58,19 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
+function isCancelledEvent(event: AgendaEventLike): boolean {
+  const status = (event.status || '').toLowerCase();
+  const title = (event.title || '').toLowerCase();
+  return (
+    status.includes('cancel') ||
+    status.includes('annul') ||
+    title.includes('annule') ||
+    title.includes('annulé') ||
+    title.startsWith('cancelled:') ||
+    title.startsWith('canceled:')
+  );
+}
+
 function isMultiDay(event: AgendaEventLike): boolean {
   const start = new Date(event.start_at);
   const end = new Date(event.end_at);
@@ -140,12 +153,16 @@ export default function AgendaPage() {
     return Array.from({ length: 5 }, (_, i) => addDaysToKey(planningDate, i));
   }, [viewMode, planningDate]);
 
+  const visibleEvents = useMemo(() => {
+    return events.filter((event) => !isCancelledEvent(event));
+  }, [events]);
+
   // Multi-day events spanning the visible period (shown in banner, NOT in hourly grid)
   const multiDayEvents = useMemo((): AgendaEventLike[] => {
     const periodStart = new Date(`${displayDays[0]}T00:00:00`).getTime();
     const periodEnd = new Date(`${displayDays[displayDays.length - 1]}T23:59:59.999`).getTime();
     const seen = new Set<string>();
-    return events.filter((event) => {
+    return visibleEvents.filter((event) => {
       if (!isMultiDay(event) || seen.has(event.id)) return false;
       const s = new Date(event.start_at).getTime();
       const e = new Date(event.end_at).getTime();
@@ -155,7 +172,31 @@ export default function AgendaPage() {
       }
       return false;
     });
-  }, [events, displayDays]);
+  }, [visibleEvents, displayDays]);
+
+  const multiDaySpans = useMemo(() => {
+    if (viewMode !== '5days') return [] as Array<{ event: AgendaEventLike; startIdx: number; endIdx: number }>;
+    const firstDayMs = new Date(`${displayDays[0]}T00:00:00`).getTime();
+    const dayMs = 86400000;
+
+    return multiDayEvents
+      .map((event) => {
+        const startKey = toDateKey(new Date(event.start_at));
+        const endKey = toDateKey(new Date(event.end_at));
+        const startMs = new Date(`${startKey}T00:00:00`).getTime();
+        const endMs = new Date(`${endKey}T00:00:00`).getTime();
+        const rawStart = Math.floor((startMs - firstDayMs) / dayMs);
+        const rawEnd = Math.floor((endMs - firstDayMs) / dayMs);
+        const startIdx = Math.max(0, rawStart);
+        const endIdx = Math.min(displayDays.length - 1, rawEnd);
+        return { event, startIdx, endIdx };
+      })
+      .filter((item) => item.startIdx <= item.endIdx)
+      .sort((a, b) => {
+        if (a.startIdx !== b.startIdx) return a.startIdx - b.startIdx;
+        return b.endIdx - a.endIdx;
+      });
+  }, [displayDays, multiDayEvents, viewMode]);
 
   const gridCols = viewMode === '1day' ? '80px 1fr 1fr' : `80px repeat(5, 1fr)`;
 
@@ -281,45 +322,8 @@ export default function AgendaPage() {
           </span>
         </div>
 
-        {/* Multi-day banner — shown above the hourly grid */}
-        {multiDayEvents.length > 0 && (
-          <div className="mb-4 rounded-xl border border-amber-300/25 bg-amber-400/8 px-3 py-2.5">
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-amber-300/80">
-              Événements multi-jours actifs sur la période
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {multiDayEvents.map((event) => {
-                const isPro = event.planner_type === 'pro';
-                const isPerso = event.planner_type === 'perso';
-                const chipClass = isPro
-                  ? 'border-blue-300/40 bg-blue-400/15 text-blue-100'
-                  : isPerso
-                  ? 'border-fuchsia-300/40 bg-fuchsia-400/15 text-fuchsia-100'
-                  : 'border-slate-500/30 bg-slate-700/40 text-slate-200';
-                const shortCode =
-                  PROVIDER_SHORT[event.source_provider] ?? event.source_provider.toUpperCase().slice(0, 3);
-                const srcColor = PROVIDER_TEXT_COLOR[event.source_provider] ?? 'text-slate-400';
-                return (
-                  <div
-                    key={event.id}
-                    className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${chipClass}`}
-                  >
-                    <span className="font-medium">{event.title}</span>
-                    <span className={`text-[9px] font-bold uppercase ${srcColor}`}>{shortCode}</span>
-                    <span className="text-[10px] opacity-60">
-                      {new Date(event.start_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                      {' → '}
-                      {new Date(event.end_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
         {/* Hourly grid */}
-        {loading && events.length === 0 ? (
+        {loading && visibleEvents.length === 0 ? (
           <div className="space-y-3">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="h-8 animate-pulse rounded-lg bg-slate-700/40" />
@@ -360,6 +364,66 @@ export default function AgendaPage() {
                 )}
               </div>
 
+              {/* Multi-day row (between date header and 07:00 row) */}
+              {multiDayEvents.length > 0 && (
+                <div
+                  className="grid border-b border-white/10 bg-amber-400/5 px-3 py-2"
+                  style={{ gridTemplateColumns: gridCols }}
+                >
+                  <span className="pt-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-300/80">
+                    Multi
+                  </span>
+
+                  {viewMode === '1day' ? (
+                    <>
+                      <SlotCell
+                        events={multiDayEvents.filter((e) => e.planner_type === 'pro')}
+                        rowKey="multi-pro"
+                        className="pr-1.5"
+                      />
+                      <SlotCell
+                        events={multiDayEvents.filter((e) => e.planner_type !== 'pro')}
+                        rowKey="multi-perso"
+                      />
+                    </>
+                  ) : (
+                    <div className="col-span-5 grid grid-cols-5 gap-1">
+                      {multiDaySpans.map((item, idx) => {
+                        const event = item.event;
+                        const isPro = event.planner_type === 'pro';
+                        const isPerso = event.planner_type === 'perso';
+                        const chipClass = isPro
+                          ? 'border-blue-300/40 bg-blue-400/15 text-blue-100'
+                          : isPerso
+                          ? 'border-fuchsia-300/40 bg-fuchsia-400/15 text-fuchsia-100'
+                          : 'border-slate-500/30 bg-slate-700/40 text-slate-200';
+                        const shortCode =
+                          PROVIDER_SHORT[event.source_provider] ?? event.source_provider.toUpperCase().slice(0, 3);
+                        const srcColor = PROVIDER_TEXT_COLOR[event.source_provider] ?? 'text-slate-400';
+
+                        return (
+                          <div
+                            key={`multi-${event.id}-${idx}`}
+                            className={`rounded-md border px-2 py-1 text-xs ${chipClass}`}
+                            style={{ gridColumn: `${item.startIdx + 1} / ${item.endIdx + 2}` }}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="truncate font-medium">{event.title}</p>
+                              <span className={`shrink-0 text-[9px] font-bold uppercase ${srcColor}`}>{shortCode}</span>
+                            </div>
+                            <p className="text-[10px] opacity-75">
+                              {new Date(event.start_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                              {' → '}
+                              {new Date(event.end_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Hour rows */}
               {PLANNING_HOURS.map((hour) => (
                 <div
@@ -374,14 +438,14 @@ export default function AgendaPage() {
                   {viewMode === '1day' ? (
                     <>
                       <SlotCell
-                        events={getEventsForDaySlot(events, displayDays[0], hour).filter(
+                        events={getEventsForDaySlot(visibleEvents, displayDays[0], hour).filter(
                           (e) => e.planner_type === 'pro',
                         )}
                         rowKey={`${hour}-pro`}
                         className="pr-1.5"
                       />
                       <SlotCell
-                        events={getEventsForDaySlot(events, displayDays[0], hour).filter(
+                        events={getEventsForDaySlot(visibleEvents, displayDays[0], hour).filter(
                           (e) => e.planner_type !== 'pro',
                         )}
                         rowKey={`${hour}-perso`}
@@ -391,7 +455,7 @@ export default function AgendaPage() {
                     displayDays.map((day) => (
                       <SlotCell
                         key={day}
-                        events={getEventsForDaySlot(events, day, hour)}
+                        events={getEventsForDaySlot(visibleEvents, day, hour)}
                         rowKey={`${hour}-${day}`}
                         className="px-0.5"
                       />
