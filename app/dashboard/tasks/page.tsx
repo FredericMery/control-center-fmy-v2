@@ -172,6 +172,14 @@ export default function TasksPage() {
               >
                 {showArchived ? t('tasks.active') : t('tasks.archives')}
               </button>
+              <button
+                onClick={() => setShowModal(true)}
+                aria-label={t('tasks.createTask')}
+                title={t('tasks.createTask')}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/35 bg-gradient-to-br from-cyan-300 to-blue-400 text-xl font-semibold leading-none text-slate-950 shadow-lg shadow-cyan-900/40 transition-all hover:scale-105 hover:from-cyan-200 hover:to-blue-300"
+              >
+                +
+              </button>
               <NotificationBell />
             </div>
           </div>

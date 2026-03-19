@@ -79,28 +79,6 @@ export default function DashboardLayout({
           <div className="flex items-center gap-2">
             <nav className="flex max-w-[52vw] items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-slate-900/70 p-1 text-sm sm:max-w-none">
               <Link
-                href="/dashboard"
-                className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
-                  pathname === "/dashboard"
-                    ? "bg-cyan-500/20 text-cyan-100"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                {t('nav.tasks')}
-              </Link>
-
-              <Link
-                href="/dashboard/memoire"
-                className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
-                  pathname.startsWith("/dashboard/memoire")
-                    ? "bg-cyan-500/20 text-cyan-100"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                {t('nav.memory')}
-              </Link>
-
-              <Link
                 href="/dashboard/settings"
                 className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
                   pathname.startsWith("/dashboard/settings")
@@ -109,28 +87,6 @@ export default function DashboardLayout({
                 }`}
               >
                 {t('nav.settings')}
-              </Link>
-
-              <Link
-                href="/dashboard/agenda"
-                className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
-                  pathname.startsWith("/dashboard/agenda")
-                    ? "bg-cyan-500/20 text-cyan-100"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                Agenda
-              </Link>
-
-              <Link
-                href="/dashboard/courrier"
-                className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 font-medium transition sm:px-3 ${
-                  pathname.startsWith("/dashboard/courrier")
-                    ? "bg-violet-500/20 text-violet-100"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                📬 Courrier
               </Link>
             </nav>
 
