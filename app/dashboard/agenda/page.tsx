@@ -21,7 +21,7 @@ type HourCell =
   | { type: 'covered' }
   | { type: 'start'; event: AgendaEventLike; span: number };
 
-const PLANNING_HOURS = Array.from({ length: 12 }, (_, i) => i + 7); // 07:00 – 18:xx
+const PLANNING_HOURS = Array.from({ length: 16 }, (_, i) => i + 7); // 07:00 – 22:xx
 
 const PROVIDER_SHORT: Record<string, string> = {
   microsoft: 'MS',
@@ -122,8 +122,8 @@ function isPresenceAllDay(event: AgendaEventLike): boolean {
 function buildHourColumnCells(events: AgendaEventLike[], dateKey: string): HourCell[] {
   const hourMs = 60 * 60 * 1000;
   const gridStart = new Date(`${dateKey}T07:00:00`).getTime();
-  const gridEnd = new Date(`${dateKey}T19:00:00`).getTime();
-  const cells: HourCell[] = Array.from({ length: 12 }, () => ({ type: 'empty' }));
+  const gridEnd = new Date(`${dateKey}T23:00:00`).getTime();
+  const cells: HourCell[] = Array.from({ length: 16 }, () => ({ type: 'empty' }));
 
   const candidates = events
     .filter((event) => !isMultiDay(event) && !isPresenceAllDay(event))
@@ -141,11 +141,11 @@ function buildHourColumnCells(events: AgendaEventLike[], dateKey: string): HourC
     const end = Math.min(rawEnd, gridEnd);
     if (end <= start) continue;
 
-    const startIdx = Math.max(0, Math.min(11, Math.floor((start - gridStart) / hourMs)));
+    const startIdx = Math.max(0, Math.min(15, Math.floor((start - gridStart) / hourMs)));
     const endExclusive = Math.max(start + 1, end);
     const endIdxExclusive = Math.max(
       startIdx + 1,
-      Math.min(12, Math.ceil((endExclusive - gridStart) / hourMs))
+      Math.min(16, Math.ceil((endExclusive - gridStart) / hourMs))
     );
     const span = endIdxExclusive - startIdx;
 
@@ -382,7 +382,7 @@ export default function AgendaPage() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-white">Planning horaire</h2>
-            <p className="mt-0.5 text-xs text-slate-500">07h – 19h · événements multi-jours affichés en haut</p>
+            <p className="mt-0.5 text-xs text-slate-500">07h – 22h · événements multi-jours affichés en haut</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {/* View mode toggle */}
