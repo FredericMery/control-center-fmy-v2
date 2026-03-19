@@ -58,6 +58,37 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('fr-FR', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getSpanEndTime(event: AgendaEventLike): number {
+  const start = new Date(event.start_at).getTime();
+  const endDate = new Date(event.end_at);
+  const end = endDate.getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) return end;
+
+  // Calendar feeds often store end at 00:00 as exclusive end date.
+  if (
+    end > start &&
+    endDate.getHours() === 0 &&
+    endDate.getMinutes() === 0 &&
+    endDate.getSeconds() === 0 &&
+    endDate.getMilliseconds() === 0
+  ) {
+    return end - 1;
+  }
+
+  return end;
+}
+
 function isCancelledEvent(event: AgendaEventLike): boolean {
   const status = (event.status || '').toLowerCase();
   const title = (event.title || '').toLowerCase();
@@ -73,7 +104,7 @@ function isCancelledEvent(event: AgendaEventLike): boolean {
 
 function isMultiDay(event: AgendaEventLike): boolean {
   const start = new Date(event.start_at);
-  const end = new Date(event.end_at);
+  const end = new Date(getSpanEndTime(event));
   return toDateKey(start) !== toDateKey(end);
 }
 
@@ -111,7 +142,7 @@ function EventChip({ event }: { event: AgendaEventLike }) {
   const shortCode = PROVIDER_SHORT[event.source_provider] ?? event.source_provider.toUpperCase().slice(0, 3);
   const srcColor = PROVIDER_TEXT_COLOR[event.source_provider] ?? 'text-slate-400';
   return (
-    <div className={`rounded-md border px-2 py-1 text-xs ${chipClass}`}>
+    <button type="button" className={`w-full rounded-md border px-2 py-1 text-left text-xs ${chipClass}`}>
       <div className="flex items-center justify-between gap-1">
         <p className="truncate font-medium leading-tight">{event.title}</p>
         <span className={`shrink-0 text-[9px] font-bold uppercase ${srcColor}`}>{shortCode}</span>
@@ -119,17 +150,19 @@ function EventChip({ event }: { event: AgendaEventLike }) {
       <p className={`text-[10px] ${timeClass}`}>
         {formatTime(event.start_at)} – {formatTime(event.end_at)}
       </p>
-    </div>
+    </button>
   );
 }
 
 function SlotCell({
   events,
   rowKey,
+  onSelect,
   className = '',
 }: {
   events: AgendaEventLike[];
   rowKey: string;
+  onSelect: (event: AgendaEventLike) => void;
   className?: string;
 }) {
   if (events.length === 0) {
@@ -138,7 +171,9 @@ function SlotCell({
   return (
     <div className={`space-y-1 ${className}`}>
       {events.map((e) => (
-        <EventChip key={`${rowKey}-${e.id}`} event={e} />
+        <div key={`${rowKey}-${e.id}`} onClick={() => onSelect(e)}>
+          <EventChip event={e} />
+        </div>
       ))}
     </div>
   );
@@ -148,6 +183,7 @@ export default function AgendaPage() {
   const { loading, error, events, loadEvents, loadSources } = useAgendaStore();
   const [viewMode, setViewMode] = useState<ViewMode>('1day');
   const [planningDate, setPlanningDate] = useState<string>(() => toDateKey(new Date()));
+  const [selectedEvent, setSelectedEvent] = useState<AgendaEventLike | null>(null);
 
   useEffect(() => {
     loadSources();
@@ -172,7 +208,7 @@ export default function AgendaPage() {
     return visibleEvents.filter((event) => {
       if ((!isMultiDay(event) && !isPresenceAllDay(event)) || seen.has(event.id)) return false;
       const s = new Date(event.start_at).getTime();
-      const e = new Date(event.end_at).getTime();
+      const e = getSpanEndTime(event);
       if (s <= periodEnd && e >= periodStart) {
         seen.add(event.id);
         return true;
@@ -189,7 +225,7 @@ export default function AgendaPage() {
     return multiDayEvents
       .map((event) => {
         const startKey = toDateKey(new Date(event.start_at));
-        const endKey = toDateKey(new Date(event.end_at));
+        const endKey = toDateKey(new Date(getSpanEndTime(event)));
         const startMs = new Date(`${startKey}T00:00:00`).getTime();
         const endMs = new Date(`${endKey}T00:00:00`).getTime();
         const rawStart = Math.floor((startMs - firstDayMs) / dayMs);
@@ -386,11 +422,13 @@ export default function AgendaPage() {
                       <SlotCell
                         events={multiDayEvents.filter((e) => e.planner_type === 'pro')}
                         rowKey="multi-pro"
+                        onSelect={setSelectedEvent}
                         className="pr-1.5"
                       />
                       <SlotCell
                         events={multiDayEvents.filter((e) => e.planner_type !== 'pro')}
                         rowKey="multi-perso"
+                        onSelect={setSelectedEvent}
                       />
                     </>
                   ) : (
@@ -409,10 +447,12 @@ export default function AgendaPage() {
                         const srcColor = PROVIDER_TEXT_COLOR[event.source_provider] ?? 'text-slate-400';
 
                         return (
-                          <div
+                          <button
+                            type="button"
                             key={`multi-${event.id}-${idx}`}
-                            className={`rounded-md border px-2 py-1 text-xs ${chipClass}`}
+                            className={`rounded-md border px-2 py-1 text-left text-xs ${chipClass}`}
                             style={{ gridColumn: `${item.startIdx + 1} / ${item.endIdx + 2}` }}
+                            onClick={() => setSelectedEvent(event)}
                           >
                             <div className="flex items-center justify-between gap-2">
                               <p className="truncate font-medium">{event.title}</p>
@@ -421,9 +461,9 @@ export default function AgendaPage() {
                             <p className="text-[10px] opacity-75">
                               {new Date(event.start_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
                               {' → '}
-                              {new Date(event.end_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                              {new Date(getSpanEndTime(event)).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
                             </p>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -449,6 +489,7 @@ export default function AgendaPage() {
                           (e) => e.planner_type === 'pro',
                         )}
                         rowKey={`${hour}-pro`}
+                        onSelect={setSelectedEvent}
                         className="pr-1.5"
                       />
                       <SlotCell
@@ -456,6 +497,7 @@ export default function AgendaPage() {
                           (e) => e.planner_type !== 'pro',
                         )}
                         rowKey={`${hour}-perso`}
+                        onSelect={setSelectedEvent}
                       />
                     </>
                   ) : (
@@ -464,6 +506,7 @@ export default function AgendaPage() {
                         key={day}
                         events={getEventsForDaySlot(visibleEvents, day, hour)}
                         rowKey={`${hour}-${day}`}
+                        onSelect={setSelectedEvent}
                         className="px-0.5"
                       />
                     ))
@@ -474,6 +517,56 @@ export default function AgendaPage() {
           </div>
         )}
       </div>
+
+      {selectedEvent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4" onClick={() => setSelectedEvent(null)}>
+          <div
+            className="w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900 p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-400">Détail rendez-vous</p>
+                <h3 className="mt-1 text-xl font-semibold text-white">{selectedEvent.title}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEvent(null)}
+                className="rounded-md border border-white/10 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <div className="space-y-2 text-sm text-slate-200">
+              <p>
+                <span className="text-slate-400">Début: </span>
+                {formatDateTime(selectedEvent.start_at)}
+              </p>
+              <p>
+                <span className="text-slate-400">Fin: </span>
+                {formatDateTime(selectedEvent.end_at)}
+              </p>
+              <p>
+                <span className="text-slate-400">Source: </span>
+                {selectedEvent.source_provider}
+              </p>
+              <p>
+                <span className="text-slate-400">Statut: </span>
+                {selectedEvent.status || 'n/a'}
+              </p>
+              <p>
+                <span className="text-slate-400">Type: </span>
+                {selectedEvent.planner_type ?? 'non défini'}
+              </p>
+              <p>
+                <span className="text-slate-400">Durée: </span>
+                {Math.max(0, Math.round((new Date(selectedEvent.end_at).getTime() - new Date(selectedEvent.start_at).getTime()) / 60000))} min
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
