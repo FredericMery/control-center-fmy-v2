@@ -77,6 +77,13 @@ function isMultiDay(event: AgendaEventLike): boolean {
   return toDateKey(start) !== toDateKey(end);
 }
 
+function isPresenceAllDay(event: AgendaEventLike): boolean {
+  const start = new Date(event.start_at).getTime();
+  const end = new Date(event.end_at).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return false;
+  return end - start > 5 * 60 * 60 * 1000;
+}
+
 function getEventsForDaySlot(
   events: AgendaEventLike[],
   dateKey: string,
@@ -85,7 +92,7 @@ function getEventsForDaySlot(
   const slotStart = new Date(`${dateKey}T${String(hour).padStart(2, '0')}:00:00`).getTime();
   const slotEnd = new Date(`${dateKey}T${String(hour + 1).padStart(2, '0')}:00:00`).getTime();
   return events.filter((event) => {
-    if (isMultiDay(event)) return false;
+    if (isMultiDay(event) || isPresenceAllDay(event)) return false;
     const start = new Date(event.start_at).getTime();
     const end = new Date(event.end_at).getTime();
     return start < slotEnd && end > slotStart;
@@ -157,13 +164,13 @@ export default function AgendaPage() {
     return events.filter((event) => !isCancelledEvent(event));
   }, [events]);
 
-  // Multi-day events spanning the visible period (shown in banner, NOT in hourly grid)
+  // Events shown in the multi row: real multi-day OR long presence (> 5h)
   const multiDayEvents = useMemo((): AgendaEventLike[] => {
     const periodStart = new Date(`${displayDays[0]}T00:00:00`).getTime();
     const periodEnd = new Date(`${displayDays[displayDays.length - 1]}T23:59:59.999`).getTime();
     const seen = new Set<string>();
     return visibleEvents.filter((event) => {
-      if (!isMultiDay(event) || seen.has(event.id)) return false;
+      if ((!isMultiDay(event) && !isPresenceAllDay(event)) || seen.has(event.id)) return false;
       const s = new Date(event.start_at).getTime();
       const e = new Date(event.end_at).getTime();
       if (s <= periodEnd && e >= periodStart) {
