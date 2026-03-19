@@ -47,6 +47,16 @@ export default function EmailAssistantPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; message: string } | null>(null);
+
+  const showOk = (msg: string) => {
+    setFeedback({ type: 'ok', message: msg });
+    setTimeout(() => setFeedback(null), 3500);
+  };
+  const showErr = (msg: string) => {
+    setFeedback({ type: 'err', message: msg });
+    setTimeout(() => setFeedback(null), 5000);
+  };
 
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState<'all' | 'classer' | 'repondre'>('all');
@@ -136,7 +146,12 @@ export default function EmailAssistantPage() {
         headers: await getAuthHeaders(),
         body: JSON.stringify({ tone: 'professionnel' }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        showErr(err.error || `Erreur ${res.status} lors de la generation du brouillon`);
+        return;
+      }
+      showOk('Brouillon genere avec succes.');
       await refreshAll();
     } finally {
       setBusy(false);
@@ -152,7 +167,12 @@ export default function EmailAssistantPage() {
         headers: await getAuthHeaders(),
         body: JSON.stringify({ subject: draftSubject, body: draftBody }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        showErr(err.error || `Erreur ${res.status} lors de la sauvegarde`);
+        return;
+      }
+      showOk('Brouillon sauvegarde.');
       await refreshAll();
     } finally {
       setBusy(false);
@@ -168,7 +188,12 @@ export default function EmailAssistantPage() {
         headers: await getAuthHeaders(),
         body: JSON.stringify({ subject: draftSubject, body: draftBody }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        showErr(err.error || `Erreur ${res.status} lors de l'envoi`);
+        return;
+      }
+      showOk('Email envoye avec succes.');
       await refreshAll();
     } finally {
       setBusy(false);
@@ -183,7 +208,12 @@ export default function EmailAssistantPage() {
         method: 'DELETE',
         headers: await getAuthHeaders(false),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        showErr(err.error || `Erreur ${res.status} lors de la suppression du brouillon`);
+        return;
+      }
+      showOk('Brouillon supprime.');
       await refreshAll();
     } finally {
       setBusy(false);
@@ -199,7 +229,12 @@ export default function EmailAssistantPage() {
         headers: await getAuthHeaders(),
         body: JSON.stringify({ archived: true, ai_action: 'classer', response_required: false }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        showErr(err.error || `Erreur ${res.status} lors du classement`);
+        return;
+      }
+      showOk('Email classe sans action.');
       await refreshAll();
     } finally {
       setBusy(false);
@@ -214,7 +249,12 @@ export default function EmailAssistantPage() {
         method: 'DELETE',
         headers: await getAuthHeaders(false),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        showErr(err.error || `Erreur ${res.status} lors de la suppression`);
+        return;
+      }
+      showOk('Email supprime.');
       await refreshAll();
     } finally {
       setBusy(false);
@@ -235,6 +275,15 @@ export default function EmailAssistantPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 px-3 pb-24 sm:px-4">
+      {feedback && (
+        <div className={`fixed right-4 top-4 z-50 max-w-sm rounded-2xl border px-4 py-3 text-sm font-medium shadow-xl transition ${
+          feedback.type === 'ok'
+            ? 'border-emerald-300/30 bg-emerald-500/15 text-emerald-100'
+            : 'border-rose-300/30 bg-rose-500/15 text-rose-100'
+        }`}>
+          {feedback.message}
+        </div>
+      )}
       <section className="rounded-3xl border border-indigo-200/10 bg-gradient-to-r from-slate-900/80 via-slate-900/75 to-indigo-950/60 p-4 sm:p-6">
         <p className="text-xs uppercase tracking-[0.22em] text-indigo-200/70">Email Assistant</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl">Gestion intelligente des emails</h1>
