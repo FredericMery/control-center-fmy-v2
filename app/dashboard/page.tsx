@@ -293,6 +293,93 @@ export default function DashboardPage() {
     return { value: visionCountMonth, label: t('dashboard.visionCalls', { month: monthName }) };
   };
 
+  const themedStats = useMemo(() => {
+    const activeTasks = tasks.filter((task) => !task.archived).length;
+    const archivedTasks = tasks.filter((task) => task.archived).length;
+    const doneTasks = tasks.filter((task) => task.status === 'done' && !task.archived).length;
+    const progress = activeTasks > 0 ? Math.round((doneTasks / activeTasks) * 100) : 0;
+    const enabledCount = cards.length;
+
+    return [
+      {
+        id: 'tasks',
+        title: 'Taches',
+        icon: '✅',
+        accent: 'border-cyan-300/25 bg-cyan-500/10',
+        stats: [
+          { label: 'Actives', value: String(activeTasks) },
+          { label: 'Done', value: String(doneTasks) },
+          { label: 'Archives', value: String(archivedTasks) },
+          { label: 'Progression', value: `${progress}%` },
+          { label: 'Pro todo', value: String(proTodoCount) },
+          { label: 'Perso todo', value: String(persoTodoCount) },
+          { label: 'Done today', value: String(todayDoneCount) },
+        ],
+      },
+      {
+        id: 'memory',
+        title: 'Memoire',
+        icon: '📚',
+        accent: 'border-emerald-300/25 bg-emerald-500/10',
+        stats: [
+          { label: 'Memoires actives', value: String(activeMemoryCount) },
+          { label: 'Entrees recentes', value: String(recentMemoryItems.length) },
+          {
+            label: 'Section recente',
+            value: recentMemoryItems[0]?.section_name ? String(recentMemoryItems[0].section_name) : 'Aucune',
+          },
+        ],
+      },
+      {
+        id: 'automation',
+        title: 'IA & Automations',
+        icon: '🧠',
+        accent: 'border-fuchsia-300/25 bg-fuchsia-500/10',
+        stats: [
+          { label: `Vision (${monthName})`, value: String(visionCountMonth) },
+          { label: 'Conversations IA', value: String(assistantConversations.length) },
+          {
+            label: 'Conversations ouvertes',
+            value: String(assistantConversations.filter((entry) => entry.status !== 'closed').length),
+          },
+          {
+            label: 'Conversations cloturees',
+            value: String(assistantConversations.filter((entry) => entry.status === 'closed').length),
+          },
+        ],
+      },
+      {
+        id: 'modules',
+        title: 'Modules',
+        icon: '🧩',
+        accent: 'border-amber-300/25 bg-amber-500/10',
+        stats: [
+          { label: 'Modules visibles', value: String(enabledCount) },
+          { label: 'Total modules', value: String(DASHBOARD_MODULES.length) },
+          {
+            label: 'Couverture',
+            value: `${Math.round((enabledCount / Math.max(1, DASHBOARD_MODULES.length)) * 100)}%`,
+          },
+          {
+            label: 'Dernier module',
+            value: cards[cards.length - 1]?.title ? String(cards[cards.length - 1].title) : 'N/A',
+          },
+        ],
+      },
+    ] as const;
+  }, [
+    tasks,
+    cards,
+    proTodoCount,
+    persoTodoCount,
+    todayDoneCount,
+    activeMemoryCount,
+    recentMemoryItems,
+    visionCountMonth,
+    assistantConversations,
+    monthName,
+  ]);
+
   const resetSwipe = (id: string) => {
     setSwipeOffsets((prev) => ({ ...prev, [id]: 0 }));
   };
@@ -921,94 +1008,41 @@ export default function DashboardPage() {
           })}
         </section>
 
-        <section className="grid gap-3 sm:gap-4 lg:grid-cols-5">
-          <div className="rounded-2xl border border-white/10 bg-slate-900/55 p-4 lg:col-span-3">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-semibold text-white">Focus taches</p>
-              <Link href="/dashboard/tasks" className="text-xs text-cyan-200 hover:text-cyan-100">
-                Ouvrir la liste
-              </Link>
+        <section className="mt-4 rounded-2xl border border-white/10 bg-slate-900/55 p-3 sm:mt-5 sm:p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-white">Stats 360</p>
+              <p className="text-xs text-slate-400">Regroupement par themes de toutes les metriques disponibles.</p>
             </div>
-
-            <div className="space-y-2">
-              <div className="rounded-xl border border-cyan-400/20 bg-cyan-500/10 p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-wide text-cyan-100">Pro</p>
-                  <span className="rounded-full bg-cyan-950/70 px-2 py-0.5 text-xs font-semibold text-cyan-100">{proTodoCount}</span>
-                </div>
-                <p className="mt-2 text-sm text-slate-200">Pipeline professionnel a traiter en priorite.</p>
-              </div>
-              <div className="rounded-xl border border-blue-400/20 bg-blue-500/10 p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-wide text-blue-100">Perso</p>
-                  <span className="rounded-full bg-blue-950/70 px-2 py-0.5 text-xs font-semibold text-blue-100">{persoTodoCount}</span>
-                </div>
-                <p className="mt-2 text-sm text-slate-200">Actions personnelles en attente d execution.</p>
-              </div>
-            </div>
+            <Link href="/dashboard/settings" className="text-xs text-cyan-200 hover:text-cyan-100">
+              Configurer
+            </Link>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-slate-900/55 p-3 sm:p-4 lg:col-span-2">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-sm font-semibold text-white">Dernieres entrees memoire</p>
-              <Link href="/dashboard/memoire/quick-add" className="text-xs text-emerald-200 hover:text-emerald-100">
-                + Ajouter
-              </Link>
-            </div>
-            <p className="mb-2 text-[11px] text-slate-400">Glisse vers la gauche pour supprimer.</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {themedStats.map((theme) => (
+              <article
+                key={theme.id}
+                className={`rounded-xl border p-3 ${theme.accent}`}
+              >
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-lg">{theme.icon}</span>
+                  <p className="text-sm font-semibold text-white">{theme.title}</p>
+                </div>
 
-            {recentMemoryItems.length === 0 ? (
-              <p className="rounded-xl border border-white/10 bg-slate-950/30 p-3 text-xs text-slate-400">Aucune entree manuelle pour le moment.</p>
-            ) : (
-              <div className="space-y-2">
-                {recentMemoryItems.map((entry) => {
-                  const translateX = swipeOffsets[entry.id] || 0;
-                  const showDelete = armedDeleteId === entry.id;
-
-                  return (
-                    <div key={entry.id} className="relative overflow-hidden rounded-xl border border-white/10 bg-slate-950/40">
-                      <button
-                        type="button"
-                        onClick={() => deleteRecentMemoryItem(entry.id)}
-                        className={`absolute inset-y-0 right-0 w-24 bg-rose-600 text-xs font-semibold text-white transition ${
-                          showDelete ? 'opacity-100' : 'opacity-70'
-                        }`}
-                      >
-                        Supprimer
-                      </button>
-
-                      <div
-                        className="relative z-10 cursor-grab touch-pan-y bg-slate-900/85 px-3 py-2 active:cursor-grabbing"
-                        style={{ transform: `translateX(${translateX}px)`, transition: swipeStartRef.current?.id === entry.id ? 'none' : 'transform 180ms ease' }}
-                        onTouchStart={(event) => onSwipeStart(entry.id, event.touches[0].clientX)}
-                        onTouchMove={(event) => onSwipeMove(entry.id, event.touches[0].clientX)}
-                        onTouchEnd={() => onSwipeEnd(entry.id)}
-                        onMouseDown={(event) => onSwipeStart(entry.id, event.clientX)}
-                        onMouseMove={(event) => onSwipeMove(entry.id, event.clientX)}
-                        onMouseUp={() => onSwipeEnd(entry.id)}
-                        onClick={() => {
-                          if (armedDeleteId === entry.id) {
-                            resetSwipe(entry.id);
-                            setArmedDeleteId(null);
-                          }
-                        }}
-                        onMouseLeave={() => {
-                          if (swipeStartRef.current?.id === entry.id) onSwipeEnd(entry.id);
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="truncate text-sm font-medium text-white">{entry.item_title}</p>
-                          <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">{formatRelativeDate(entry.created_at)}</span>
-                        </div>
-                        <p className="mt-1 text-[11px] text-slate-400">{entry.section_name}</p>
-                      </div>
+                <div className="space-y-1.5">
+                  {theme.stats.map((row) => (
+                    <div key={`${theme.id}-${row.label}`} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-slate-950/35 px-2 py-1.5">
+                      <span className="truncate text-[11px] text-slate-300">{row.label}</span>
+                      <span className="max-w-[55%] truncate text-xs font-semibold text-white">{row.value}</span>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  ))}
+                </div>
+              </article>
+            ))}
           </div>
         </section>
+
       </div>
     </div>
   );
