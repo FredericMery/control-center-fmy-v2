@@ -16,6 +16,10 @@ type AgendaEventLike = {
 };
 
 type ViewMode = '1day' | '5days';
+type HourCell =
+  | { type: 'empty' }
+  | { type: 'covered' }
+  | { type: 'start'; event: AgendaEventLike; span: number };
 
 const PLANNING_HOURS = Array.from({ length: 12 }, (_, i) => i + 7); // 07:00 – 18:xx
 
@@ -115,19 +119,52 @@ function isPresenceAllDay(event: AgendaEventLike): boolean {
   return end - start > 5 * 60 * 60 * 1000;
 }
 
-function getEventsForDaySlot(
-  events: AgendaEventLike[],
-  dateKey: string,
-  hour: number,
-): AgendaEventLike[] {
-  const slotStart = new Date(`${dateKey}T${String(hour).padStart(2, '0')}:00:00`).getTime();
-  const slotEnd = new Date(`${dateKey}T${String(hour + 1).padStart(2, '0')}:00:00`).getTime();
-  return events.filter((event) => {
-    if (isMultiDay(event) || isPresenceAllDay(event)) return false;
-    const start = new Date(event.start_at).getTime();
-    const end = new Date(event.end_at).getTime();
-    return start < slotEnd && end > slotStart;
-  });
+function buildHourColumnCells(events: AgendaEventLike[], dateKey: string): HourCell[] {
+  const hourMs = 60 * 60 * 1000;
+  const gridStart = new Date(`${dateKey}T07:00:00`).getTime();
+  const gridEnd = new Date(`${dateKey}T19:00:00`).getTime();
+  const cells: HourCell[] = Array.from({ length: 12 }, () => ({ type: 'empty' }));
+
+  const candidates = events
+    .filter((event) => !isMultiDay(event) && !isPresenceAllDay(event))
+    .filter((event) => {
+      const start = new Date(event.start_at).getTime();
+      const end = new Date(event.end_at).getTime();
+      return end > gridStart && start < gridEnd;
+    })
+    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+
+  for (const event of candidates) {
+    const rawStart = new Date(event.start_at).getTime();
+    const rawEnd = new Date(event.end_at).getTime();
+    const start = Math.max(rawStart, gridStart);
+    const end = Math.min(rawEnd, gridEnd);
+    if (end <= start) continue;
+
+    const startIdx = Math.max(0, Math.min(11, Math.floor((start - gridStart) / hourMs)));
+    const endExclusive = Math.max(start + 1, end);
+    const endIdxExclusive = Math.max(
+      startIdx + 1,
+      Math.min(12, Math.ceil((endExclusive - gridStart) / hourMs))
+    );
+    const span = endIdxExclusive - startIdx;
+
+    let overlaps = false;
+    for (let i = startIdx; i < endIdxExclusive; i += 1) {
+      if (cells[i].type !== 'empty') {
+        overlaps = true;
+        break;
+      }
+    }
+    if (overlaps) continue;
+
+    cells[startIdx] = { type: 'start', event, span };
+    for (let i = startIdx + 1; i < endIdxExclusive; i += 1) {
+      cells[i] = { type: 'covered' };
+    }
+  }
+
+  return cells;
 }
 
 function EventChip({ event }: { event: AgendaEventLike }) {
@@ -176,6 +213,35 @@ function SlotCell({
         </div>
       ))}
     </div>
+  );
+}
+
+function EventCellButton({ event, onSelect }: { event: AgendaEventLike; onSelect: (event: AgendaEventLike) => void }) {
+  const isPro = event.planner_type === 'pro';
+  const isPerso = event.planner_type === 'perso';
+  const chipClass = isPro
+    ? 'border-blue-300/40 bg-blue-400/15 text-blue-100'
+    : isPerso
+    ? 'border-fuchsia-300/40 bg-fuchsia-400/15 text-fuchsia-100'
+    : 'border-slate-500/30 bg-slate-700/40 text-slate-200';
+  const timeClass = isPro ? 'text-blue-200/80' : isPerso ? 'text-fuchsia-200/80' : 'text-slate-400';
+  const shortCode = PROVIDER_SHORT[event.source_provider] ?? event.source_provider.toUpperCase().slice(0, 3);
+  const srcColor = PROVIDER_TEXT_COLOR[event.source_provider] ?? 'text-slate-400';
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(event)}
+      className={`h-full w-full rounded-md border px-2 py-1 text-left text-xs ${chipClass}`}
+    >
+      <div className="flex items-center justify-between gap-1">
+        <p className="truncate font-medium leading-tight">{event.title}</p>
+        <span className={`shrink-0 text-[9px] font-bold uppercase ${srcColor}`}>{shortCode}</span>
+      </div>
+      <p className={`text-[10px] ${timeClass}`}>
+        {formatTime(event.start_at)} – {formatTime(event.end_at)}
+      </p>
+    </button>
   );
 }
 
@@ -240,6 +306,30 @@ export default function AgendaPage() {
         return b.endIdx - a.endIdx;
       });
   }, [displayDays, multiDayEvents, viewMode]);
+
+  const oneDayProCells = useMemo(() => {
+    if (viewMode !== '1day') return [] as HourCell[];
+    return buildHourColumnCells(
+      visibleEvents.filter((event) => event.planner_type === 'pro'),
+      displayDays[0]
+    );
+  }, [displayDays, viewMode, visibleEvents]);
+
+  const oneDayPersoCells = useMemo(() => {
+    if (viewMode !== '1day') return [] as HourCell[];
+    return buildHourColumnCells(
+      visibleEvents.filter((event) => event.planner_type !== 'pro'),
+      displayDays[0]
+    );
+  }, [displayDays, viewMode, visibleEvents]);
+
+  const fiveDayCellsByDay = useMemo(() => {
+    if (viewMode !== '5days') return {} as Record<string, HourCell[]>;
+    return displayDays.reduce<Record<string, HourCell[]>>((acc, day) => {
+      acc[day] = buildHourColumnCells(visibleEvents, day);
+      return acc;
+    }, {});
+  }, [displayDays, viewMode, visibleEvents]);
 
   const gridCols = viewMode === '1day' ? '80px 1fr 1fr' : `80px repeat(5, 1fr)`;
 
@@ -471,48 +561,54 @@ export default function AgendaPage() {
                 </div>
               )}
 
-              {/* Hour rows */}
-              {PLANNING_HOURS.map((hour) => (
-                <div
-                  key={hour}
-                  className="grid border-b border-white/5 px-3 py-2 last:border-0"
-                  style={{ gridTemplateColumns: gridCols }}
-                >
-                  <span className="pt-0.5 text-sm text-slate-300">
-                    {String(hour).padStart(2, '0')}:00
-                  </span>
+              {/* Hour rows (rowSpan merge for long blocks) */}
+              <table className="w-full table-fixed border-collapse">
+                <tbody>
+                  {PLANNING_HOURS.map((hour, idx) => (
+                    <tr key={hour} className="border-b border-white/5 last:border-0">
+                      <td className="w-20 px-3 py-2 align-top text-sm text-slate-300">
+                        {String(hour).padStart(2, '0')}:00
+                      </td>
 
-                  {viewMode === '1day' ? (
-                    <>
-                      <SlotCell
-                        events={getEventsForDaySlot(visibleEvents, displayDays[0], hour).filter(
-                          (e) => e.planner_type === 'pro',
-                        )}
-                        rowKey={`${hour}-pro`}
-                        onSelect={setSelectedEvent}
-                        className="pr-1.5"
-                      />
-                      <SlotCell
-                        events={getEventsForDaySlot(visibleEvents, displayDays[0], hour).filter(
-                          (e) => e.planner_type !== 'pro',
-                        )}
-                        rowKey={`${hour}-perso`}
-                        onSelect={setSelectedEvent}
-                      />
-                    </>
-                  ) : (
-                    displayDays.map((day) => (
-                      <SlotCell
-                        key={day}
-                        events={getEventsForDaySlot(visibleEvents, day, hour)}
-                        rowKey={`${hour}-${day}`}
-                        onSelect={setSelectedEvent}
-                        className="px-0.5"
-                      />
-                    ))
-                  )}
-                </div>
-              ))}
+                      {viewMode === '1day' ? (
+                        <>
+                          {oneDayProCells[idx]?.type === 'covered' ? null : oneDayProCells[idx]?.type === 'start' ? (
+                            <td rowSpan={oneDayProCells[idx].span} className="px-1.5 py-2 align-top">
+                              <EventCellButton event={oneDayProCells[idx].event} onSelect={setSelectedEvent} />
+                            </td>
+                          ) : (
+                            <td className="px-1.5 py-2 align-top text-xs text-slate-700">–</td>
+                          )}
+
+                          {oneDayPersoCells[idx]?.type === 'covered' ? null : oneDayPersoCells[idx]?.type === 'start' ? (
+                            <td rowSpan={oneDayPersoCells[idx].span} className="px-1.5 py-2 align-top">
+                              <EventCellButton event={oneDayPersoCells[idx].event} onSelect={setSelectedEvent} />
+                            </td>
+                          ) : (
+                            <td className="px-1.5 py-2 align-top text-xs text-slate-700">–</td>
+                          )}
+                        </>
+                      ) : (
+                        displayDays.map((day) => {
+                          const cells = fiveDayCellsByDay[day] || [];
+                          const cell = cells[idx];
+                          if (cell?.type === 'covered') return null;
+                          if (cell?.type === 'start') {
+                            return (
+                              <td key={day} rowSpan={cell.span} className="px-1 py-2 align-top">
+                                <EventCellButton event={cell.event} onSelect={setSelectedEvent} />
+                              </td>
+                            );
+                          }
+                          return (
+                            <td key={day} className="px-1 py-2 align-top text-xs text-slate-700">–</td>
+                          );
+                        })
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
