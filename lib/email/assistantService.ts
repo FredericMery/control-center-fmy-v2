@@ -171,9 +171,10 @@ export async function sendPreparedReplyEmail(args: {
     throw new Error('RESEND_API_KEY manquant');
   }
 
+  // Adresse dédiée au module Email Assistant (traitement@)
   const from =
-    String(process.env.EMAIL_FROM || process.env.RESEND_FROM || '').trim() ||
-    'Control Center <noreply@meetsync-ai.com>';
+    String(process.env.RESEND_EMAIL_ASSISTANT_FROM || '').trim() ||
+    'Control Center <traitement@mail.meetsync-ai.com>';
 
   return resend.emails.send({
     from,
