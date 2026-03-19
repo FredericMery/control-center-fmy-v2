@@ -15,6 +15,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 const DEFAULT_TASK_INBOUND_ADDRESS = 'taskpro@mail.meetsync-ai.com';
 const DEFAULT_AGENDA_INBOUND_ADDRESS = 'agenda@mail.meetsync-ai.com';
+const DEFAULT_EMAIL_ASSISTANT_INBOUND_ADDRESS = 'traitement@mail.meetsync-ai.com';
 
 export async function POST(request: NextRequest) {
   try {
@@ -49,6 +50,11 @@ export async function POST(request: NextRequest) {
     )
       .trim()
       .toLowerCase();
+    const emailAssistantInboundAddress = String(
+      process.env.RESEND_EMAIL_ASSISTANT_INBOUND_ADDRESS || DEFAULT_EMAIL_ASSISTANT_INBOUND_ADDRESS
+    )
+      .trim()
+      .toLowerCase();
 
     const recipientEmails = [
       ...extractEmailList(eventData.to),
@@ -58,12 +64,14 @@ export async function POST(request: NextRequest) {
 
     const addressedToTaskInbox = recipientEmails.some((email) => email === taskInboundAddress);
     const addressedToAgendaInbox = recipientEmails.some((email) => email === agendaInboundAddress);
-    if (!addressedToTaskInbox && !addressedToAgendaInbox) {
+    const addressedToEmailAssistantInbox = recipientEmails.some((email) => email === emailAssistantInboundAddress);
+    if (!addressedToTaskInbox && !addressedToAgendaInbox && !addressedToEmailAssistantInbox) {
       return NextResponse.json({
         ok: true,
         skipped: 'not-supported-inbox',
         expectedTaskInboundAddress: taskInboundAddress,
         expectedAgendaInboundAddress: agendaInboundAddress,
+        expectedEmailAssistantInboundAddress: emailAssistantInboundAddress,
         receivedRecipients: recipientEmails,
       });
     }
@@ -213,16 +221,20 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const emailAssistant = addressedToTaskInbox
-      ? await processInboundEmailAssistant({
-          userId,
-          eventData,
-          senderEmail,
-          subject,
-          plainText,
-          htmlText,
-        })
-      : null;
+    if (addressedToEmailAssistantInbox) {
+      const emailAssistant = await processInboundEmailAssistant({
+        userId,
+        eventData,
+        senderEmail,
+        subject,
+        plainText,
+        htmlText,
+      });
+      return NextResponse.json({
+        ok: true,
+        emailAssistant,
+      });
+    }
 
     const analysis = await analyzeTaskEmail({
       userId,
