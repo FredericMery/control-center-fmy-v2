@@ -279,7 +279,6 @@ export async function POST(request: NextRequest) {
         usedDefaultDeadline: !analysis.deadlineIso,
         description: analysis.description,
       },
-      emailAssistant,
     });
   } catch (error) {
     console.error('resend inbound webhook error', error);
