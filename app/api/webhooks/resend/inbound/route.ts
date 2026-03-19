@@ -5,6 +5,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import PostalMime from 'postal-mime';
 import { Resend } from 'resend';
 import { zonedDateTimeToUtcIso } from '@/lib/calendar/timezone';
+import { analyzeInboundEmailWithAi, generateReplySuggestionWithAi } from '@/lib/email/assistantService';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -212,6 +213,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const emailAssistant = addressedToTaskInbox
+      ? await processInboundEmailAssistant({
+          userId,
+          eventData,
+          senderEmail,
+          subject,
+          plainText,
+          htmlText,
+        })
+      : null;
+
     const analysis = await analyzeTaskEmail({
       userId,
       subject,
@@ -255,6 +267,7 @@ export async function POST(request: NextRequest) {
         usedDefaultDeadline: !analysis.deadlineIso,
         description: analysis.description,
       },
+      emailAssistant,
     });
   } catch (error) {
     console.error('resend inbound webhook error', error);
@@ -1082,6 +1095,192 @@ function truncate(value: string, max: number): string {
   const normalized = String(value || '').trim();
   if (normalized.length <= max) return normalized;
   return `${normalized.slice(0, max - 3)}...`;
+}
+
+async function processInboundEmailAssistant(args: {
+  userId: string;
+  eventData: Record<string, unknown>;
+  senderEmail: string;
+  subject: string;
+  plainText: string;
+  htmlText: string;
+}): Promise<{ messageId: string | null; action: 'classer' | 'repondre'; draftId: string | null } | null> {
+  try {
+    const externalEmailId = normalizeText(args.eventData['email_id'] || args.eventData['id']) || null;
+    const bodyText = truncate(normalizeText(args.plainText || ''), 30000);
+    const bodyHtml = truncate(String(args.htmlText || ''), 60000);
+    const receivedAt = parseInputDate(args.eventData['date'] || args.eventData['created_at'])?.toISOString() || new Date().toISOString();
+    const toEmails = extractEmailList(args.eventData['to']);
+    const ccEmails = extractEmailList(args.eventData['cc']);
+    const bccEmails = extractEmailList(args.eventData['bcc']);
+
+    const triage = await analyzeInboundEmailWithAi({
+      userId: args.userId,
+      subject: args.subject,
+      body: bodyText || normalizeText(args.htmlText),
+      senderEmail: args.senderEmail,
+      cc: ccEmails,
+      receivedAt,
+    });
+
+    let messageId: string | null = null;
+    if (externalEmailId) {
+      const { data: existing } = await supabase
+        .from('email_messages')
+        .select('id,response_status')
+        .eq('user_id', args.userId)
+        .eq('external_email_id', externalEmailId)
+        .maybeSingle();
+
+      if (existing?.id) {
+        messageId = String(existing.id);
+        await supabase
+          .from('email_messages')
+          .update({
+            sender_email: args.senderEmail,
+            sender_name: extractSenderName(args.eventData['from']) || null,
+            to_emails: toEmails,
+            cc_emails: ccEmails,
+            bcc_emails: bccEmails,
+            subject: truncate(args.subject, 500) || null,
+            body_text: bodyText || null,
+            body_html: bodyHtml || null,
+            headers: sanitizeJson(args.eventData['headers']),
+            attachments: sanitizeJson(args.eventData['attachments']),
+            received_at: receivedAt,
+            ai_status: 'analyzed',
+            ai_summary: triage.summary,
+            ai_confidence: triage.confidence,
+            ai_category: triage.category,
+            ai_priority: triage.priority,
+            ai_tags: triage.tags,
+            ai_action: triage.action,
+            ai_reasoning: triage.reasoning,
+            response_required: triage.action === 'repondre',
+            response_status: triage.action === 'repondre' ? 'draft_ready' : 'none',
+            archived: triage.action === 'classer',
+            deleted_at: null,
+          })
+          .eq('id', messageId)
+          .eq('user_id', args.userId);
+      }
+    }
+
+    if (!messageId) {
+      const { data: inserted, error: insertError } = await supabase
+        .from('email_messages')
+        .insert({
+          user_id: args.userId,
+          external_email_id: externalEmailId,
+          thread_id: normalizeText(args.eventData['thread_id'] || args.eventData['thread']) || null,
+          direction: 'inbound',
+          context: 'pro',
+          mailbox: 'main',
+          sender_email: args.senderEmail,
+          sender_name: extractSenderName(args.eventData['from']) || null,
+          to_emails: toEmails,
+          cc_emails: ccEmails,
+          bcc_emails: bccEmails,
+          subject: truncate(args.subject, 500) || null,
+          body_text: bodyText || null,
+          body_html: bodyHtml || null,
+          headers: sanitizeJson(args.eventData['headers']),
+          attachments: sanitizeJson(args.eventData['attachments']),
+          received_at: receivedAt,
+          ai_status: 'analyzed',
+          ai_summary: triage.summary,
+          ai_confidence: triage.confidence,
+          ai_category: triage.category,
+          ai_priority: triage.priority,
+          ai_tags: triage.tags,
+          ai_action: triage.action,
+          ai_reasoning: triage.reasoning,
+          response_required: triage.action === 'repondre',
+          response_status: triage.action === 'repondre' ? 'draft_ready' : 'none',
+          archived: triage.action === 'classer',
+        })
+        .select('id')
+        .single();
+
+      if (insertError) {
+        console.error('email assistant insert message failed', insertError);
+        return null;
+      }
+
+      messageId = String(inserted?.id || '');
+    }
+
+    if (!messageId) return null;
+
+    let draftId: string | null = null;
+    if (triage.action === 'repondre') {
+      const suggestion = await generateReplySuggestionWithAi({
+        userId: args.userId,
+        senderEmail: args.senderEmail,
+        senderName: extractSenderName(args.eventData['from']) || null,
+        originalSubject: args.subject,
+        originalBody: bodyText,
+        summary: triage.summary,
+        tone: 'professionnel',
+      });
+
+      await supabase
+        .from('email_reply_drafts')
+        .update({ is_current: false })
+        .eq('message_id', messageId)
+        .eq('user_id', args.userId)
+        .eq('is_current', true);
+
+      const { data: draft } = await supabase
+        .from('email_reply_drafts')
+        .insert({
+          message_id: messageId,
+          user_id: args.userId,
+          version: 1,
+          is_current: true,
+          tone: 'professionnel',
+          language: 'fr',
+          proposed_subject: suggestion.subject,
+          proposed_body: suggestion.body,
+          ai_model: 'gpt-4.1-mini',
+          ai_confidence: suggestion.confidence,
+          edited_by_user: false,
+        })
+        .select('id')
+        .single();
+
+      draftId = String(draft?.id || '') || null;
+    }
+
+    await supabase.from('email_processing_logs').insert({
+      user_id: args.userId,
+      message_id: messageId,
+      event_type: 'inbound_email_processed',
+      level: 'info',
+      message: `Email traite (${triage.action})`,
+      payload: {
+        sender_email: args.senderEmail,
+        subject: args.subject,
+        ai_action: triage.action,
+      },
+    });
+
+    return {
+      messageId,
+      action: triage.action,
+      draftId,
+    };
+  } catch (error) {
+    console.error('processInboundEmailAssistant failed', error);
+    return null;
+  }
+}
+
+function sanitizeJson(value: unknown): Record<string, unknown> | unknown[] {
+  if (!value) return {};
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'object') return value as Record<string, unknown>;
+  return { raw: String(value) };
 }
 
 async function findUserIdByEmail(email: string): Promise<string | null> {

@@ -289,6 +289,7 @@ export default function DashboardPage() {
     if (moduleId === 'perso') return { value: persoTodoCount, label: t('dashboard.persoToLaunch') };
     if (moduleId === 'memoire') return { value: activeMemoryCount, label: t('dashboard.activeMemories') };
     if (moduleId === 'courrier') return { value: '📬', label: 'Gestionnaire courrier' };
+    if (moduleId === 'emails') return { value: 'IA', label: 'Traitement et reponses emails' };
     if (moduleId === 'planning') return { value: 'IA', label: 'Planification intelligente' };
     return { value: visionCountMonth, label: t('dashboard.visionCalls', { month: monthName }) };
   };
@@ -1000,6 +1001,15 @@ export default function DashboardPage() {
                       className="inline-flex min-h-9 items-center rounded-lg bg-teal-400 px-2.5 py-1.5 text-[11px] font-semibold text-slate-950 transition hover:bg-teal-300 sm:px-3 sm:text-xs"
                     >
                       Choisir RDV
+                    </Link>
+                  )}
+
+                  {card.id === 'emails' && (
+                    <Link
+                      href="/dashboard/emails"
+                      className="inline-flex min-h-9 items-center rounded-lg bg-indigo-400 px-2.5 py-1.5 text-[11px] font-semibold text-slate-950 transition hover:bg-indigo-300 sm:px-3 sm:text-xs"
+                    >
+                      Gerer les reponses
                     </Link>
                   )}
                 </div>

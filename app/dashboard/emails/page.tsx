@@ -1,0 +1,448 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAuthStore } from '@/store/authStore';
+import { getAuthHeaders } from '@/lib/auth/clientSession';
+import type { EmailMessage, EmailReplyDraft } from '@/types/emailAssistant';
+
+type MessageWithDrafts = EmailMessage & {
+  email_reply_drafts?: EmailReplyDraft[];
+};
+
+type StatsPayload = {
+  stats: {
+    total: number;
+    to_reply: number;
+    drafts_ready: number;
+    sent: number;
+    archived: number;
+  };
+  latest: Array<{
+    id: string;
+    subject: string | null;
+    sender_email: string | null;
+    received_at: string | null;
+    ai_action: string;
+    response_status: string;
+  }>;
+};
+
+const priorityLabel: Record<string, string> = {
+  urgent: 'Urgent',
+  high: 'Haute',
+  normal: 'Normale',
+  low: 'Basse',
+};
+
+const actionLabel: Record<string, string> = {
+  classer: 'Classer',
+  repondre: 'Repondre',
+};
+
+export default function EmailAssistantPage() {
+  const user = useAuthStore((s) => s.user);
+
+  const [items, setItems] = useState<MessageWithDrafts[]>([]);
+  const [stats, setStats] = useState<StatsPayload | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const [search, setSearch] = useState('');
+  const [actionFilter, setActionFilter] = useState<'all' | 'classer' | 'repondre'>('all');
+  const [responseFilter, setResponseFilter] = useState<'all' | 'none' | 'draft_ready' | 'sent' | 'cancelled'>('all');
+
+  const [draftSubject, setDraftSubject] = useState('');
+  const [draftBody, setDraftBody] = useState('');
+
+  const selected = useMemo(
+    () => items.find((entry) => entry.id === selectedId) || null,
+    [items, selectedId]
+  );
+
+  const currentDraft = useMemo(() => {
+    if (!selected?.email_reply_drafts?.length) return null;
+    return selected.email_reply_drafts.find((draft) => draft.is_current) || selected.email_reply_drafts[0];
+  }, [selected]);
+
+  useEffect(() => {
+    setDraftSubject(currentDraft?.proposed_subject || selected?.subject || '');
+    setDraftBody(currentDraft?.proposed_body || '');
+  }, [currentDraft?.id, selected?.id]);
+
+  const loadStats = useCallback(async () => {
+    if (!user) return;
+    const res = await fetch('/api/email/stats', {
+      headers: await getAuthHeaders(false),
+    });
+    const json = (await res.json()) as StatsPayload;
+    if (res.ok) setStats(json);
+  }, [user]);
+
+  const loadMessages = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    const qs = new URLSearchParams();
+    if (actionFilter !== 'all') qs.set('action', actionFilter);
+    if (responseFilter !== 'all') qs.set('response_status', responseFilter);
+    if (search.trim()) qs.set('search', search.trim());
+    qs.set('archived', '0');
+
+    try {
+      const res = await fetch(`/api/email/messages?${qs.toString()}`, {
+        headers: await getAuthHeaders(false),
+      });
+      const json = (await res.json()) as { items?: MessageWithDrafts[] };
+      if (!res.ok) return;
+      const nextItems = json.items || [];
+      setItems(nextItems);
+      setSelectedId((prev) => {
+        if (prev && nextItems.some((entry) => entry.id === prev)) return prev;
+        return nextItems[0]?.id || null;
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [user, actionFilter, responseFilter, search]);
+
+  useEffect(() => {
+    if (!user) return;
+    loadMessages();
+    loadStats();
+  }, [user, loadMessages, loadStats]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (user) loadMessages();
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [search, actionFilter, responseFilter]);
+
+  const refreshAll = async () => {
+    await Promise.all([loadMessages(), loadStats()]);
+  };
+
+  const openResponseManager = () => {
+    setActionFilter('repondre');
+    setResponseFilter('draft_ready');
+  };
+
+  const generateDraft = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/email/messages/${selected.id}/draft`, {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ tone: 'professionnel' }),
+      });
+      if (!res.ok) return;
+      await refreshAll();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveDraft = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/email/messages/${selected.id}/draft`, {
+        method: 'PATCH',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ subject: draftSubject, body: draftBody }),
+      });
+      if (!res.ok) return;
+      await refreshAll();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendDraft = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/email/messages/${selected.id}/send`, {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ subject: draftSubject, body: draftBody }),
+      });
+      if (!res.ok) return;
+      await refreshAll();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteDraft = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/email/messages/${selected.id}/draft`, {
+        method: 'DELETE',
+        headers: await getAuthHeaders(false),
+      });
+      if (!res.ok) return;
+      await refreshAll();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const archiveMessage = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/email/messages/${selected.id}`, {
+        method: 'PATCH',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ archived: true, ai_action: 'classer', response_required: false }),
+      });
+      if (!res.ok) return;
+      await refreshAll();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeMessage = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/email/messages/${selected.id}`, {
+        method: 'DELETE',
+        headers: await getAuthHeaders(false),
+      });
+      if (!res.ok) return;
+      await refreshAll();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const formatDate = (value: string | null) => {
+    if (!value) return 'N/A';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return new Intl.DateTimeFormat('fr-FR', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(d);
+  };
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-4 px-3 pb-24 sm:px-4">
+      <section className="rounded-3xl border border-indigo-200/10 bg-gradient-to-r from-slate-900/80 via-slate-900/75 to-indigo-950/60 p-4 sm:p-6">
+        <p className="text-xs uppercase tracking-[0.22em] text-indigo-200/70">Email Assistant</p>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl">Gestion intelligente des emails</h1>
+        <p className="mt-2 text-sm text-slate-300">Tri IA, proposition de reponse, validation avant envoi, journalisation complete.</p>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            onClick={openResponseManager}
+            className="rounded-xl bg-indigo-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-indigo-300"
+          >
+            Gerer les reponses
+          </button>
+          <button
+            onClick={refreshAll}
+            className="rounded-xl border border-white/15 bg-slate-900/50 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800"
+          >
+            Actualiser
+          </button>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <StatCard label="Total" value={String(stats?.stats.total ?? 0)} color="text-slate-100" />
+        <StatCard label="A repondre" value={String(stats?.stats.to_reply ?? 0)} color="text-amber-300" />
+        <StatCard label="Brouillons" value={String(stats?.stats.drafts_ready ?? 0)} color="text-indigo-300" />
+        <StatCard label="Envoyes" value={String(stats?.stats.sent ?? 0)} color="text-emerald-300" />
+        <StatCard label="Archives" value={String(stats?.stats.archived ?? 0)} color="text-slate-400" />
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-slate-900/65 p-3 sm:p-4">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Rechercher expediteur, objet, resume..."
+            className="rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none focus:border-indigo-300"
+          />
+          <select
+            value={actionFilter}
+            onChange={(event) => setActionFilter(event.target.value as typeof actionFilter)}
+            className="rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white"
+          >
+            <option value="all">Action IA: toutes</option>
+            <option value="classer">Action IA: classer</option>
+            <option value="repondre">Action IA: repondre</option>
+          </select>
+          <select
+            value={responseFilter}
+            onChange={(event) => setResponseFilter(event.target.value as typeof responseFilter)}
+            className="rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white"
+          >
+            <option value="all">Statut reponse: tous</option>
+            <option value="none">Aucun</option>
+            <option value="draft_ready">Brouillon pret</option>
+            <option value="sent">Envoye</option>
+            <option value="cancelled">Annule</option>
+          </select>
+          <button
+            onClick={openResponseManager}
+            className="rounded-xl border border-indigo-300/30 bg-indigo-500/10 px-3 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-500/20"
+          >
+            Voir mails a traiter
+          </button>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-3 lg:grid-cols-5">
+        <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-2 lg:col-span-2">
+          <div className="mb-2 px-2 text-xs text-slate-400">Inbox IA ({items.length})</div>
+          <div className="space-y-1.5">
+            {loading && <p className="rounded-xl border border-white/10 bg-slate-950/35 p-3 text-xs text-slate-400">Chargement...</p>}
+            {!loading && items.length === 0 && (
+              <p className="rounded-xl border border-white/10 bg-slate-950/35 p-3 text-xs text-slate-400">Aucun email pour ces filtres.</p>
+            )}
+            {!loading && items.map((item) => {
+              const isSelected = selectedId === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setSelectedId(item.id)}
+                  className={`w-full rounded-xl border p-3 text-left transition ${
+                    isSelected
+                      ? 'border-indigo-300/40 bg-indigo-500/10'
+                      : 'border-white/10 bg-slate-950/35 hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-sm font-semibold text-white">{item.subject || '(sans objet)'}</p>
+                    <span className="rounded-full border border-white/10 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-300">
+                      {actionLabel[item.ai_action] || item.ai_action}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-slate-400">{item.sender_name || item.sender_email || 'expediteur inconnu'}</p>
+                  <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+                    <span>{formatDate(item.received_at)}</span>
+                    <span>{item.response_status}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 lg:col-span-3">
+          {!selected && <p className="text-sm text-slate-400">Selectionne un email pour voir le detail et gerer la reponse.</p>}
+
+          {selected && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-white/10 bg-slate-950/35 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">{selected.subject || '(sans objet)'}</h2>
+                    <p className="text-xs text-slate-400">De: {selected.sender_name || '-'} &lt;{selected.sender_email || '-'}&gt;</p>
+                    {selected.cc_emails?.length > 0 && (
+                      <p className="mt-1 text-xs text-slate-500">CC: {selected.cc_emails.join(', ')}</p>
+                    )}
+                  </div>
+                  <div className="text-right text-xs text-slate-400">
+                    <p>{formatDate(selected.received_at)}</p>
+                    <p className="mt-1">Priorite: {priorityLabel[selected.ai_priority || 'normal'] || 'Normale'}</p>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm text-slate-200">{selected.ai_summary || 'Aucun resume IA.'}</p>
+                <p className="mt-2 text-xs text-slate-500">Decision IA: <span className="text-slate-200">{actionLabel[selected.ai_action] || selected.ai_action}</span> · Confiance: {selected.ai_confidence ?? 0}</p>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-slate-950/35 p-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Contenu email</p>
+                <p className="whitespace-pre-wrap text-sm text-slate-200">{selected.body_text || selected.body_html || '(contenu vide)'}</p>
+              </div>
+
+              <div className="rounded-xl border border-indigo-300/20 bg-indigo-500/5 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-indigo-100">Brouillon de reponse</p>
+                  <button
+                    onClick={generateDraft}
+                    disabled={busy}
+                    className="rounded-lg border border-indigo-300/30 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-100 hover:bg-indigo-500/20 disabled:opacity-50"
+                  >
+                    {busy ? '...' : 'Generer / Regenerer IA'}
+                  </button>
+                </div>
+
+                <input
+                  value={draftSubject}
+                  onChange={(event) => setDraftSubject(event.target.value)}
+                  placeholder="Objet de reponse"
+                  className="mb-2 w-full rounded-lg border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-white outline-none focus:border-indigo-300"
+                />
+                <textarea
+                  value={draftBody}
+                  onChange={(event) => setDraftBody(event.target.value)}
+                  placeholder="Reponse proposee"
+                  rows={8}
+                  className="w-full resize-y rounded-lg border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-white outline-none focus:border-indigo-300"
+                />
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={sendDraft}
+                    disabled={busy || !draftBody.trim()}
+                    className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:opacity-50"
+                  >
+                    Envoyer
+                  </button>
+                  <button
+                    onClick={saveDraft}
+                    disabled={busy || !draftBody.trim()}
+                    className="rounded-lg border border-white/15 bg-slate-900/60 px-4 py-2 text-sm text-slate-100 hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    Modifier / Sauvegarder
+                  </button>
+                  <button
+                    onClick={deleteDraft}
+                    disabled={busy}
+                    className="rounded-lg border border-rose-300/35 bg-rose-500/10 px-4 py-2 text-sm text-rose-100 hover:bg-rose-500/20 disabled:opacity-50"
+                  >
+                    Supprimer brouillon
+                  </button>
+                  <button
+                    onClick={archiveMessage}
+                    disabled={busy}
+                    className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-4 py-2 text-sm text-amber-100 hover:bg-amber-500/20 disabled:opacity-50"
+                  >
+                    Classer sans action
+                  </button>
+                  <button
+                    onClick={removeMessage}
+                    disabled={busy}
+                    className="rounded-lg border border-red-300/35 bg-red-500/10 px-4 py-2 text-sm text-red-100 hover:bg-red-500/20 disabled:opacity-50"
+                  >
+                    Supprimer email
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function StatCard(props: { label: string; value: string; color: string }) {
+  return (
+    <article className="rounded-xl border border-white/10 bg-slate-900/65 p-3">
+      <p className="text-[11px] uppercase tracking-wide text-slate-400">{props.label}</p>
+      <p className={`mt-1 text-xl font-semibold ${props.color}`}>{props.value}</p>
+    </article>
+  );
+}
