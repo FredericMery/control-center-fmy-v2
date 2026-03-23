@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useTaskStore } from "@/store/taskStore";
 import { useAuthStore } from "@/store/authStore";
 import { extractContacts, generateTelUri, generateMailtoUri, generateTeamsAppUri } from "@/lib/contactExtractor";
+import { getAuthHeaders } from "@/lib/auth/clientSession";
 import TaskModal from "@/components/TaskModal";
 import TransferModal from "@/components/TransferModal";
 import Link from "next/link";
@@ -27,6 +28,16 @@ const statusEmojis: Record<string, string> = {
   in_progress: "⚡",
   waiting: "⏸️",
   done: "✅",
+};
+
+type EmailPreview = {
+  id: string;
+  subject: string | null;
+  sender_name: string | null;
+  sender_email: string | null;
+  body_text: string | null;
+  body_html: string | null;
+  received_at: string | null;
 };
 
 export default function TasksPage() {
@@ -58,6 +69,9 @@ export default function TasksPage() {
     created_at?: string;
   } | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
+  const [emailPreview, setEmailPreview] = useState<EmailPreview | null>(null);
+  const [emailPreviewOpen, setEmailPreviewOpen] = useState(false);
+  const [emailPreviewLoading, setEmailPreviewLoading] = useState(false);
 
   /* ============================
      INIT SAFE (ANTI DOUBLE MOUNT)
@@ -146,6 +160,28 @@ export default function TasksPage() {
   const typeTitle = typeParam.charAt(0).toUpperCase() + typeParam.slice(1);
   const typeEmoji = typeParam === "pro" ? "💼" : "🎯";
 
+  const openLinkedEmailPreview = async (emailMessageId: string) => {
+    if (!emailMessageId) return;
+
+    setEmailPreviewLoading(true);
+    try {
+      const res = await fetch(`/api/email/messages/${emailMessageId}`, {
+        headers: await getAuthHeaders(false),
+      });
+      const json = (await res.json().catch(() => ({}))) as { item?: EmailPreview; error?: string };
+
+      if (!res.ok || !json.item) {
+        alert(json.error || "Impossible de charger l'email source");
+        return;
+      }
+
+      setEmailPreview(json.item);
+      setEmailPreviewOpen(true);
+    } finally {
+      setEmailPreviewLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#16324a_0%,_#0f172a_42%,_#020617_100%)] text-white">
 
@@ -227,9 +263,11 @@ export default function TasksPage() {
         ) : (
           <div className="space-y-2.5 sm:space-y-3">
             {filteredTasks.map((task) => {
+              const taskLink = parseLinkedEmailFromTaskTitle(task.title);
+              const displayTaskTitle = taskLink.cleanTitle || task.title;
 
               const deadlinePassed = isDeadlinePassed(task.deadline);
-              const contactSource = `${task.title}`;
+              const contactSource = `${displayTaskTitle}`;
               const contacts = extractContacts(contactSource);
               const phoneHref = contacts.phone ? generateTelUri(contacts.phone) : undefined;
               const emailHref = contacts.email ? generateMailtoUri(contacts.email) : undefined;
@@ -254,7 +292,7 @@ export default function TasksPage() {
                       <div className="mb-3 flex items-start gap-2.5 sm:gap-3">
                         <span className="text-2xl flex-shrink-0">{statusEmojis[task.status]}</span>
                         <h3 className="whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-white sm:text-[15px]">
-                          {task.title}
+                          {displayTaskTitle}
                         </h3>
                       </div>
 
@@ -374,7 +412,7 @@ export default function TasksPage() {
                             e.stopPropagation();
                             setSelectedTaskForTransfer({
                               id: task.id,
-                              title: task.title,
+                              title: displayTaskTitle,
                               deadline: task.deadline,
                               created_at: task.created_at,
                             });
@@ -384,6 +422,19 @@ export default function TasksPage() {
                         >
                           ✉️ {t('tasks.transfer')}
                         </button>
+
+                        {taskLink.emailMessageId && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openLinkedEmailPreview(taskLink.emailMessageId);
+                            }}
+                            disabled={emailPreviewLoading}
+                            className="mt-2 w-full rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-4 py-2 text-xs font-medium uppercase text-cyan-200 transition-all hover:bg-cyan-500/20 disabled:opacity-50"
+                          >
+                            {emailPreviewLoading ? 'Chargement email...' : 'Lire email source'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
@@ -467,6 +518,49 @@ export default function TasksPage() {
         }}
         isLoading={isTransferring}
       />
+
+      {emailPreviewOpen && emailPreview && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/10 bg-slate-950 p-4 sm:p-6">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-white">{emailPreview.subject || '(sans objet)'}</h3>
+                <p className="text-xs text-slate-400">
+                  De: {emailPreview.sender_name || '-'} &lt;{emailPreview.sender_email || '-'}&gt;
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setEmailPreviewOpen(false);
+                  setEmailPreview(null);
+                }}
+                className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
+              >
+                Fermer
+              </button>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
+              <p className="whitespace-pre-wrap text-sm text-slate-100">
+                {emailPreview.body_text || emailPreview.body_html || '(contenu vide)'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function parseLinkedEmailFromTaskTitle(rawTitle: string): { cleanTitle: string; emailMessageId: string } {
+  const raw = String(rawTitle || '');
+  const match = raw.match(/\s*\[email:([a-z0-9-]{8,})\]\s*$/i);
+  if (!match?.[1]) {
+    return { cleanTitle: raw, emailMessageId: '' };
+  }
+
+  const cleanTitle = raw.replace(/\s*\[email:[a-z0-9-]{8,}\]\s*$/i, '').trim();
+  return {
+    cleanTitle,
+    emailMessageId: String(match[1] || '').trim(),
+  };
 }

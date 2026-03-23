@@ -27,6 +27,19 @@ type StatsPayload = {
   }>;
 };
 
+type DailySummaryPayload = {
+  day: string;
+  count: number;
+  summary: string;
+  actions: Array<{
+    priority: 'urgent' | 'high' | 'normal' | 'low';
+    action: string;
+    why: string;
+    sender: string;
+    email_message_id: string;
+  }>;
+};
+
 const priorityLabel: Record<string, string> = {
   urgent: 'Urgent',
   high: 'Haute',
@@ -61,9 +74,15 @@ export default function EmailAssistantPage() {
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState<'all' | 'classer' | 'repondre'>('all');
   const [responseFilter, setResponseFilter] = useState<'all' | 'none' | 'draft_ready' | 'sent' | 'cancelled'>('all');
+  const [archiveView, setArchiveView] = useState<'active' | 'archived' | 'all'>('active');
 
   const [draftSubject, setDraftSubject] = useState('');
   const [draftBody, setDraftBody] = useState('');
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [daySummary, setDaySummary] = useState<DailySummaryPayload | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
+  const [creatingSummaryTasks, setCreatingSummaryTasks] = useState(false);
+  const [autoCreateScope, setAutoCreateScope] = useState<'urgent' | 'urgent_high' | 'all'>('urgent_high');
 
   const selected = useMemo(
     () => items.find((entry) => entry.id === selectedId) || null,
@@ -79,6 +98,30 @@ export default function EmailAssistantPage() {
     setDraftSubject(currentDraft?.proposed_subject || selected?.subject || '');
     setDraftBody(currentDraft?.proposed_body || '');
   }, [currentDraft?.id, selected?.id]);
+
+  useEffect(() => {
+    if (!selected?.id) return;
+
+    const hasBody = Boolean(String(selected.body_text || '').trim() || String(selected.body_html || '').trim());
+    if (hasBody) return;
+
+    let cancelled = false;
+
+    const hydrateBody = async () => {
+      const res = await fetch(`/api/email/messages/${selected.id}`, {
+        headers: await getAuthHeaders(false),
+      });
+      const json = (await res.json().catch(() => ({}))) as { item?: MessageWithDrafts };
+      if (!res.ok || !json.item || cancelled) return;
+
+      setItems((prev) => prev.map((entry) => (entry.id === selected.id ? { ...entry, ...json.item } : entry)));
+    };
+
+    hydrateBody();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, selected?.body_text, selected?.body_html]);
 
   const loadStats = useCallback(async () => {
     if (!user) return;
@@ -96,7 +139,8 @@ export default function EmailAssistantPage() {
     if (actionFilter !== 'all') qs.set('action', actionFilter);
     if (responseFilter !== 'all') qs.set('response_status', responseFilter);
     if (search.trim()) qs.set('search', search.trim());
-    qs.set('archived', '0');
+    if (archiveView === 'active') qs.set('archived', '0');
+    if (archiveView === 'archived') qs.set('archived', '1');
 
     try {
       const res = await fetch(`/api/email/messages?${qs.toString()}`, {
@@ -113,7 +157,7 @@ export default function EmailAssistantPage() {
     } finally {
       setLoading(false);
     }
-  }, [user, actionFilter, responseFilter, search]);
+  }, [user, actionFilter, responseFilter, search, archiveView]);
 
   useEffect(() => {
     if (!user) return;
@@ -126,15 +170,70 @@ export default function EmailAssistantPage() {
       if (user) loadMessages();
     }, 280);
     return () => clearTimeout(timer);
-  }, [search, actionFilter, responseFilter]);
+  }, [search, actionFilter, responseFilter, archiveView]);
 
   const refreshAll = async () => {
     await Promise.all([loadMessages(), loadStats()]);
   };
 
   const openResponseManager = () => {
+    setArchiveView('active');
     setActionFilter('repondre');
     setResponseFilter('draft_ready');
+  };
+
+  const openDailySummary = async () => {
+    setLoadingSummary(true);
+    setSummaryOpen(true);
+    try {
+      const res = await fetch('/api/email/summary/daily', {
+        headers: await getAuthHeaders(false),
+      });
+      const json = (await res.json().catch(() => ({}))) as DailySummaryPayload & { error?: string };
+      if (!res.ok) {
+        showErr(json.error || `Erreur ${res.status} lors de la synthese`);
+        setSummaryOpen(false);
+        return;
+      }
+      setDaySummary(json);
+    } finally {
+      setLoadingSummary(false);
+    }
+  };
+
+  const autoCreateSummaryTasks = async () => {
+    setCreatingSummaryTasks(true);
+    try {
+      const priorities =
+        autoCreateScope === 'urgent'
+          ? ['urgent']
+          : autoCreateScope === 'all'
+            ? ['urgent', 'high', 'normal', 'low']
+            : ['urgent', 'high'];
+
+      const res = await fetch('/api/email/summary/daily', {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ priorities }),
+      });
+
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        created?: number;
+        skipped?: number;
+      };
+
+      if (!res.ok) {
+        showErr(json.error || `Erreur ${res.status} lors de la creation auto des taches`);
+        return;
+      }
+
+      const created = Number(json.created || 0);
+      const skipped = Number(json.skipped || 0);
+      showOk(`Taches IA-MAIL creees: ${created} (ignorees: ${skipped})`);
+    } finally {
+      setCreatingSummaryTasks(false);
+    }
   };
 
   const generateDraft = async () => {
@@ -241,6 +340,37 @@ export default function EmailAssistantPage() {
     }
   };
 
+  const createProTask = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/email/messages/${selected.id}/task`, {
+        method: 'POST',
+        headers: await getAuthHeaders(false),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        task?: { title?: string | null };
+        generated?: { action_note?: string | null };
+      };
+
+      if (!res.ok) {
+        showErr(json.error || `Erreur ${res.status} lors de la creation de la tache`);
+        return;
+      }
+
+      const taskTitle = String(json.task?.title || '').trim();
+      const actionNote = String(json.generated?.action_note || '').trim();
+      const successMessage = taskTitle
+        ? `Tache pro creee: ${taskTitle}${actionNote ? ` | Action: ${actionNote}` : ''}`
+        : 'Tache pro creee avec succes.';
+      showOk(successMessage);
+      await refreshAll();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const removeMessage = async () => {
     if (!selected) return;
     setBusy(true);
@@ -297,6 +427,12 @@ export default function EmailAssistantPage() {
             Gerer les reponses
           </button>
           <button
+            onClick={openDailySummary}
+            className="rounded-xl border border-cyan-300/35 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
+          >
+            Synthese journee
+          </button>
+          <button
             onClick={refreshAll}
             className="rounded-xl border border-white/15 bg-slate-900/50 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800"
           >
@@ -310,11 +446,21 @@ export default function EmailAssistantPage() {
         <StatCard label="A repondre" value={String(stats?.stats.to_reply ?? 0)} color="text-amber-300" />
         <StatCard label="Brouillons" value={String(stats?.stats.drafts_ready ?? 0)} color="text-indigo-300" />
         <StatCard label="Envoyes" value={String(stats?.stats.sent ?? 0)} color="text-emerald-300" />
-        <StatCard label="Archives" value={String(stats?.stats.archived ?? 0)} color="text-slate-400" />
+        <button
+          onClick={() => setArchiveView('archived')}
+          className={`rounded-xl border p-3 text-left transition ${
+            archiveView === 'archived'
+              ? 'border-indigo-300/35 bg-indigo-500/10'
+              : 'border-white/10 bg-slate-900/65 hover:border-white/20'
+          }`}
+        >
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">Archives</p>
+          <p className="mt-1 text-xl font-semibold text-slate-400">{String(stats?.stats.archived ?? 0)}</p>
+        </button>
       </section>
 
       <section className="rounded-2xl border border-white/10 bg-slate-900/65 p-3 sm:p-4">
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -341,6 +487,15 @@ export default function EmailAssistantPage() {
             <option value="sent">Envoye</option>
             <option value="cancelled">Annule</option>
           </select>
+          <select
+            value={archiveView}
+            onChange={(event) => setArchiveView(event.target.value as typeof archiveView)}
+            className="rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white"
+          >
+            <option value="active">Messages actifs</option>
+            <option value="archived">Messages archives</option>
+            <option value="all">Tous</option>
+          </select>
           <button
             onClick={openResponseManager}
             className="rounded-xl border border-indigo-300/30 bg-indigo-500/10 px-3 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-500/20"
@@ -352,7 +507,13 @@ export default function EmailAssistantPage() {
 
       <section className="grid grid-cols-1 gap-3 lg:grid-cols-5">
         <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-2 lg:col-span-2">
-          <div className="mb-2 px-2 text-xs text-slate-400">Inbox IA ({items.length})</div>
+          <div className="mb-2 px-2 text-xs text-slate-400">
+            {archiveView === 'archived'
+              ? `Messages archives (${items.length})`
+              : archiveView === 'all'
+                ? `Tous les messages (${items.length})`
+                : `Inbox IA (${items.length})`}
+          </div>
           <div className="space-y-1.5">
             {loading && <p className="rounded-xl border border-white/10 bg-slate-950/35 p-3 text-xs text-slate-400">Chargement...</p>}
             {!loading && items.length === 0 && (
@@ -443,6 +604,13 @@ export default function EmailAssistantPage() {
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
+                    onClick={createProTask}
+                    disabled={busy}
+                    className="rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"
+                  >
+                    Creer une tache pro (IA)
+                  </button>
+                  <button
                     onClick={sendDraft}
                     disabled={busy || !draftBody.trim()}
                     className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:opacity-50"
@@ -483,8 +651,85 @@ export default function EmailAssistantPage() {
           )}
         </div>
       </section>
+
+      {summaryOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/10 bg-slate-950 p-4 sm:p-6">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Synthese de la journee</h2>
+                <p className="text-xs text-slate-400">Priorisation des actions sur les emails du jour</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={autoCreateScope}
+                  onChange={(event) => setAutoCreateScope(event.target.value as typeof autoCreateScope)}
+                  disabled={creatingSummaryTasks || loadingSummary}
+                  className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-100 disabled:opacity-50"
+                >
+                  <option value="urgent">Auto: urgent uniquement</option>
+                  <option value="urgent_high">Auto: urgent + high</option>
+                  <option value="all">Auto: toutes priorites</option>
+                </select>
+                <button
+                  onClick={autoCreateSummaryTasks}
+                  disabled={creatingSummaryTasks || loadingSummary || !daySummary}
+                  className="rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"
+                >
+                  {creatingSummaryTasks ? 'Creation...' : 'Auto-creer taches pro (IA-MAIL)'}
+                </button>
+                <button
+                  onClick={() => setSummaryOpen(false)}
+                  className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+
+            {loadingSummary && <p className="text-sm text-slate-300">Generation de la synthese...</p>}
+
+            {!loadingSummary && daySummary && (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
+                  <p className="text-xs text-slate-400">{daySummary.day} · {daySummary.count} emails</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">{daySummary.summary}</p>
+                </div>
+
+                <div className="space-y-2">
+                  {daySummary.actions.length === 0 && (
+                    <p className="rounded-xl border border-white/10 bg-slate-900/60 p-3 text-sm text-slate-300">
+                      Aucune action prioritaire detectee pour le moment.
+                    </p>
+                  )}
+
+                  {daySummary.actions.map((action, index) => (
+                    <div key={`${action.email_message_id}-${index}`} className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase ${priorityBadge(action.priority)}`}>
+                          {action.priority}
+                        </span>
+                        <span className="text-xs text-slate-400">{action.sender}</span>
+                      </div>
+                      <p className="mt-2 text-sm font-medium text-white">{action.action}</p>
+                      <p className="mt-1 text-xs text-slate-300">{action.why}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function priorityBadge(priority: 'urgent' | 'high' | 'normal' | 'low'): string {
+  if (priority === 'urgent') return 'bg-rose-500/20 text-rose-200 border border-rose-300/40';
+  if (priority === 'high') return 'bg-amber-500/20 text-amber-200 border border-amber-300/40';
+  if (priority === 'low') return 'bg-slate-500/20 text-slate-200 border border-slate-300/40';
+  return 'bg-indigo-500/20 text-indigo-200 border border-indigo-300/40';
 }
 
 function StatCard(props: { label: string; value: string; color: string }) {

@@ -222,13 +222,24 @@ export async function POST(request: NextRequest) {
     }
 
     if (addressedToEmailAssistantInbox) {
+      const assistantBody = await ensureEmailAssistantBodyContent(eventData, {
+        plainText,
+        htmlText,
+      });
+
+      const originalSender = extractOriginalSenderForEmailAssistant(eventData, {
+        fallbackEmail: senderEmail,
+        fallbackName: extractSenderName(eventData.from),
+      });
+
       const emailAssistant = await processInboundEmailAssistant({
         userId,
         eventData,
-        senderEmail,
+        senderEmail: originalSender.email,
+        senderName: originalSender.name,
         subject,
-        plainText,
-        htmlText,
+        plainText: assistantBody.plainText,
+        htmlText: assistantBody.htmlText,
       });
       return NextResponse.json({
         ok: true,
@@ -501,6 +512,48 @@ async function extractIcsTextViaResendReceiving(
   }
 
   return null;
+}
+
+async function ensureEmailAssistantBodyContent(
+  eventData: Record<string, unknown>,
+  current: { plainText: string; htmlText: string }
+): Promise<{ plainText: string; htmlText: string }> {
+  const hasPlain = normalizeText(current.plainText).length > 0;
+  const hasHtml = normalizeText(current.htmlText).length > 0;
+  if (hasPlain || hasHtml) {
+    return current;
+  }
+
+  const fallback = await extractInboundTextViaResendReceiving(eventData);
+  if (!fallback) return current;
+
+  return {
+    plainText: fallback.plainText || current.plainText,
+    htmlText: fallback.htmlText || current.htmlText,
+  };
+}
+
+async function extractInboundTextViaResendReceiving(
+  eventData: Record<string, unknown>
+): Promise<{ plainText: string; htmlText: string } | null> {
+  if (!process.env.RESEND_API_KEY) return null;
+
+  const emailId = normalizeText(eventData['email_id'] || eventData['id']);
+  if (!emailId) return null;
+
+  try {
+    const received = await resend.emails.receiving.get(emailId);
+    const receiveData = (received as { data?: Record<string, unknown> | null })?.data || null;
+    if (!receiveData) return null;
+
+    return {
+      plainText: normalizeText(String(receiveData['text'] || receiveData['text_body'] || '')),
+      htmlText: normalizeText(String(receiveData['html'] || '')),
+    };
+  } catch (error) {
+    console.warn('resend inbound -> receiving.get text fallback failed', { emailId, error });
+    return null;
+  }
 }
 
 async function downloadTextFromUrl(url: string): Promise<string> {
@@ -942,6 +995,125 @@ function extractSingleEmail(input: unknown): string | null {
   return null;
 }
 
+function extractOriginalSenderForEmailAssistant(
+  eventData: Record<string, unknown>,
+  fallback: { fallbackEmail: string; fallbackName: string }
+): { email: string; name: string } {
+  const candidateValues: string[] = [];
+
+  candidateValues.push(...extractEmailList(eventData['reply_to']));
+  candidateValues.push(...extractEmailList(eventData['replyTo']));
+
+  const headerPriority = ['reply-to', 'x-original-from', 'x-forwarded-from', 'x-envelope-from'];
+  for (const headerName of headerPriority) {
+    candidateValues.push(...extractHeaderValues(eventData['headers'], headerName));
+  }
+
+  for (const value of candidateValues) {
+    const parsed = parseSenderFromValue(value);
+    if (parsed.email) {
+      return parsed;
+    }
+  }
+
+  const bodyFields: unknown[] = [
+    eventData['text'],
+    eventData['text_body'],
+    eventData['snippet'],
+    eventData['raw_text'],
+  ];
+
+  for (const field of bodyFields) {
+    const parsed = extractOriginalSenderFromBody(String(field || ''));
+    if (parsed?.email) {
+      return parsed;
+    }
+  }
+
+  for (const headerName of ['from', 'sender']) {
+    const values = extractHeaderValues(eventData['headers'], headerName);
+    for (const value of values) {
+      const parsed = parseSenderFromValue(value);
+      if (parsed.email) {
+        return parsed;
+      }
+    }
+  }
+
+  return {
+    email: fallback.fallbackEmail,
+    name: fallback.fallbackName,
+  };
+}
+
+function extractOriginalSenderFromBody(value: string): { email: string; name: string } | null {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const lines = raw.split(/\r?\n/);
+  for (const line of lines) {
+    const match = line.match(/^\s*(from|de|expediteur)\s*:\s*(.+)$/i);
+    if (!match?.[2]) continue;
+    const parsed = parseSenderFromValue(match[2]);
+    if (parsed.email) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function parseSenderFromValue(value: unknown): { email: string; name: string } {
+  const raw = String(value || '').trim();
+  const email = extractSingleEmail(raw) || '';
+  const name = extractSenderName(raw);
+  return { email, name };
+}
+
+function extractHeaderValues(headers: unknown, targetName: string): string[] {
+  const wanted = normalizeText(targetName).toLowerCase();
+  if (!wanted || !headers) return [];
+
+  if (typeof headers === 'string') {
+    return headers
+      .split(/\r?\n/)
+      .map((line) => line.match(/^\s*([^:]+)\s*:\s*(.+)$/))
+      .filter((match): match is RegExpMatchArray => Boolean(match?.[1] && match?.[2]))
+      .filter((match) => normalizeText(match[1]).toLowerCase() === wanted)
+      .map((match) => String(match[2] || '').trim())
+      .filter(Boolean);
+  }
+
+  if (Array.isArray(headers)) {
+    return headers
+      .flatMap((entry) => {
+        if (!entry || typeof entry !== 'object') return [];
+        const record = entry as Record<string, unknown>;
+        const name = normalizeText(record['name'] || record['key'] || record['header']).toLowerCase();
+        if (name !== wanted) return [];
+        const value = normalizeTextOrEmpty(record['value'] || record['content']);
+        return value ? [value] : [];
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof headers === 'object') {
+    const record = headers as Record<string, unknown>;
+    return Object.entries(record)
+      .filter(([key]) => normalizeText(key).toLowerCase() === wanted)
+      .flatMap(([, value]) => {
+        if (Array.isArray(value)) {
+          return value.map((entry) => normalizeTextOrEmpty(entry)).filter(Boolean);
+        }
+        const normalized = normalizeTextOrEmpty(value);
+        return normalized ? [normalized] : [];
+      })
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
 function normalizeEmail(value: unknown): string | null {
   const email = String(value || '').trim().toLowerCase();
   if (!email.includes('@')) return null;
@@ -1112,6 +1284,7 @@ async function processInboundEmailAssistant(args: {
   userId: string;
   eventData: Record<string, unknown>;
   senderEmail: string;
+  senderName: string;
   subject: string;
   plainText: string;
   htmlText: string;
@@ -1149,7 +1322,7 @@ async function processInboundEmailAssistant(args: {
           .from('email_messages')
           .update({
             sender_email: args.senderEmail,
-            sender_name: extractSenderName(args.eventData['from']) || null,
+            sender_name: args.senderName || null,
             to_emails: toEmails,
             cc_emails: ccEmails,
             bcc_emails: bccEmails,
@@ -1188,7 +1361,7 @@ async function processInboundEmailAssistant(args: {
           context: 'pro',
           mailbox: 'main',
           sender_email: args.senderEmail,
-          sender_name: extractSenderName(args.eventData['from']) || null,
+          sender_name: args.senderName || null,
           to_emails: toEmails,
           cc_emails: ccEmails,
           bcc_emails: bccEmails,
@@ -1228,7 +1401,7 @@ async function processInboundEmailAssistant(args: {
       const suggestion = await generateReplySuggestionWithAi({
         userId: args.userId,
         senderEmail: args.senderEmail,
-        senderName: extractSenderName(args.eventData['from']) || null,
+        senderName: args.senderName || null,
         originalSubject: args.subject,
         originalBody: bodyText,
         summary: triage.summary,
