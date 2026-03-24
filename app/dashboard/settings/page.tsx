@@ -83,6 +83,8 @@ export default function SettingsPage() {
   const [assistantName, setAssistantName] = useState('Assistant');
   const [assistantNameDraft, setAssistantNameDraft] = useState('Assistant');
   const [assistantNameStatus, setAssistantNameStatus] = useState<string | null>(null);
+  const [professionalEmailDraft, setProfessionalEmailDraft] = useState('');
+  const [professionalEmailStatus, setProfessionalEmailStatus] = useState<string | null>(null);
 
   /* ============================
      FETCH PROFILE SAFE
@@ -228,6 +230,29 @@ export default function SettingsPage() {
     };
 
     loadAssistantSettings();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadProfessionalEmail = async () => {
+      try {
+        const response = await fetch('/api/calendar/preferences', {
+          headers: await getAuthHeaders(false),
+        });
+        const json = await response.json();
+        if (!response.ok) {
+          return;
+        }
+
+        const value = String(json?.preferences?.professional_email || '').trim();
+        setProfessionalEmailDraft(value);
+      } catch {
+        // Silent fail to avoid blocking settings page
+      }
+    };
+
+    loadProfessionalEmail();
   }, [user]);
 
   if (!user) return null;
@@ -482,6 +507,31 @@ export default function SettingsPage() {
     setAssistantNameStatus('Nom IA sauvegarde');
   };
 
+  const saveProfessionalEmail = async () => {
+    if (!user) return;
+
+    const value = professionalEmailDraft.trim().toLowerCase();
+    if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setProfessionalEmailStatus('Adresse email professionnelle invalide');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('scheduling_preferences')
+      .upsert({
+        user_id: user.id,
+        professional_email: value || null,
+      }, { onConflict: 'user_id' });
+
+    if (error) {
+      setProfessionalEmailStatus('Erreur sauvegarde adresse email pro');
+      return;
+    }
+
+    setProfessionalEmailDraft(value);
+    setProfessionalEmailStatus('Adresse email professionnelle sauvegardee');
+  };
+
   return (
     <div className="mx-auto max-w-6xl space-y-4 px-3 pb-20 text-slate-100 sm:space-y-6 sm:px-0">
       <section className="rounded-3xl border border-cyan-200/10 bg-gradient-to-r from-slate-900/80 via-slate-900/75 to-cyan-950/60 p-4 sm:p-6">
@@ -544,6 +594,32 @@ export default function SettingsPage() {
             )}
           </div>
 
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-slate-950/35 p-3">
+          <label className="mb-2 block text-xs uppercase tracking-wide text-slate-400">
+            Mon adresse mail pro
+          </label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              type="email"
+              value={professionalEmailDraft}
+              onChange={(event) => setProfessionalEmailDraft(event.target.value)}
+              placeholder="prenom.nom@entreprise.com"
+              className="min-h-11 flex-1 rounded-xl border border-white/10 bg-slate-900 px-3 text-sm text-white outline-none focus:border-cyan-300"
+            />
+            <button
+              type="button"
+              onClick={saveProfessionalEmail}
+              className="min-h-11 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950"
+            >
+              {t('common.save')}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Adresse utilisee pour les flux professionnels (agenda, transferts, routage email pro).
+          </p>
+          {professionalEmailStatus && <p className="mt-1 text-xs text-emerald-300">{professionalEmailStatus}</p>}
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">

@@ -1540,6 +1540,15 @@ async function findUserMatchForInboundEmail(args: {
   const normalizedSender = normalizeEmail(args.senderEmail);
   if (!normalizedSender) return null;
 
+  const professionalUserId = await findUserIdByProfessionalEmail(normalizedSender);
+  if (professionalUserId) {
+    return {
+      id: professionalUserId,
+      score: 145,
+      reason: 'professional-email-exact',
+    };
+  }
+
   const aliasUserId = await findUserIdByAliasEmail(normalizedSender);
   if (aliasUserId) {
     return {
@@ -1581,6 +1590,33 @@ async function findUserMatchForInboundEmail(args: {
   }
 
   return best;
+}
+
+async function findUserIdByProfessionalEmail(email: string): Promise<string | null> {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+
+  const { data, error } = await supabase
+    .from('scheduling_preferences')
+    .select('user_id')
+    .eq('professional_email', normalized)
+    .limit(2);
+
+  if (error) {
+    console.error('find professional email user failed', error);
+    return null;
+  }
+
+  if (!data?.length) return null;
+  if (data.length > 1) {
+    console.warn('resend inbound -> duplicate professional_email detected', {
+      email: normalized,
+      count: data.length,
+    });
+    return null;
+  }
+
+  return String(data[0]?.user_id || '') || null;
 }
 
 async function findUserMatchForAgendaInvite(

@@ -66,12 +66,39 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Email valide:', body.recipientEmail);
 
+    const { data: taskData } = await supabase
+      .from('tasks')
+      .select('type,title')
+      .eq('id', body.taskId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    const taskType = String(taskData?.type || 'pro').toLowerCase();
+
     // Récupérer l'utilisateur qui envoie
     const { data: userData } = await supabase.auth.admin.getUserById(userId);
     const userEmail = userData?.user?.email || 'no-reply';
     const senderName = userEmail.split('@')[0];
     const senderDisplayName = senderName || 'Utilisateur';
     const senderEmail = `${senderName}@meetsync-ai.com`;
+
+    const { data: schedulingPreferences } = await supabase
+      .from('scheduling_preferences')
+      .select('professional_email')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    const professionalEmail = String(schedulingPreferences?.professional_email || '').trim().toLowerCase();
+
+    const ccRecipients = new Set<string>();
+    if (taskType === 'pro' && professionalEmail) {
+      ccRecipients.add(professionalEmail);
+    }
+    if (taskType !== 'pro' && userEmail) {
+      ccRecipients.add(String(userEmail).trim().toLowerCase());
+    }
+    ccRecipients.delete(String(body.recipientEmail).trim().toLowerCase());
+    const cc = Array.from(ccRecipients);
     
     console.log('✅ Expéditeur:', senderDisplayName, '-', senderEmail);
 
@@ -110,6 +137,7 @@ export async function POST(request: NextRequest) {
     const emailResult = await resend.emails.send({
       from: `${senderDisplayName} <${senderEmail}>`,
       to: body.recipientEmail,
+      cc: cc.length > 0 ? cc : undefined,
       subject: `Nouvelle demande d'action: ${body.taskTitle}`,
       html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;">
@@ -182,9 +210,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Marquer la tâche comme terminée avec commentaire
+    const transferredAtIso = new Date().toISOString();
+    const updatedTitle = upsertTransferMetadata(
+      String(taskData?.title || body.taskTitle || '').trim(),
+      body.recipientEmail,
+      transferredAtIso
+    );
+
     const { error: updateError } = await supabase
       .from('tasks')
       .update({
+        title: updatedTitle,
         status: 'done',
         archived: false,
       })
@@ -213,4 +249,21 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function upsertTransferMetadata(title: string, recipientEmail: string, transferredAtIso: string): string {
+  let base = String(title || '').trim();
+  base = base.replace(/\s*\[transfer:[^\]]+\]\s*/gi, ' ').replace(/\s+/g, ' ').trim();
+
+  const emailTokenMatch = base.match(/\s*(\[email:[a-z0-9-]{8,}\])\s*$/i);
+  const emailToken = emailTokenMatch?.[1] || '';
+  if (emailToken) {
+    base = base.slice(0, base.lastIndexOf(emailToken)).trim();
+  }
+
+  const normalizedRecipient = String(recipientEmail || '').trim().toLowerCase();
+  const normalizedTimestamp = String(transferredAtIso || '').trim();
+  const transferToken = `[transfer:${normalizedRecipient}|${normalizedTimestamp}]`;
+
+  return [base || 'Tache transferee', transferToken, emailToken].filter(Boolean).join(' ').trim();
 }

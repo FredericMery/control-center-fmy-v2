@@ -263,8 +263,9 @@ export default function TasksPage() {
         ) : (
           <div className="space-y-2.5 sm:space-y-3">
             {filteredTasks.map((task) => {
-              const taskLink = parseLinkedEmailFromTaskTitle(task.title);
-              const displayTaskTitle = taskLink.cleanTitle || task.title;
+              const transferInfo = parseTaskTransferInfo(task.title);
+              const taskLink = parseLinkedEmailFromTaskTitle(transferInfo.cleanTitle);
+              const displayTaskTitle = taskLink.cleanTitle || transferInfo.cleanTitle || task.title;
 
               const deadlinePassed = isDeadlinePassed(task.deadline);
               const contactSource = `${displayTaskTitle}`;
@@ -315,6 +316,12 @@ export default function TasksPage() {
                           </div>
                         )}
                       </div>
+
+                      {transferInfo.recipientEmail && transferInfo.transferredAt && (
+                        <div className="mt-2 inline-flex items-center rounded-full border border-cyan-300/30 bg-cyan-500/10 px-3 py-1 text-[11px] text-cyan-100">
+                          ↗ Transferee a {transferInfo.recipientEmail} le {formatTransferDate(transferInfo.transferredAt, language)}
+                        </div>
+                      )}
 
                       {/* Contact Actions */}
                       <div className="flex gap-2 mt-2">
@@ -563,4 +570,42 @@ function parseLinkedEmailFromTaskTitle(rawTitle: string): { cleanTitle: string; 
     cleanTitle,
     emailMessageId: String(match[1] || '').trim(),
   };
+}
+
+function parseTaskTransferInfo(rawTitle: string): {
+  cleanTitle: string;
+  recipientEmail: string;
+  transferredAt: string;
+} {
+  const raw = String(rawTitle || '');
+  const match = raw.match(/\[transfer:([^|\]]+)\|([^\]]+)\]/i);
+
+  if (!match?.[1] || !match?.[2]) {
+    return {
+      cleanTitle: raw,
+      recipientEmail: '',
+      transferredAt: '',
+    };
+  }
+
+  const cleanTitle = raw.replace(/\s*\[transfer:[^\]]+\]\s*/i, ' ').replace(/\s+/g, ' ').trim();
+  return {
+    cleanTitle,
+    recipientEmail: String(match[1] || '').trim(),
+    transferredAt: String(match[2] || '').trim(),
+  };
+}
+
+function formatTransferDate(value: string, language: string): string {
+  const date = new Date(String(value || ''));
+  if (Number.isNaN(date.getTime())) return value;
+
+  const locale = language === 'fr' ? 'fr-FR' : language === 'es' ? 'es-ES' : 'en-US';
+  return new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
 }
