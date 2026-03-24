@@ -422,22 +422,22 @@ export default function EmailAssistantPage() {
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl">Gestion intelligente des emails</h1>
         <p className="mt-2 text-sm text-slate-300">Tri IA, proposition de reponse, validation avant envoi, journalisation complete.</p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <button
             onClick={openResponseManager}
-            className="rounded-xl bg-indigo-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-indigo-300"
+            className="min-h-11 w-full rounded-xl bg-indigo-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-indigo-300 sm:w-auto"
           >
             Gerer les reponses
           </button>
           <button
             onClick={openDailySummary}
-            className="rounded-xl border border-cyan-300/35 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
+            className="min-h-11 w-full rounded-xl border border-cyan-300/35 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20 sm:w-auto"
           >
             Synthese journee
           </button>
           <button
             onClick={refreshAll}
-            className="rounded-xl border border-white/15 bg-slate-900/50 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800"
+            className="min-h-11 w-full rounded-xl border border-white/15 bg-slate-900/50 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800 sm:w-auto"
           >
             Actualiser
           </button>
@@ -557,7 +557,7 @@ export default function EmailAssistantPage() {
           {selected && (
             <div className="space-y-4">
               <div className="rounded-xl border border-white/10 bg-slate-950/35 p-3">
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h2 className="text-lg font-semibold text-white">{selected.subject || '(sans objet)'}</h2>
                     <p className="text-xs text-slate-400">De: {selected.sender_name || '-'} &lt;{selected.sender_email || '-'}&gt;</p>
@@ -570,22 +570,22 @@ export default function EmailAssistantPage() {
                     <p className="mt-1">Priorite: {priorityLabel[selected.ai_priority || 'normal'] || 'Normale'}</p>
                   </div>
                 </div>
-                <p className="mt-3 text-sm text-slate-200">{selected.ai_summary || 'Aucun resume IA.'}</p>
+                <p className="mt-3 break-words text-sm text-slate-200">{selected.ai_summary || 'Aucun resume IA.'}</p>
                 <p className="mt-2 text-xs text-slate-500">Decision IA: <span className="text-slate-200">{actionLabel[selected.ai_action] || selected.ai_action}</span> · Confiance: {selected.ai_confidence ?? 0}</p>
               </div>
 
               <div className="rounded-xl border border-white/10 bg-slate-950/35 p-3">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Contenu email</p>
-                <p className="whitespace-pre-wrap text-sm text-slate-200">{selected.body_text || selected.body_html || '(contenu vide)'}</p>
+                <p className="whitespace-pre-wrap break-words text-sm text-slate-200">{selected.body_text || selected.body_html || '(contenu vide)'}</p>
               </div>
 
               <div className="rounded-xl border border-indigo-300/20 bg-indigo-500/5 p-3">
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm font-semibold text-indigo-100">Brouillon de reponse</p>
                   <button
                     onClick={generateDraft}
                     disabled={busy}
-                    className="rounded-lg border border-indigo-300/30 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-100 hover:bg-indigo-500/20 disabled:opacity-50"
+                    className="min-h-10 rounded-lg border border-indigo-300/30 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-100 hover:bg-indigo-500/20 disabled:opacity-50"
                   >
                     {busy ? '...' : 'Generer / Regenerer IA'}
                   </button>
@@ -609,42 +609,42 @@ export default function EmailAssistantPage() {
                   <button
                     onClick={createProTask}
                     disabled={busy}
-                    className="rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"
+                    className="min-h-11 w-full rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50 sm:w-auto"
                   >
                     Creer une tache pro (IA)
                   </button>
                   <button
                     onClick={sendDraft}
                     disabled={busy || !draftBody.trim()}
-                    className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:opacity-50"
+                    className="min-h-11 w-full rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:opacity-50 sm:w-auto"
                   >
                     Envoyer
                   </button>
                   <button
                     onClick={saveDraft}
                     disabled={busy || !draftBody.trim()}
-                    className="rounded-lg border border-white/15 bg-slate-900/60 px-4 py-2 text-sm text-slate-100 hover:bg-slate-800 disabled:opacity-50"
+                    className="min-h-11 w-full rounded-lg border border-white/15 bg-slate-900/60 px-4 py-2 text-sm text-slate-100 hover:bg-slate-800 disabled:opacity-50 sm:w-auto"
                   >
                     Modifier / Sauvegarder
                   </button>
                   <button
                     onClick={deleteDraft}
                     disabled={busy}
-                    className="rounded-lg border border-rose-300/35 bg-rose-500/10 px-4 py-2 text-sm text-rose-100 hover:bg-rose-500/20 disabled:opacity-50"
+                    className="min-h-11 w-full rounded-lg border border-rose-300/35 bg-rose-500/10 px-4 py-2 text-sm text-rose-100 hover:bg-rose-500/20 disabled:opacity-50 sm:w-auto"
                   >
                     Supprimer brouillon
                   </button>
                   <button
                     onClick={archiveMessage}
                     disabled={busy}
-                    className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-4 py-2 text-sm text-amber-100 hover:bg-amber-500/20 disabled:opacity-50"
+                    className="min-h-11 w-full rounded-lg border border-amber-300/35 bg-amber-500/10 px-4 py-2 text-sm text-amber-100 hover:bg-amber-500/20 disabled:opacity-50 sm:w-auto"
                   >
                     Classer sans action
                   </button>
                   <button
                     onClick={removeMessage}
                     disabled={busy}
-                    className="rounded-lg border border-red-300/35 bg-red-500/10 px-4 py-2 text-sm text-red-100 hover:bg-red-500/20 disabled:opacity-50"
+                    className="min-h-11 w-full rounded-lg border border-red-300/35 bg-red-500/10 px-4 py-2 text-sm text-red-100 hover:bg-red-500/20 disabled:opacity-50 sm:w-auto"
                   >
                     Supprimer email
                   </button>
@@ -658,15 +658,15 @@ export default function EmailAssistantPage() {
       {summaryOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/10 bg-slate-950 p-4 sm:p-6">
-            <div className="mb-4 flex items-start justify-between gap-3">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-white">Synthese de la journee</h2>
                 <p className="text-xs text-slate-400">Priorisation des actions sur les emails du jour</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <button
                   onClick={() => setSummaryOpen(false)}
-                  className="rounded-lg border border-white/15 bg-slate-900/60 px-2.5 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+                  className="min-h-10 rounded-lg border border-white/15 bg-slate-900/60 px-2.5 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
                   aria-label="Fermer la synthese"
                   title="Fermer"
                 >
@@ -676,7 +676,7 @@ export default function EmailAssistantPage() {
                   value={autoCreateScope}
                   onChange={(event) => setAutoCreateScope(event.target.value as typeof autoCreateScope)}
                   disabled={creatingSummaryTasks || loadingSummary}
-                  className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-100 disabled:opacity-50"
+                  className="min-h-10 rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-100 disabled:opacity-50"
                 >
                   <option value="urgent">Auto: urgent uniquement</option>
                   <option value="urgent_high">Auto: urgent + high</option>
@@ -685,45 +685,39 @@ export default function EmailAssistantPage() {
                 <button
                   onClick={autoCreateSummaryTasks}
                   disabled={creatingSummaryTasks || loadingSummary || !daySummary}
-                  className="rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"
+                  className="min-h-10 rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"
                 >
                   {creatingSummaryTasks ? 'Creation...' : 'Auto-creer taches pro (IA-MAIL)'}
-                </button>
-                <button
-                  onClick={() => setSummaryOpen(false)}
-                  className="rounded-lg border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
-                >
-                  Fermer
                 </button>
               </div>
             </div>
 
-            <div className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-white/10 bg-slate-900/60 p-3">
+            <div className="mb-4 flex flex-col gap-2 rounded-xl border border-white/10 bg-slate-900/60 p-3 sm:flex-row sm:flex-wrap sm:items-end">
               <div className="flex min-w-[180px] flex-col">
                 <label className="mb-1 text-[11px] uppercase tracking-wide text-slate-400">Date de synthese</label>
                 <input
                   type="date"
                   value={summaryDate}
                   onChange={(event) => setSummaryDate(event.target.value)}
-                  className="rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
+                  className="min-h-11 rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
                 />
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setSummaryDate(toDateInputValue(new Date()))}
-                  className="rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
+                  className="min-h-10 rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
                 >
                   Aujourd'hui
                 </button>
                 <button
                   onClick={() => setSummaryDate(toDateInputValue(shiftDays(new Date(), -1)))}
-                  className="rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
+                  className="min-h-10 rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
                 >
                   Hier
                 </button>
                 <button
                   onClick={() => setSummaryDate(toDateInputValue(startOfWeekMonday(new Date())))}
-                  className="rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
+                  className="min-h-10 rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
                 >
                   Lundi semaine
                 </button>
@@ -731,7 +725,7 @@ export default function EmailAssistantPage() {
               <button
                 onClick={openDailySummary}
                 disabled={loadingSummary}
-                className="rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"
+                className="min-h-11 rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"
               >
                 {loadingSummary ? 'Chargement...' : 'Actualiser la synthese'}
               </button>
