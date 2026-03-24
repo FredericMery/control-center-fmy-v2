@@ -28,14 +28,14 @@ export async function GET(request: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Non authentifie' }, { status: 401 });
 
   const supabase = getSupabaseAdminClient();
-  const now = new Date();
-  const rowsResult = await getTodayEmailRows(supabase, userId, now);
+  const requestedDate = parseDateKey(request.nextUrl.searchParams.get('date')) || new Date();
+  const rowsResult = await getEmailRowsForDate(supabase, userId, requestedDate);
   if (rowsResult.error) return NextResponse.json({ error: rowsResult.error }, { status: 500 });
 
   const rows = rowsResult.rows;
   if (rows.length === 0) {
     return NextResponse.json({
-      day: toDayKey(now),
+      day: toDayKey(requestedDate),
       count: 0,
       summary: 'Aucun email recu aujourd hui.',
       actions: [] as DailyAction[],
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
   const synthesis = await generateDailySynthesis(userId, rows);
 
   return NextResponse.json({
-    day: toDayKey(now),
+    day: toDayKey(requestedDate),
     count: rows.length,
     summary: synthesis.summary,
     actions: synthesis.actions,
@@ -61,19 +61,21 @@ export async function POST(request: NextRequest) {
 
   const body = (await request.json().catch(() => ({}))) as {
     priorities?: Array<'urgent' | 'high' | 'normal' | 'low'>;
+    date?: string;
   };
 
   const allowedPriorities = (Array.isArray(body.priorities) && body.priorities.length > 0
     ? body.priorities
     : ['urgent', 'high']) as Array<'urgent' | 'high' | 'normal' | 'low'>;
 
-  const rowsResult = await getTodayEmailRows(supabase, userId, now);
+  const requestedDate = parseDateKey(body.date) || now;
+  const rowsResult = await getEmailRowsForDate(supabase, userId, requestedDate);
   if (rowsResult.error) return NextResponse.json({ error: rowsResult.error }, { status: 500 });
 
   const rows = rowsResult.rows;
   if (rows.length === 0) {
     return NextResponse.json({
-      day: toDayKey(now),
+      day: toDayKey(requestedDate),
       count: 0,
       created: 0,
       skipped: 0,
@@ -153,7 +155,7 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({
-    day: toDayKey(now),
+    day: toDayKey(requestedDate),
     count: rows.length,
     considered: candidates.length,
     created: createdTasks.length,
@@ -164,15 +166,14 @@ export async function POST(request: NextRequest) {
   });
 }
 
-async function getTodayEmailRows(
+async function getEmailRowsForDate(
   supabase: ReturnType<typeof getSupabaseAdminClient>,
   userId: string,
-  now: Date
+  date: Date
 ): Promise<{ rows: DailyRow[]; error: string | null }> {
-
-  const start = new Date(now);
+  const start = new Date(date);
   start.setHours(0, 0, 0, 0);
-  const end = new Date(now);
+  const end = new Date(date);
   end.setHours(23, 59, 59, 999);
 
   const { data: messages, error } = await supabase
@@ -344,6 +345,20 @@ function toDayKey(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+function parseDateKey(value: unknown): Date | null {
+  const raw = normalizeText(value);
+  if (!raw) return null;
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(year, month - 1, day, 12, 0, 0, 0);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
 }
 
 function normalizeText(value: unknown): string {

@@ -83,6 +83,7 @@ export default function EmailAssistantPage() {
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [creatingSummaryTasks, setCreatingSummaryTasks] = useState(false);
   const [autoCreateScope, setAutoCreateScope] = useState<'urgent' | 'urgent_high' | 'all'>('urgent_high');
+  const [summaryDate, setSummaryDate] = useState(() => toDateInputValue(new Date()));
 
   const selected = useMemo(
     () => items.find((entry) => entry.id === selectedId) || null,
@@ -186,7 +187,9 @@ export default function EmailAssistantPage() {
     setLoadingSummary(true);
     setSummaryOpen(true);
     try {
-      const res = await fetch('/api/email/summary/daily', {
+      const query = new URLSearchParams();
+      if (summaryDate) query.set('date', summaryDate);
+      const res = await fetch(`/api/email/summary/daily?${query.toString()}`, {
         headers: await getAuthHeaders(false),
       });
       const json = (await res.json().catch(() => ({}))) as DailySummaryPayload & { error?: string };
@@ -214,7 +217,7 @@ export default function EmailAssistantPage() {
       const res = await fetch('/api/email/summary/daily', {
         method: 'POST',
         headers: await getAuthHeaders(),
-        body: JSON.stringify({ priorities }),
+        body: JSON.stringify({ priorities, date: summaryDate }),
       });
 
       const json = (await res.json().catch(() => ({}))) as {
@@ -661,6 +664,14 @@ export default function EmailAssistantPage() {
                 <p className="text-xs text-slate-400">Priorisation des actions sur les emails du jour</p>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSummaryOpen(false)}
+                  className="rounded-lg border border-white/15 bg-slate-900/60 px-2.5 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+                  aria-label="Fermer la synthese"
+                  title="Fermer"
+                >
+                  ✕
+                </button>
                 <select
                   value={autoCreateScope}
                   onChange={(event) => setAutoCreateScope(event.target.value as typeof autoCreateScope)}
@@ -685,6 +696,45 @@ export default function EmailAssistantPage() {
                   Fermer
                 </button>
               </div>
+            </div>
+
+            <div className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-white/10 bg-slate-900/60 p-3">
+              <div className="flex min-w-[180px] flex-col">
+                <label className="mb-1 text-[11px] uppercase tracking-wide text-slate-400">Date de synthese</label>
+                <input
+                  type="date"
+                  value={summaryDate}
+                  onChange={(event) => setSummaryDate(event.target.value)}
+                  className="rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setSummaryDate(toDateInputValue(new Date()))}
+                  className="rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
+                >
+                  Aujourd'hui
+                </button>
+                <button
+                  onClick={() => setSummaryDate(toDateInputValue(shiftDays(new Date(), -1)))}
+                  className="rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
+                >
+                  Hier
+                </button>
+                <button
+                  onClick={() => setSummaryDate(toDateInputValue(startOfWeekMonday(new Date())))}
+                  className="rounded-lg border border-white/15 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 hover:bg-slate-800"
+                >
+                  Lundi semaine
+                </button>
+              </div>
+              <button
+                onClick={openDailySummary}
+                disabled={loadingSummary}
+                className="rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"
+              >
+                {loadingSummary ? 'Chargement...' : 'Actualiser la synthese'}
+              </button>
             </div>
 
             {loadingSummary && <p className="text-sm text-slate-300">Generation de la synthese...</p>}
@@ -716,6 +766,15 @@ export default function EmailAssistantPage() {
                     </div>
                   ))}
                 </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={() => setSummaryOpen(false)}
+                    className="rounded-lg border border-white/15 bg-slate-900/60 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+                  >
+                    Fermer la modale
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -730,6 +789,27 @@ function priorityBadge(priority: 'urgent' | 'high' | 'normal' | 'low'): string {
   if (priority === 'high') return 'bg-amber-500/20 text-amber-200 border border-amber-300/40';
   if (priority === 'low') return 'bg-slate-500/20 text-slate-200 border border-slate-300/40';
   return 'bg-indigo-500/20 text-indigo-200 border border-indigo-300/40';
+}
+
+function toDateInputValue(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function shiftDays(date: Date, delta: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + delta);
+  return next;
+}
+
+function startOfWeekMonday(date: Date): Date {
+  const next = new Date(date);
+  const day = next.getDay();
+  const delta = day === 0 ? -6 : 1 - day;
+  next.setDate(next.getDate() + delta);
+  return next;
 }
 
 function StatCard(props: { label: string; value: string; color: string }) {
