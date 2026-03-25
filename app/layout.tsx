@@ -2,6 +2,7 @@ import "./globals.css";
 import AuthProvider from "@/components/providers/AuthProvider";
 import ThemeProvider from "@/components/providers/ThemeProvider";
 import LanguageProvider from "@/components/providers/LanguageProvider";
+import { Analytics } from '@vercel/analytics/next';
 
 export const metadata = {
   title: "H+ – Mémorises ce qui compte",
@@ -33,6 +34,7 @@ export default function RootLayout({
             <ThemeProvider>{children}</ThemeProvider>
           </LanguageProvider>
         </AuthProvider>
+        <Analytics />
       </body>
     </html>
   );
