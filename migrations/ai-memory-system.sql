@@ -3,8 +3,9 @@
 -- Adds AI-first memory tables without replacing legacy memory_* tables.
 -- =====================================================
 
-create extension if not exists vector;
-create extension if not exists pg_trgm;
+create schema if not exists extensions;
+create extension if not exists vector with schema extensions;
+create extension if not exists pg_trgm with schema extensions;
 
 create table if not exists public.memories (
   id uuid primary key default gen_random_uuid(),
@@ -16,7 +17,7 @@ create table if not exists public.memories (
   rating integer,
   source text,
   source_image text,
-  embedding vector(1536),
+  embedding extensions.vector(1536),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint memories_rating_range check (rating is null or (rating >= 1 and rating <= 5))
@@ -54,12 +55,12 @@ create table if not exists public.user_subscriptions (
 
 create index if not exists idx_memories_user_created on public.memories(user_id, created_at desc);
 create index if not exists idx_memories_type on public.memories(type);
-create index if not exists idx_memories_title_trgm on public.memories using gin (title gin_trgm_ops);
+create index if not exists idx_memories_title_trgm on public.memories using gin (title extensions.gin_trgm_ops);
 create index if not exists idx_memories_structured_data on public.memories using gin (structured_data);
 create index if not exists idx_memory_relations_from on public.memory_relations(from_memory);
 create index if not exists idx_memory_relations_to on public.memory_relations(to_memory);
 create index if not exists idx_ai_usage_logs_user_created on public.ai_usage_logs(user_id, created_at desc);
-create index if not exists idx_memories_embedding on public.memories using ivfflat (embedding vector_cosine_ops) with (lists = 100);
+create index if not exists idx_memories_embedding on public.memories using ivfflat (embedding extensions.vector_cosine_ops) with (lists = 100);
 
 alter table public.memories enable row level security;
 alter table public.memory_relations enable row level security;
@@ -163,7 +164,7 @@ create policy "user_subscriptions_update_own"
 
 create or replace function public.match_memories(
   p_user_id uuid,
-  p_query_embedding vector(1536),
+  p_query_embedding extensions.vector(1536),
   p_match_count int default 10
 )
 returns table (
@@ -180,6 +181,7 @@ returns table (
 )
 language sql
 stable
+set search_path = public, extensions, pg_catalog
 as $$
   select
     m.id,
@@ -202,6 +204,7 @@ $$;
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
+set search_path = public, pg_catalog
 as $$
 begin
   new.updated_at = now();

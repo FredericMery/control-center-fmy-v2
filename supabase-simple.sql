@@ -19,5 +19,23 @@ CREATE TABLE public.email_settings (
 -- Index
 CREATE INDEX idx_email_settings_user_id ON public.email_settings(user_id);
 
--- Note: RLS désactivé pour simplifier (le service role key bypass RLS de toute façon)
+-- RLS
+ALTER TABLE public.email_settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own email_settings"
+  ON public.email_settings FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own email_settings"
+  ON public.email_settings FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own email_settings"
+  ON public.email_settings FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own email_settings"
+  ON public.email_settings FOR DELETE
+  USING (auth.uid() = user_id);
 

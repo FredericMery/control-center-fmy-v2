@@ -37,6 +37,7 @@ CREATE POLICY "Users can delete their own expense_recipients"
 CREATE OR REPLACE FUNCTION public.update_expense_recipients_updated_at()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = public, pg_catalog
 AS $$
 BEGIN
   NEW.updated_at = NOW();

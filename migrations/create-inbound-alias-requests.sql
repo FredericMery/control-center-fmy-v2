@@ -49,6 +49,7 @@ CREATE POLICY "Users can delete their own inbound alias requests"
 CREATE OR REPLACE FUNCTION public.update_inbound_alias_requests_updated_at()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = public, pg_catalog
 AS $$
 BEGIN
   NEW.updated_at = NOW();
@@ -66,6 +67,7 @@ CREATE TRIGGER update_inbound_alias_requests_updated_at
 CREATE OR REPLACE FUNCTION public.normalize_inbound_alias_requests_on_insert()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = public, pg_catalog
 AS $$
 BEGIN
   NEW.sender_email = lower(trim(NEW.sender_email));

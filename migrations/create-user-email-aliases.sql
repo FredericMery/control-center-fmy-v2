@@ -46,6 +46,7 @@ CREATE POLICY "Users can delete their own email aliases"
 CREATE OR REPLACE FUNCTION public.update_user_email_aliases_updated_at()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = public, pg_catalog
 AS $$
 BEGIN
   NEW.updated_at = NOW();
@@ -64,6 +65,7 @@ CREATE TRIGGER update_user_email_aliases_updated_at
 CREATE OR REPLACE FUNCTION public.normalize_user_email_aliases_on_insert()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = public, pg_catalog
 AS $$
 BEGIN
   NEW.email_alias = lower(trim(NEW.email_alias));

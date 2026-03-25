@@ -25,14 +25,16 @@ DROP POLICY IF EXISTS "Service role can insert notifications" ON public.notifica
 CREATE POLICY "Service role can insert notifications"
   ON public.notifications
   FOR INSERT
-  WITH CHECK (true);
+  TO service_role
+  WITH CHECK (auth.role() = 'service_role');
 
 -- 4. Policy: Service role can SELECT all notifications (for API routes)
 DROP POLICY IF EXISTS "Service role can select all notifications" ON public.notifications;
 CREATE POLICY "Service role can select all notifications"
   ON public.notifications
   FOR SELECT
-  USING (true);
+  TO service_role
+  USING (auth.role() = 'service_role');
 
 -- Verify policies are active
 SELECT * FROM pg_policies WHERE tablename = 'notifications';

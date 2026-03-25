@@ -167,6 +167,7 @@ CREATE POLICY "Users can insert their own email logs"
 CREATE OR REPLACE FUNCTION public.update_email_messages_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SET search_path = public, pg_catalog
 AS $$
 BEGIN
   NEW.updated_at = NOW();
@@ -183,6 +184,7 @@ CREATE TRIGGER trg_update_email_messages_updated_at
 CREATE OR REPLACE FUNCTION public.update_email_reply_drafts_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SET search_path = public, pg_catalog
 AS $$
 BEGIN
   NEW.updated_at = NOW();

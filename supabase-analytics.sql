@@ -51,11 +51,54 @@ CREATE INDEX idx_app_usage_date ON public.app_usage(date);
 CREATE INDEX idx_app_usage_user_event_date ON public.app_usage(user_id, event_type, date);
 
 -- =====================================================
+-- RLS SECURITY
+-- =====================================================
+
+ALTER TABLE public.api_calls ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.app_usage ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own api_calls"
+  ON public.api_calls FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own api_calls"
+  ON public.api_calls FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own api_calls"
+  ON public.api_calls FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own api_calls"
+  ON public.api_calls FOR DELETE
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can view their own app_usage"
+  ON public.app_usage FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own app_usage"
+  ON public.app_usage FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own app_usage"
+  ON public.app_usage FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own app_usage"
+  ON public.app_usage FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- =====================================================
 -- VUES POUR ANALYTICS
 -- =====================================================
 
 -- Vue : résumé mensuel des appels API par utilisateur
-CREATE OR REPLACE VIEW v_api_calls_monthly AS
+CREATE OR REPLACE VIEW v_api_calls_monthly
+WITH (security_invoker = true)
+AS
 SELECT 
   user_id,
   api_type,
@@ -65,7 +108,9 @@ FROM public.api_calls
 GROUP BY user_id, api_type, DATE_TRUNC('month', date);
 
 -- Vue : résumé journalier de l'usage de l'app
-CREATE OR REPLACE VIEW v_app_usage_daily AS
+CREATE OR REPLACE VIEW v_app_usage_daily
+WITH (security_invoker = true)
+AS
 SELECT 
   user_id,
   date,
@@ -75,7 +120,9 @@ FROM public.app_usage
 GROUP BY user_id, date, event_type;
 
 -- Vue : stats API par user et date
-CREATE OR REPLACE VIEW v_api_calls_daily AS
+CREATE OR REPLACE VIEW v_api_calls_daily
+WITH (security_invoker = true)
+AS
 SELECT 
   user_id,
   date,

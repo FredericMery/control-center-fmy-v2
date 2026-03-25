@@ -82,7 +82,7 @@ CREATE POLICY "mail_items: user owns rows"
   WITH CHECK (auth.uid() = user_id);
 
 -- Trigger updated_at
-CREATE OR REPLACE FUNCTION update_mail_items_updated_at()
+CREATE OR REPLACE FUNCTION public.update_mail_items_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
   NEW.updated_at = NOW();
@@ -90,9 +90,11 @@ BEGIN
 END;
 $$;
 
+ALTER FUNCTION public.update_mail_items_updated_at() SET search_path = public, pg_catalog;
+
 CREATE TRIGGER mail_items_updated_at
   BEFORE UPDATE ON mail_items
-  FOR EACH ROW EXECUTE FUNCTION update_mail_items_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION public.update_mail_items_updated_at();
 
 -- Storage bucket pour les scans
 INSERT INTO storage.buckets (id, name, public)
