@@ -42,16 +42,6 @@ type DailySummaryPayload = {
   }>;
 };
 
-type EmailAiRulesPayload = {
-  settings: {
-    email_reply_scope: 'to_only' | 'all' | 'none';
-    email_global_instructions: string;
-    email_do_rules: string[];
-    email_dont_rules: string[];
-    email_signature: string;
-  };
-};
-
 const priorityLabel: Record<string, string> = {
   urgent: 'Urgent',
   high: 'Haute',
@@ -87,7 +77,6 @@ export default function EmailAssistantPage() {
     setTimeout(() => setFeedback(null), 5000);
   };
 
-  const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState<'all' | 'classer' | 'repondre'>('all');
   const [responseFilter, setResponseFilter] = useState<'all' | 'none' | 'draft_ready' | 'sent' | 'cancelled'>('all');
   const [archiveView, setArchiveView] = useState<'active' | 'archived' | 'all'>('active');
@@ -101,13 +90,6 @@ export default function EmailAssistantPage() {
   const [creatingSummaryTasks, setCreatingSummaryTasks] = useState(false);
   const [autoCreateScope, setAutoCreateScope] = useState<'urgent' | 'urgent_high' | 'all'>('urgent_high');
   const [summaryDate, setSummaryDate] = useState(() => toDateInputValue(new Date()));
-  const [emailReplyScope, setEmailReplyScope] = useState<'to_only' | 'all' | 'none'>('to_only');
-  const [emailGlobalInstructions, setEmailGlobalInstructions] = useState('');
-  const [emailDoRulesInput, setEmailDoRulesInput] = useState('');
-  const [emailDontRulesInput, setEmailDontRulesInput] = useState('');
-  const [emailSignature, setEmailSignature] = useState('');
-  const [loadingRules, setLoadingRules] = useState(false);
-  const [savingRules, setSavingRules] = useState(false);
 
   const selected = useMemo(
     () => items.find((entry) => entry.id === selectedId) || null,
@@ -199,7 +181,6 @@ export default function EmailAssistantPage() {
     const qs = new URLSearchParams();
     if (actionFilter !== 'all') qs.set('action', actionFilter);
     if (responseFilter !== 'all') qs.set('response_status', responseFilter);
-    if (search.trim()) qs.set('search', search.trim());
     if (archiveView === 'active') qs.set('archived', '0');
     if (archiveView === 'archived') qs.set('archived', '1');
     if (recipientRole !== 'all') qs.set('recipient_role', recipientRole);
@@ -220,7 +201,7 @@ export default function EmailAssistantPage() {
     } finally {
       setLoading(false);
     }
-  }, [user, actionFilter, responseFilter, search, archiveView, recipientRole, userEmail]);
+  }, [user, actionFilter, responseFilter, archiveView, recipientRole, userEmail]);
 
   useEffect(() => {
     if (!user) return;
@@ -229,42 +210,11 @@ export default function EmailAssistantPage() {
   }, [user, loadMessages, loadStats]);
 
   useEffect(() => {
-    if (!user) return;
-
-    let cancelled = false;
-
-    const loadEmailAiRules = async () => {
-      setLoadingRules(true);
-      try {
-        const res = await fetch('/api/settings/email-ai-rules', {
-          headers: await getAuthHeaders(false),
-        });
-        const json = (await res.json().catch(() => ({}))) as EmailAiRulesPayload;
-        if (!res.ok || !json.settings || cancelled) return;
-
-        setEmailReplyScope(json.settings.email_reply_scope || 'to_only');
-        setEmailGlobalInstructions(json.settings.email_global_instructions || '');
-        setEmailDoRulesInput((json.settings.email_do_rules || []).join('\n'));
-        setEmailDontRulesInput((json.settings.email_dont_rules || []).join('\n'));
-        setEmailSignature(json.settings.email_signature || '');
-      } finally {
-        if (!cancelled) setLoadingRules(false);
-      }
-    };
-
-    loadEmailAiRules();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
-
-  useEffect(() => {
     const timer = setTimeout(() => {
       if (user) loadMessages();
     }, 280);
     return () => clearTimeout(timer);
-  }, [search, actionFilter, responseFilter, archiveView, recipientRole]);
+  }, [actionFilter, responseFilter, archiveView, recipientRole]);
 
   const refreshAll = async () => {
     await Promise.all([loadMessages(), loadStats()]);
@@ -272,55 +222,45 @@ export default function EmailAssistantPage() {
 
   const openResponseManager = () => {
     setArchiveView('active');
+    setRecipientRole('all');
     setActionFilter('repondre');
-    setResponseFilter('draft_ready');
+    setResponseFilter('all');
   };
 
   const openRecipientList = (role: 'to' | 'cc') => {
     setArchiveView('active');
+    setActionFilter('all');
+    setResponseFilter('all');
     setRecipientRole(role);
+  };
+
+  const openVolume = (volume: 'total' | 'to_reply' | 'drafts' | 'sent' | 'archives') => {
+    setRecipientRole('all');
+    setActionFilter('all');
+    setResponseFilter('all');
+    setArchiveView('active');
+
+    if (volume === 'to_reply') {
+      setActionFilter('repondre');
+      return;
+    }
+    if (volume === 'drafts') {
+      setResponseFilter('draft_ready');
+      return;
+    }
+    if (volume === 'sent') {
+      setResponseFilter('sent');
+      return;
+    }
+    if (volume === 'archives') {
+      setArchiveView('archived');
+    }
   };
 
   const openMessageModal = async (message: MessageWithDrafts) => {
     setSelectedId(message.id);
     setMessageModalOpen(true);
     await loadThreadMessages(message);
-  };
-
-  const saveEmailAiRules = async () => {
-    setSavingRules(true);
-    try {
-      const toRules = emailDoRulesInput
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const dontRules = emailDontRulesInput
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
-
-      const res = await fetch('/api/settings/email-ai-rules', {
-        method: 'PUT',
-        headers: await getAuthHeaders(),
-        body: JSON.stringify({
-          email_reply_scope: emailReplyScope,
-          email_global_instructions: emailGlobalInstructions,
-          email_do_rules: toRules,
-          email_dont_rules: dontRules,
-          email_signature: emailSignature,
-        }),
-      });
-
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        showErr(json.error || `Erreur ${res.status} lors de la sauvegarde des regles IA`);
-        return;
-      }
-
-      showOk('Regles globales IA email sauvegardees.');
-    } finally {
-      setSavingRules(false);
-    }
   };
 
   const openDailySummary = async () => {
@@ -584,87 +524,35 @@ export default function EmailAssistantPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 sm:p-5">
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-white">Regles globales IA email</h2>
-            <p className="text-xs text-slate-400">Tu peux ici former ton IA (style, directives, signature, et scope A/CC).</p>
-          </div>
-          <button
-            onClick={saveEmailAiRules}
-            disabled={savingRules || loadingRules}
-            className="min-h-10 rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-50"
-          >
-            {savingRules ? 'Sauvegarde...' : 'Sauvegarder regles IA'}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-slate-400">Scope reponse auto</label>
-            <select
-              value={emailReplyScope}
-              onChange={(event) => setEmailReplyScope(event.target.value as typeof emailReplyScope)}
-              className="w-full rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white"
-            >
-              <option value="to_only">Repondre seulement si je suis en A</option>
-              <option value="all">Repondre si je suis en A ou CC</option>
-              <option value="none">Ne jamais preparer de reponse</option>
-            </select>
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-slate-400">Signature preferee</label>
-            <input
-              value={emailSignature}
-              onChange={(event) => setEmailSignature(event.target.value)}
-              placeholder="Ex: Bien cordialement, Frederic"
-              className="w-full rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
-            />
-          </div>
-        </div>
-
-        <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-slate-400">Regles a appliquer (1 ligne = 1 regle)</label>
-            <textarea
-              value={emailDoRulesInput}
-              onChange={(event) => setEmailDoRulesInput(event.target.value)}
-              rows={5}
-              placeholder="Ex: Toujours proposer une action concrete\nEx: Commencer par Bonjour"
-              className="w-full resize-y rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
-            />
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
-            <label className="mb-1 block text-[11px] uppercase tracking-wide text-slate-400">Regles a eviter (1 ligne = 1 regle)</label>
-            <textarea
-              value={emailDontRulesInput}
-              onChange={(event) => setEmailDontRulesInput(event.target.value)}
-              rows={5}
-              placeholder="Ex: Eviter les reponses trop longues\nEx: Ne pas tutoyer les clients"
-              className="w-full resize-y rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
-            />
-          </div>
-        </div>
-
-        <div className="mt-2 rounded-xl border border-white/10 bg-slate-900/60 p-3">
-          <label className="mb-1 block text-[11px] uppercase tracking-wide text-slate-400">Instruction globale</label>
-          <textarea
-            value={emailGlobalInstructions}
-            onChange={(event) => setEmailGlobalInstructions(event.target.value)}
-            rows={4}
-            placeholder="Donne ici tes prefernces globales de fonctionnement (ton, structure, posture, priorisation...)."
-            className="w-full resize-y rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
-          />
-        </div>
-      </section>
-
       <section className="grid grid-cols-2 gap-2 sm:grid-cols-7">
-        <StatCard label="Total" value={String(stats?.stats.total ?? 0)} color="text-slate-100" />
-        <StatCard label="A repondre" value={String(stats?.stats.to_reply ?? 0)} color="text-amber-300" />
-        <StatCard label="Brouillons" value={String(stats?.stats.drafts_ready ?? 0)} color="text-indigo-300" />
-        <StatCard label="Envoyes" value={String(stats?.stats.sent ?? 0)} color="text-emerald-300" />
+        <StatCard
+          label="Total"
+          value={String(stats?.stats.total ?? 0)}
+          color="text-slate-100"
+          active={archiveView === 'active' && actionFilter === 'all' && responseFilter === 'all' && recipientRole === 'all'}
+          onClick={() => openVolume('total')}
+        />
+        <StatCard
+          label="A repondre"
+          value={String(stats?.stats.to_reply ?? 0)}
+          color="text-amber-300"
+          active={actionFilter === 'repondre' && archiveView === 'active' && recipientRole === 'all'}
+          onClick={() => openVolume('to_reply')}
+        />
+        <StatCard
+          label="Brouillons"
+          value={String(stats?.stats.drafts_ready ?? 0)}
+          color="text-indigo-300"
+          active={responseFilter === 'draft_ready' && archiveView === 'active' && recipientRole === 'all'}
+          onClick={() => openVolume('drafts')}
+        />
+        <StatCard
+          label="Envoyes"
+          value={String(stats?.stats.sent ?? 0)}
+          color="text-emerald-300"
+          active={responseFilter === 'sent' && archiveView === 'active' && recipientRole === 'all'}
+          onClick={() => openVolume('sent')}
+        />
         <button
           onClick={() => openRecipientList('to')}
           className={`rounded-xl border p-3 text-left transition ${
@@ -688,7 +576,7 @@ export default function EmailAssistantPage() {
           <p className="mt-1 text-xl font-semibold text-violet-200">{String(stats?.stats.copied_me ?? 0)}</p>
         </button>
         <button
-          onClick={() => setArchiveView('archived')}
+          onClick={() => openVolume('archives')}
           className={`rounded-xl border p-3 text-left transition ${
             archiveView === 'archived'
               ? 'border-indigo-300/35 bg-indigo-500/10'
@@ -698,61 +586,6 @@ export default function EmailAssistantPage() {
           <p className="text-[11px] uppercase tracking-wide text-slate-400">Archives</p>
           <p className="mt-1 text-xl font-semibold text-slate-400">{String(stats?.stats.archived ?? 0)}</p>
         </button>
-      </section>
-
-      <section className="rounded-2xl border border-white/10 bg-slate-900/65 p-3 sm:p-4">
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Rechercher expediteur, objet, resume..."
-            className="rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none focus:border-indigo-300"
-          />
-          <select
-            value={actionFilter}
-            onChange={(event) => setActionFilter(event.target.value as typeof actionFilter)}
-            className="rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white"
-          >
-            <option value="all">Action IA: toutes</option>
-            <option value="classer">Action IA: classer</option>
-            <option value="repondre">Action IA: repondre</option>
-          </select>
-          <select
-            value={responseFilter}
-            onChange={(event) => setResponseFilter(event.target.value as typeof responseFilter)}
-            className="rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white"
-          >
-            <option value="all">Statut reponse: tous</option>
-            <option value="none">Aucun</option>
-            <option value="draft_ready">Brouillon pret</option>
-            <option value="sent">Envoye</option>
-            <option value="cancelled">Annule</option>
-          </select>
-          <select
-            value={archiveView}
-            onChange={(event) => setArchiveView(event.target.value as typeof archiveView)}
-            className="rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white"
-          >
-            <option value="active">Messages actifs</option>
-            <option value="archived">Messages archives</option>
-            <option value="all">Tous</option>
-          </select>
-          <select
-            value={recipientRole}
-            onChange={(event) => setRecipientRole(event.target.value as typeof recipientRole)}
-            className="rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white"
-          >
-            <option value="all">Destinataire: tous</option>
-            <option value="to">Destinataire: adresses (A)</option>
-            <option value="cc">Destinataire: en copie (CC)</option>
-          </select>
-          <button
-            onClick={openResponseManager}
-            className="rounded-xl border border-indigo-300/30 bg-indigo-500/10 px-3 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-500/20"
-          >
-            Voir mails a traiter
-          </button>
-        </div>
       </section>
 
       <section className="grid grid-cols-1 gap-3">
@@ -1086,9 +919,24 @@ function startOfWeekMonday(date: Date): Date {
   return next;
 }
 
-function StatCard(props: { label: string; value: string; color: string }) {
+function StatCard(props: { label: string; value: string; color: string; onClick?: () => void; active?: boolean }) {
+  const baseClass = `rounded-xl border p-3 text-left transition ${
+    props.active
+      ? 'border-indigo-300/35 bg-indigo-500/10'
+      : 'border-white/10 bg-slate-900/65 hover:border-white/20'
+  }`;
+
+  if (props.onClick) {
+    return (
+      <button onClick={props.onClick} className={baseClass}>
+        <p className="text-[11px] uppercase tracking-wide text-slate-400">{props.label}</p>
+        <p className={`mt-1 text-xl font-semibold ${props.color}`}>{props.value}</p>
+      </button>
+    );
+  }
+
   return (
-    <article className="rounded-xl border border-white/10 bg-slate-900/65 p-3">
+    <article className={baseClass}>
       <p className="text-[11px] uppercase tracking-wide text-slate-400">{props.label}</p>
       <p className={`mt-1 text-xl font-semibold ${props.color}`}>{props.value}</p>
     </article>

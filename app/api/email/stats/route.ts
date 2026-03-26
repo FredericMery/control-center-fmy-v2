@@ -16,8 +16,7 @@ export async function GET(request: NextRequest) {
     { count: drafts },
     { count: sent },
     { count: archived },
-    { count: addressedToMe },
-    { count: copiedMe },
+    inboundRowsResult,
     { data: latest },
   ] = await Promise.all([
     supabase.from('email_messages').select('id', { count: 'exact', head: true }).eq('user_id', userId).is('deleted_at', null),
@@ -28,21 +27,11 @@ export async function GET(request: NextRequest) {
     me
       ? supabase
           .from('email_messages')
-          .select('id', { count: 'exact', head: true })
+          .select('to_emails,cc_emails')
           .eq('user_id', userId)
           .eq('direction', 'inbound')
-          .contains('to_emails', [me])
           .is('deleted_at', null)
-      : Promise.resolve({ count: 0 } as { count: number | null }),
-    me
-      ? supabase
-          .from('email_messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', userId)
-          .eq('direction', 'inbound')
-          .contains('cc_emails', [me])
-          .is('deleted_at', null)
-      : Promise.resolve({ count: 0 } as { count: number | null }),
+      : Promise.resolve({ data: [] } as { data: Array<{ to_emails?: string[] | null; cc_emails?: string[] | null }> | null }),
     supabase
       .from('email_messages')
       .select('id,subject,sender_email,received_at,ai_action,response_status')
@@ -51,6 +40,14 @@ export async function GET(request: NextRequest) {
       .order('received_at', { ascending: false, nullsFirst: false })
       .limit(5),
   ]);
+
+  const inboundRows = (inboundRowsResult.data || []) as Array<{ to_emails?: string[] | null; cc_emails?: string[] | null }>;
+  const addressedToMe = me
+    ? inboundRows.filter((row) => includesEmail(row.to_emails, me)).length
+    : 0;
+  const copiedMe = me
+    ? inboundRows.filter((row) => includesEmail(row.cc_emails, me)).length
+    : 0;
 
   return NextResponse.json({
     stats: {
@@ -64,4 +61,10 @@ export async function GET(request: NextRequest) {
     },
     latest: latest || [],
   });
+}
+
+function includesEmail(values: string[] | null | undefined, target: string): boolean {
+  if (!Array.isArray(values) || !target) return false;
+  const normalizedTarget = target.trim().toLowerCase();
+  return values.some((entry) => String(entry || '').trim().toLowerCase() === normalizedTarget);
 }

@@ -15,7 +15,9 @@ export async function GET(request: NextRequest) {
   const threadId = String(searchParams.get('thread_id') || '').trim();
   const archived = searchParams.get('archived');
   const search = String(searchParams.get('search') || '').trim();
-  const limit = Math.min(Number(searchParams.get('limit') || 60), 200);
+  const requestedLimit = Math.min(Number(searchParams.get('limit') || 60), 200);
+  const needsRecipientFilter = (recipientRole === 'to' || recipientRole === 'cc') && Boolean(me);
+  const queryLimit = needsRecipientFilter ? Math.min(Math.max(requestedLimit * 4, 200), 1000) : requestedLimit;
 
   let query = supabase
     .from('email_messages')
@@ -24,16 +26,13 @@ export async function GET(request: NextRequest) {
     .is('deleted_at', null)
     .order('received_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(queryLimit);
 
   if (action !== 'all') query = query.eq('ai_action', action);
   if (responseStatus !== 'all') query = query.eq('response_status', responseStatus);
   if (threadId) query = query.eq('thread_id', threadId);
-  if (recipientRole === 'to' && me) {
-    query = query.eq('direction', 'inbound').contains('to_emails', [me]);
-  }
-  if (recipientRole === 'cc' && me) {
-    query = query.eq('direction', 'inbound').contains('cc_emails', [me]);
+  if (needsRecipientFilter) {
+    query = query.eq('direction', 'inbound');
   }
   if (archived === '1') query = query.eq('archived', true);
   if (archived === '0') query = query.eq('archived', false);
@@ -48,5 +47,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ items: data || [] });
+  let items = data || [];
+  if (recipientRole === 'to' && me) {
+    items = items.filter((item) => includesEmail(item.to_emails, me));
+  }
+  if (recipientRole === 'cc' && me) {
+    items = items.filter((item) => includesEmail(item.cc_emails, me));
+  }
+
+  return NextResponse.json({ items: items.slice(0, requestedLimit) });
+}
+
+function includesEmail(values: unknown, target: string): boolean {
+  if (!Array.isArray(values) || !target) return false;
+  const normalizedTarget = target.trim().toLowerCase();
+  return values.some((entry) => String(entry || '').trim().toLowerCase() === normalizedTarget);
 }
