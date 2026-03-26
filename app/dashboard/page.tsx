@@ -708,17 +708,21 @@ export default function DashboardPage() {
     [cards]
   );
 
-  const quickCreateOptions = useMemo(
-    () => [
-      { id: 'task-pro', label: 'Tache Pro', icon: '💼', link: '/dashboard/tasks?type=pro&new=1' },
-      { id: 'task-perso', label: 'Tache Perso', icon: '🎯', link: '/dashboard/tasks?type=perso&new=1' },
-      { id: 'memoire', label: 'Memoire', icon: '📚', link: '/dashboard/memoire/quick-add' },
-      { id: 'courrier', label: 'Courrier', icon: '📬', link: '/dashboard/courrier' },
-      { id: 'email', label: 'Email', icon: '✉️', link: '/dashboard/emails' },
-      { id: 'agenda', label: 'Agenda', icon: '📅', link: '/dashboard/agenda/pro' },
-    ],
-    []
-  );
+  const quickCreateOptions = useMemo(() => {
+    const byModuleId: Partial<Record<DashboardModuleId, { id: string; label: string; icon: string; link: string }>> = {
+      pro: { id: 'task-pro', label: 'Tache Pro', icon: '💼', link: '/dashboard/tasks?type=pro&new=1' },
+      perso: { id: 'task-perso', label: 'Tache Perso', icon: '🎯', link: '/dashboard/tasks?type=perso&new=1' },
+      memoire: { id: 'memoire', label: 'Memoire', icon: '📚', link: '/dashboard/memoire/quick-add' },
+      courrier: { id: 'courrier', label: 'Courrier', icon: '📬', link: '/dashboard/courrier' },
+      emails: { id: 'emails', label: 'Email', icon: '✉️', link: '/dashboard/emails' },
+      planning: { id: 'planning', label: 'Agenda', icon: '📅', link: '/dashboard/agenda/pro' },
+      expenses: { id: 'expenses', label: 'Depense', icon: '💰', link: '/dashboard/expenses' },
+    };
+
+    return cards
+      .map((card) => byModuleId[card.id])
+      .filter((entry): entry is { id: string; label: string; icon: string; link: string } => Boolean(entry));
+  }, [cards]);
 
   return (
     <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-6">
@@ -734,10 +738,14 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={openAssistantModal}
-              className="inline-flex min-h-16 items-center gap-3 rounded-2xl border border-cyan-200/70 bg-gradient-to-r from-cyan-300 to-blue-300 px-6 py-3 text-base font-extrabold tracking-wide text-slate-950 shadow-[0_16px_40px_-18px_rgba(56,189,248,0.95)] transition hover:scale-[1.02] hover:from-cyan-200 hover:to-blue-200"
+              className="group relative inline-flex min-h-16 items-center gap-3 overflow-hidden rounded-2xl border border-cyan-100/80 bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-300 px-6 py-3 text-base font-extrabold tracking-wide text-slate-950 shadow-[0_18px_46px_-18px_rgba(56,189,248,0.95)] transition hover:scale-[1.03] hover:from-cyan-200 hover:to-blue-200"
             >
+              <span className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-white/40 to-transparent opacity-60 transition group-hover:opacity-90" />
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-950/10 text-xl">
                 ✨
+              </span>
+              <span className="rounded-full border border-slate-900/20 bg-white/35 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-slate-900">
+                {assistantName}
               </span>
               Lancer la conversation avec {assistantName}
             </button>
@@ -970,35 +978,18 @@ export default function DashboardPage() {
         )}
 
         <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/85 via-slate-900/75 to-slate-950/90 p-4 sm:p-6">
-          <div className="mb-5 flex flex-wrap items-center gap-2">
-            {discreetMenuLinks.map((entry) => (
-              <Link
-                key={entry.id}
-                href={entry.link}
-                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 transition hover:border-cyan-300/50 hover:text-cyan-100"
-              >
-                <span>{entry.icon}</span>
-                <span>{entry.title}</span>
-              </Link>
-            ))}
-            <Link
-              href="/dashboard/settings"
-              className="ml-auto inline-flex items-center rounded-full border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300 transition hover:border-white/30 hover:text-white"
-            >
-              Parametres
-            </Link>
-          </div>
-
-          <div className="flex flex-col items-center justify-center py-6 sm:py-10">
+          <div className="flex flex-col items-center justify-center py-4 sm:py-8">
             <p className="mb-3 text-xs uppercase tracking-[0.2em] text-slate-400">Ajout rapide</p>
             <p className="mb-8 text-center text-sm text-slate-300">Clique sur le + et choisis ce que tu souhaites ajouter</p>
 
             <div className="relative flex h-[320px] w-[320px] items-center justify-center sm:h-[420px] sm:w-[420px]">
               <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(34,211,238,0.16)_0%,rgba(15,23,42,0)_68%)]" />
+              <div className="absolute h-44 w-44 rounded-full border border-cyan-300/20 bg-cyan-300/5 sm:h-56 sm:w-56" />
+              <div className="absolute h-60 w-60 rounded-full border border-cyan-300/10 sm:h-72 sm:w-72" />
 
               {quickCreateOptions.map((option, index) => {
                 const angle = (-90 + index * (360 / quickCreateOptions.length)) * (Math.PI / 180);
-                const radius = quickCreateOpen ? 136 : 0;
+                const radius = quickCreateOpen ? 142 : 0;
                 const x = Math.cos(angle) * radius;
                 const y = Math.sin(angle) * radius;
 
@@ -1006,7 +997,7 @@ export default function DashboardPage() {
                   <Link
                     key={option.id}
                     href={option.link}
-                    className={`absolute inline-flex h-20 w-20 flex-col items-center justify-center rounded-full border border-cyan-200/30 bg-slate-900/90 text-center shadow-lg transition-all duration-300 hover:border-cyan-200/60 hover:bg-slate-800 ${
+                    className={`absolute inline-flex h-20 w-20 flex-col items-center justify-center rounded-full border border-cyan-200/35 bg-slate-900/90 text-center shadow-[0_16px_30px_-20px_rgba(56,189,248,0.8)] transition-all duration-300 hover:border-cyan-200/70 hover:bg-slate-800 ${
                       quickCreateOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
                     }`}
                     style={{
@@ -1022,10 +1013,30 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setQuickCreateOpen((prev) => !prev)}
-                className="relative z-10 inline-flex h-28 w-28 items-center justify-center rounded-full border border-cyan-200/70 bg-gradient-to-br from-cyan-300 to-blue-300 text-6xl font-light leading-none text-slate-950 shadow-[0_24px_70px_-24px_rgba(34,211,238,0.95)] transition hover:scale-105"
+                className="relative z-10 inline-flex h-28 w-28 items-center justify-center rounded-full border border-cyan-100/80 bg-[conic-gradient(from_240deg,_#67e8f9,_#38bdf8,_#93c5fd,_#67e8f9)] text-6xl font-light leading-none text-slate-950 shadow-[0_24px_70px_-24px_rgba(34,211,238,0.95)] transition hover:scale-105"
               >
-                +
+                <span className="absolute inset-1 rounded-full bg-gradient-to-br from-cyan-200 via-sky-200 to-blue-200" />
+                <span className="relative">+</span>
               </button>
+            </div>
+
+            <div className="mt-7 flex w-full flex-wrap items-center justify-center gap-2 border-t border-white/10 pt-4">
+              {discreetMenuLinks.map((entry) => (
+                <Link
+                  key={entry.id}
+                  href={entry.link}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 transition hover:border-cyan-300/50 hover:text-cyan-100"
+                >
+                  <span>{entry.icon}</span>
+                  <span>{entry.title}</span>
+                </Link>
+              ))}
+              <Link
+                href="/dashboard/settings"
+                className="inline-flex items-center rounded-full border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300 transition hover:border-white/30 hover:text-white"
+              >
+                Parametres
+              </Link>
             </div>
           </div>
         </section>
