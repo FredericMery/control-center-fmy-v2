@@ -9,7 +9,10 @@ export async function analyzeInboundEmailWithAi(args: {
   subject: string;
   body: string;
   senderEmail: string;
+  to: string[];
   cc: string[];
+  userEmail?: string;
+  globalRules?: string;
   receivedAt?: string | null;
 }): Promise<EmailTriageResult> {
   const model = 'gpt-4.1-mini';
@@ -27,9 +30,12 @@ export async function analyzeInboundEmailWithAi(args: {
     '  "tags": ["mot-cle-1", "mot-cle-2"]',
     '}',
     '',
+    `user_email: ${args.userEmail || 'unknown'}`,
     `sender: ${args.senderEmail}`,
+    `to: ${args.to.join(', ') || 'none'}`,
     `cc: ${args.cc.join(', ') || 'none'}`,
     `received_at: ${args.receivedAt || 'unknown'}`,
+    args.globalRules ? `global_rules:\n${args.globalRules}` : '',
     `subject: ${args.subject}`,
     `body: ${args.body}`,
   ].join('\n');
@@ -91,6 +97,8 @@ export async function generateReplySuggestionWithAi(args: {
   originalBody: string;
   summary?: string | null;
   tone?: string;
+  globalRules?: string;
+  signature?: string;
 }): Promise<EmailReplySuggestion> {
   const model = 'gpt-4.1-mini';
   const tone = normalize(args.tone, 40) || 'professionnel';
@@ -104,6 +112,8 @@ export async function generateReplySuggestionWithAi(args: {
     `expediteur: ${args.senderName || ''} <${args.senderEmail}>`,
     `objet_original: ${args.originalSubject}`,
     `resume_ia: ${args.summary || ''}`,
+    args.globalRules ? `regles_globales:\n${args.globalRules}` : '',
+    args.signature ? `signature_a_utiliser: ${args.signature}` : '',
     `message_original: ${args.originalBody}`,
   ].join('\n');
 

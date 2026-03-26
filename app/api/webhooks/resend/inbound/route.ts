@@ -6,6 +6,13 @@ import PostalMime from 'postal-mime';
 import { Resend } from 'resend';
 import { zonedDateTimeToUtcIso } from '@/lib/calendar/timezone';
 import { analyzeInboundEmailWithAi, generateReplySuggestionWithAi } from '@/lib/email/assistantService';
+import {
+  buildEmailBehaviorInstructions,
+  canPrepareReply,
+  loadUserEmailAiSettings,
+  loadUserPrimaryEmail,
+  resolveRecipientRole,
+} from '@/lib/email/userEmailAiSettings';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -1297,15 +1304,37 @@ async function processInboundEmailAssistant(args: {
     const toEmails = extractEmailList(args.eventData['to']);
     const ccEmails = extractEmailList(args.eventData['cc']);
     const bccEmails = extractEmailList(args.eventData['bcc']);
+    const [userEmail, emailAiSettings] = await Promise.all([
+      loadUserPrimaryEmail(args.userId),
+      loadUserEmailAiSettings(args.userId),
+    ]);
+
+    const recipientRole = resolveRecipientRole({
+      userEmail,
+      toEmails,
+      ccEmails,
+    });
+
+    const allowReplyByScope = canPrepareReply({
+      replyScope: emailAiSettings.replyScope,
+      recipientRole,
+    });
+
+    const globalRules = buildEmailBehaviorInstructions(emailAiSettings);
 
     const triage = await analyzeInboundEmailWithAi({
       userId: args.userId,
       subject: args.subject,
       body: bodyText || normalizeText(args.htmlText),
       senderEmail: args.senderEmail,
+      to: toEmails,
       cc: ccEmails,
+      userEmail,
+      globalRules,
       receivedAt,
     });
+
+    const finalAction: 'classer' | 'repondre' = allowReplyByScope && triage.action === 'repondre' ? 'repondre' : 'classer';
 
     let messageId: string | null = null;
     if (externalEmailId) {
@@ -1338,11 +1367,11 @@ async function processInboundEmailAssistant(args: {
             ai_category: triage.category,
             ai_priority: triage.priority,
             ai_tags: triage.tags,
-            ai_action: triage.action,
+            ai_action: finalAction,
             ai_reasoning: triage.reasoning,
-            response_required: triage.action === 'repondre',
-            response_status: triage.action === 'repondre' ? 'draft_ready' : 'none',
-            archived: triage.action === 'classer',
+            response_required: finalAction === 'repondre',
+            response_status: finalAction === 'repondre' ? 'draft_ready' : 'none',
+            archived: finalAction === 'classer',
             deleted_at: null,
           })
           .eq('id', messageId)
@@ -1377,11 +1406,11 @@ async function processInboundEmailAssistant(args: {
           ai_category: triage.category,
           ai_priority: triage.priority,
           ai_tags: triage.tags,
-          ai_action: triage.action,
+          ai_action: finalAction,
           ai_reasoning: triage.reasoning,
-          response_required: triage.action === 'repondre',
-          response_status: triage.action === 'repondre' ? 'draft_ready' : 'none',
-          archived: triage.action === 'classer',
+          response_required: finalAction === 'repondre',
+          response_status: finalAction === 'repondre' ? 'draft_ready' : 'none',
+          archived: finalAction === 'classer',
         })
         .select('id')
         .single();
@@ -1397,7 +1426,7 @@ async function processInboundEmailAssistant(args: {
     if (!messageId) return null;
 
     let draftId: string | null = null;
-    if (triage.action === 'repondre') {
+    if (finalAction === 'repondre') {
       const suggestion = await generateReplySuggestionWithAi({
         userId: args.userId,
         senderEmail: args.senderEmail,
@@ -1406,6 +1435,8 @@ async function processInboundEmailAssistant(args: {
         originalBody: bodyText,
         summary: triage.summary,
         tone: 'professionnel',
+        globalRules,
+        signature: emailAiSettings.signature,
       });
 
       await supabase
@@ -1445,13 +1476,15 @@ async function processInboundEmailAssistant(args: {
       payload: {
         sender_email: args.senderEmail,
         subject: args.subject,
-        ai_action: triage.action,
+        ai_action: finalAction,
+        recipient_role: recipientRole,
+        reply_scope: emailAiSettings.replyScope,
       },
     });
 
     return {
       messageId,
-      action: triage.action,
+      action: finalAction,
       draftId,
     };
   } catch (error) {

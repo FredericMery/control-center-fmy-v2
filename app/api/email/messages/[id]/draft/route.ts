@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 import { generateReplySuggestionWithAi } from '@/lib/email/assistantService';
+import {
+  buildEmailBehaviorInstructions,
+  canPrepareReply,
+  loadUserEmailAiSettings,
+  loadUserPrimaryEmail,
+  resolveRecipientRole,
+} from '@/lib/email/userEmailAiSettings';
 
 export async function POST(
   request: NextRequest,
@@ -27,6 +34,39 @@ export async function POST(
     return NextResponse.json({ error: 'Email introuvable' }, { status: 404 });
   }
 
+  const [userEmail, emailAiSettings] = await Promise.all([
+    loadUserPrimaryEmail(userId),
+    loadUserEmailAiSettings(userId),
+  ]);
+
+  const recipientRole = resolveRecipientRole({
+    userEmail,
+    toEmails: Array.isArray(message.to_emails) ? (message.to_emails as string[]) : [],
+    ccEmails: Array.isArray(message.cc_emails) ? (message.cc_emails as string[]) : [],
+  });
+
+  const allowReplyByScope = canPrepareReply({
+    replyScope: emailAiSettings.replyScope,
+    recipientRole,
+  });
+
+  if (!allowReplyByScope) {
+    await supabase
+      .from('email_messages')
+      .update({
+        ai_action: 'classer',
+        response_required: false,
+        response_status: 'none',
+      })
+      .eq('id', id)
+      .eq('user_id', userId);
+
+    return NextResponse.json(
+      { error: 'Generation de reponse desactivee pour ce mail (utilisateur en copie).' },
+      { status: 403 }
+    );
+  }
+
   const reply = await generateReplySuggestionWithAi({
     userId,
     senderEmail: String(message.sender_email || ''),
@@ -35,6 +75,8 @@ export async function POST(
     originalBody: String(message.body_text || message.body_html || ''),
     summary: String(message.ai_summary || ''),
     tone,
+    globalRules: buildEmailBehaviorInstructions(emailAiSettings),
+    signature: emailAiSettings.signature,
   });
 
   const { data: lastDraft } = await supabase

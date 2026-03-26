@@ -18,6 +18,7 @@ type DailyRow = {
   summary: string;
   ai_priority: string;
   ai_action: string;
+  response_required: boolean;
   response_status: string;
   archived: boolean;
   received_at: string;
@@ -178,7 +179,7 @@ async function getEmailRowsForDate(
 
   const { data: messages, error } = await supabase
     .from('email_messages')
-    .select('id,subject,sender_email,sender_name,ai_summary,ai_priority,ai_action,response_status,received_at,archived')
+    .select('id,subject,sender_email,sender_name,ai_summary,ai_priority,ai_action,response_required,response_status,received_at,archived')
     .eq('user_id', userId)
     .is('deleted_at', null)
     .gte('received_at', start.toISOString())
@@ -194,6 +195,7 @@ async function getEmailRowsForDate(
     summary: normalizeText(entry.ai_summary),
     ai_priority: normalizeText(entry.ai_priority) || 'normal',
     ai_action: normalizeText(entry.ai_action) || 'classer',
+    response_required: Boolean(entry.response_required),
     response_status: normalizeText(entry.response_status) || 'none',
     archived: Boolean(entry.archived),
     received_at: normalizeText(entry.received_at),
@@ -277,7 +279,7 @@ function buildFallbackSynthesis(
 ): { summary: string; actions: DailyAction[] } {
   const sorted = [...rows].sort((a, b) => priorityWeight(b.ai_priority) - priorityWeight(a.ai_priority));
   const actionable = sorted
-    .filter((row) => !row.archived && row.ai_action === 'repondre' && row.response_status !== 'sent')
+    .filter((row) => !row.archived && row.response_required && row.ai_action === 'repondre' && row.response_status !== 'sent')
     .slice(0, 8)
     .map((row) => ({
       priority: normalizePriority(row.ai_priority),
