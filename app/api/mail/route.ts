@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
     priority = 'normal',
     scan_url,
     scan_file_name,
+    scan_urls,
+    scan_file_names,
     ai_analyzed = false,
     ai_tags,
     ai_confidence,
@@ -110,6 +112,9 @@ export async function POST(request: NextRequest) {
   if (!['pro', 'perso'].includes(context as string)) {
     return NextResponse.json({ error: 'context invalide (pro|perso)' }, { status: 400 });
   }
+
+  const normalizedScanUrls = normalizeScanArray(scan_urls, scan_url);
+  const normalizedScanFileNames = normalizeScanArray(scan_file_names, scan_file_name);
 
   const { data, error } = await supabase
     .from('mail_items')
@@ -130,8 +135,10 @@ export async function POST(request: NextRequest) {
       action_required: Boolean(action_required),
       action_note: action_note || null,
       priority,
-      scan_url: scan_url || null,
-      scan_file_name: scan_file_name || null,
+      scan_url: normalizedScanUrls[0] || null,
+      scan_file_name: normalizedScanFileNames[0] || null,
+      scan_urls: normalizedScanUrls.length > 0 ? normalizedScanUrls : null,
+      scan_file_names: normalizedScanFileNames.length > 0 ? normalizedScanFileNames : null,
       ai_analyzed: Boolean(ai_analyzed),
       ai_tags: ai_tags || null,
       ai_confidence: ai_confidence || null,
@@ -149,4 +156,12 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ item: data }, { status: 201 });
+}
+
+function normalizeScanArray(value: unknown, fallback: unknown): string[] {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.map((entry) => String(entry || '').trim()).filter(Boolean))).slice(0, 10);
+  }
+  const single = String(fallback || '').trim();
+  return single ? [single] : [];
 }

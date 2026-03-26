@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useRef } from "react";
-import type { AiMailAnalysis, MailType, MailPriority } from "@/types/mail";
+import type { AiMailAnalysis } from "@/types/mail";
 import { getAuthHeaders } from "@/lib/auth/clientSession";
 
 interface Props {
   onComplete: (data: {
     scan_url: string | null;
     scan_file_name: string | null;
+    scan_urls: string[];
+    scan_file_names: string[];
     full_text: string | null;
     ai_analysis: AiMailAnalysis | null;
   }) => void;
@@ -16,7 +18,7 @@ interface Props {
 
 export default function MailScanUpload({ onComplete, onCancel }: Props) {
   const [dragging, setDragging] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [preview, setPreview] = useState<string | null>(null);
   const [status, setStatus] = useState<
     "idle" | "uploading" | "ocr" | "ai" | "done" | "error"
@@ -32,11 +34,12 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
     { key: "done",      label: "Terminé ✓",       pct: 100 },
   ];
 
-  const handleFile = (f: File) => {
-    setFile(f);
+  const handleFiles = (nextFiles: File[]) => {
+    const safeFiles = nextFiles.slice(0, 10);
+    setFiles(safeFiles);
     setError(null);
-    if (f.type.startsWith("image/")) {
-      const url = URL.createObjectURL(f);
+    if (safeFiles[0]?.type.startsWith("image/")) {
+      const url = URL.createObjectURL(safeFiles[0]);
       setPreview(url);
     } else {
       setPreview(null);
@@ -46,18 +49,18 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    const dropped = e.dataTransfer.files?.[0];
-    if (dropped) handleFile(dropped);
+    const dropped = Array.from(e.dataTransfer.files || []);
+    if (dropped.length > 0) handleFiles(dropped);
   };
 
   const handleUpload = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setStatus("uploading");
     setProgress(10);
     setError(null);
 
     const formData = new FormData();
-    formData.append("file", file);
+    files.slice(0, 10).forEach((file) => formData.append("files", file));
 
     try {
       const headers = await getAuthHeaders(false);
@@ -85,6 +88,8 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
         onComplete({
           scan_url: json.scan_url,
           scan_file_name: json.scan_file_name,
+          scan_urls: Array.isArray(json.scan_urls) ? json.scan_urls : json.scan_url ? [json.scan_url] : [],
+          scan_file_names: Array.isArray(json.scan_file_names) ? json.scan_file_names : json.scan_file_name ? [json.scan_file_name] : [],
           full_text: json.full_text,
           ai_analysis: json.ai_analysis,
         });
@@ -117,20 +122,21 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
             Glissez votre courrier ici ou cliquez pour sélectionner
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            JPG, PNG, WEBP, HEIC · max 15 Mo
+            JPG, PNG, WEBP, HEIC, PDF · max 15 Mo par piece · jusqu a 10 pieces
           </p>
           <input
             ref={inputRef}
             type="file"
+            multiple
             accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
             className="hidden"
-            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+            onChange={(e) => handleFiles(Array.from(e.target.files || []))}
           />
         </div>
       )}
 
       {/* Aperçu */}
-      {file && status === "idle" && (
+      {files.length > 0 && status === "idle" && (
         <div className="rounded-xl border border-white/10 bg-slate-900/50 p-3">
           <div className="flex items-center gap-3">
             {preview ? (
@@ -145,13 +151,13 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <p className="truncate text-sm font-medium text-slate-100">{file.name}</p>
+              <p className="truncate text-sm font-medium text-slate-100">{files[0].name}</p>
               <p className="text-xs text-slate-500">
-                {(file.size / 1024).toFixed(0)} Ko
+                {files.length} piece(s) selectionnee(s)
               </p>
             </div>
             <button
-              onClick={(e) => { e.stopPropagation(); setFile(null); setPreview(null); }}
+              onClick={(e) => { e.stopPropagation(); setFiles([]); setPreview(null); }}
               className="text-slate-500 hover:text-red-400 transition-colors text-lg"
             >
               ✕
@@ -218,12 +224,12 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
           >
             Annuler
           </button>
-          {file && (
+          {files.length > 0 && (
             <button
               onClick={handleUpload}
               className="flex-1 rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors"
             >
-              🔍 Scanner & Analyser
+              🔍 Scanner & Analyser ({files.length})
             </button>
           )}
         </div>

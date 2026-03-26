@@ -17,6 +17,9 @@ interface Props {
 }
 
 export default function MailList({ items, loading, selectedId, onSelect }: Props) {
+  const hasAttachment = (item: MailItem) =>
+    (Array.isArray(item.scan_urls) && item.scan_urls.length > 0) || Boolean(item.scan_url);
+
   const formatDate = (d: string) => {
     if (!d) return "";
     const date = new Date(d);
@@ -108,7 +111,7 @@ export default function MailList({ items, loading, selectedId, onSelect }: Props
                   )}
                   {overdue && <span className="text-[10px] text-red-400">⏰</span>}
                   {item.ai_analyzed && <span className="text-[10px] text-violet-400">✨</span>}
-                  {item.scan_url && <span className="text-[10px] text-slate-500">📎</span>}
+                  {hasAttachment(item) && <span className="text-[10px] text-slate-500">📎</span>}
                 </div>
 
                 {item.summary && (

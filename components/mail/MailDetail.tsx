@@ -34,6 +34,16 @@ interface Props {
 }
 
 export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onClose }: Props) {
+  const scanLinks = (Array.isArray(item.scan_urls) && item.scan_urls.length > 0
+    ? item.scan_urls.map((url, index) => ({
+        url,
+        name: item.scan_file_names?.[index] || `Piece ${index + 1}`,
+      }))
+    : item.scan_url
+    ? [{ url: item.scan_url, name: item.scan_file_name || "Voir le scan" }]
+    : [])
+    .slice(0, 10);
+
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [statusLoading, setStatusLoading] = useState(false);
   const [markingReplied, setMarkingReplied] = useState(false);
@@ -366,19 +376,22 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
       )}
 
       {/* Scan */}
-      {item.scan_url && (
-        <a
-          href={item.scan_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900/40 p-3 hover:bg-slate-800/40 transition-colors"
-        >
-          <span className="text-base">📎</span>
-          <span className="flex-1 truncate text-sm text-slate-300">
-            {item.scan_file_name || "Voir le scan"}
-          </span>
-          <span className="text-xs text-cyan-400">Ouvrir →</span>
-        </a>
+      {scanLinks.length > 0 && (
+        <div className="space-y-2">
+          {scanLinks.map((scan) => (
+            <a
+              key={`${scan.url}-${scan.name}`}
+              href={scan.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900/40 p-3 hover:bg-slate-800/40 transition-colors"
+            >
+              <span className="text-base">📎</span>
+              <span className="flex-1 truncate text-sm text-slate-300">{scan.name}</span>
+              <span className="text-xs text-cyan-400">Ouvrir →</span>
+            </a>
+          ))}
+        </div>
       )}
 
       {/* Réponse */}

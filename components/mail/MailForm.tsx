@@ -56,6 +56,8 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
   const [notes, setNotes]                   = useState(item?.notes ?? "");
   const [scanUrl, setScanUrl]               = useState(item?.scan_url ?? "");
   const [scanFileName, setScanFileName]     = useState(item?.scan_file_name ?? "");
+  const [scanUrls, setScanUrls]             = useState<string[]>(item?.scan_urls ?? (item?.scan_url ? [item.scan_url] : []));
+  const [scanFileNames, setScanFileNames]   = useState<string[]>(item?.scan_file_names ?? (item?.scan_file_name ? [item.scan_file_name] : []));
   const [fullText, setFullText]             = useState(item?.full_text ?? "");
   const [aiTags, setAiTags]                 = useState<string[]>(item?.ai_tags ?? []);
   const [aiAnalyzed, setAiAnalyzed]         = useState(item?.ai_analyzed ?? false);
@@ -83,11 +85,15 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
   const handleScanComplete = (data: {
     scan_url: string | null;
     scan_file_name: string | null;
+    scan_urls: string[];
+    scan_file_names: string[];
     full_text: string | null;
     ai_analysis: AiMailAnalysis | null;
   }) => {
     if (data.scan_url)       setScanUrl(data.scan_url);
     if (data.scan_file_name) setScanFileName(data.scan_file_name);
+    setScanUrls(Array.isArray(data.scan_urls) ? data.scan_urls.slice(0, 10) : data.scan_url ? [data.scan_url] : []);
+    setScanFileNames(Array.isArray(data.scan_file_names) ? data.scan_file_names.slice(0, 10) : data.scan_file_name ? [data.scan_file_name] : []);
     if (data.full_text)      setFullText(data.full_text);
     if (data.ai_analysis)    applyAiAnalysis(data.ai_analysis);
     setStep("form");
@@ -116,6 +122,8 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
       priority,
       scan_url: scanUrl || null,
       scan_file_name: scanFileName || null,
+      scan_urls: scanUrls.length > 0 ? scanUrls : null,
+      scan_file_names: scanFileNames.length > 0 ? scanFileNames : null,
       ai_analyzed: aiAnalyzed,
       ai_tags: aiTags.length > 0 ? aiTags : null,
       ai_confidence: aiConfidence,
@@ -196,7 +204,9 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
       {scanUrl && (
         <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2">
           <span className="text-base">📎</span>
-          <span className="truncate text-xs text-slate-300">{scanFileName || "scan.jpg"}</span>
+          <span className="truncate text-xs text-slate-300">
+            {scanFileNames.length > 1 ? `${scanFileNames.length} pieces jointes` : scanFileName || "scan.jpg"}
+          </span>
           <a
             href={scanUrl}
             target="_blank"

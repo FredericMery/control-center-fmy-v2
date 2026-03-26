@@ -45,6 +45,8 @@ export interface MailItem {
   priority: MailPriority;
   scan_url: string | null;
   scan_file_name: string | null;
+  scan_urls: string[] | null;
+  scan_file_names: string[] | null;
   ai_analyzed: boolean;
   ai_tags: string[] | null;
   ai_confidence: number | null;

@@ -102,61 +102,81 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'FormData invalide' }, { status: 400 });
   }
 
-  const file = formData.get('file') as File | null;
-  if (!file) {
+  const rawFiles = formData.getAll('files');
+  const singleFile = formData.get('file');
+  const files = (rawFiles.length > 0 ? rawFiles : singleFile ? [singleFile] : [])
+    .filter((entry): entry is File => entry instanceof File);
+
+  if (files.length === 0) {
     return NextResponse.json({ error: 'Fichier requis' }, { status: 400 });
   }
 
-  if (!ALLOWED_TYPES.has(file.type)) {
-    return NextResponse.json(
-      { error: 'Format non supporté. Utilisez JPG, PNG, WEBP ou PDF.' },
-      { status: 400 }
-    );
+  if (files.length > 10) {
+    return NextResponse.json({ error: 'Maximum 10 pieces par courrier' }, { status: 400 });
   }
-
   const maxSize = 15 * 1024 * 1024; // 15 MB
-  if (file.size > maxSize) {
-    return NextResponse.json({ error: 'Fichier trop volumineux (max 15 Mo)' }, { status: 400 });
-  }
+  const uploaded: Array<{ url: string; name: string; text: string }> = [];
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-
-  // 1. Upload dans Supabase Storage
-  const timestamp   = Date.now();
-  const ext         = file.name.split('.').pop() || 'jpg';
-  const fileName    = `${timestamp}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const storagePath = `${userId}/${fileName}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from('mail-scans')
-    .upload(storagePath, buffer, {
-      contentType: file.type,
-      upsert: false,
-    });
-
-  if (uploadError) {
-    console.error('Storage upload error:', uploadError);
-    return NextResponse.json({ error: 'Erreur upload scan' }, { status: 500 });
-  }
-
-  // URL signée valable 10 ans (pour archivage)
-  const { data: signedData } = await supabase.storage
-    .from('mail-scans')
-    .createSignedUrl(storagePath, 60 * 60 * 24 * 365 * 10);
-
-  const scanUrl = signedData?.signedUrl || null;
-
-  // 2. OCR via Google Vision (uniquement pour les images)
-  let ocrText = '';
-  if (file.type !== 'application/pdf') {
-    try {
-      const base64 = buffer.toString('base64');
-      ocrText = await callGoogleVision(userId, base64);
-    } catch (err) {
-      console.error('OCR error:', err);
-      // OCR non bloquant
+  for (const file of files) {
+    if (!ALLOWED_TYPES.has(file.type)) {
+      return NextResponse.json(
+        { error: 'Format non supporte. Utilisez JPG, PNG, WEBP ou PDF.' },
+        { status: 400 }
+      );
     }
+
+    if (file.size > maxSize) {
+      return NextResponse.json({ error: `Fichier trop volumineux (${file.name}) - max 15 Mo` }, { status: 400 });
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    // 1. Upload dans Supabase Storage
+    const timestamp = Date.now();
+    const ext = file.name.split('.').pop() || 'jpg';
+    const fileName = `${timestamp}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const storagePath = `${userId}/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('mail-scans')
+      .upload(storagePath, buffer, {
+        contentType: file.type,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error('Storage upload error:', uploadError);
+      return NextResponse.json({ error: 'Erreur upload scan' }, { status: 500 });
+    }
+
+    // URL signée valable 10 ans (pour archivage)
+    const { data: signedData } = await supabase.storage
+      .from('mail-scans')
+      .createSignedUrl(storagePath, 60 * 60 * 24 * 365 * 10);
+
+    const scanUrl = signedData?.signedUrl || '';
+
+    // 2. OCR via Google Vision (uniquement pour les images)
+    let ocrText = '';
+    if (file.type !== 'application/pdf') {
+      try {
+        const base64 = buffer.toString('base64');
+        ocrText = await callGoogleVision(userId, base64);
+      } catch (err) {
+        console.error('OCR error:', err);
+      }
+    }
+
+    uploaded.push({ url: scanUrl, name: fileName, text: ocrText || '' });
   }
+
+  const validUploads = uploaded.filter((entry) => entry.url);
+  const scanUrls = validUploads.map((entry) => entry.url).slice(0, 10);
+  const scanFileNames = validUploads.map((entry) => entry.name).slice(0, 10);
+  const ocrText = uploaded
+    .map((entry, index) => (entry.text ? `--- Piece ${index + 1}: ${entry.name} ---\n${entry.text}` : ''))
+    .filter(Boolean)
+    .join('\n\n');
 
   // 3. Analyse IA via OpenAI
   let aiAnalysis: AiMailAnalysis | null = null;
@@ -192,8 +212,10 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({
-    scan_url: scanUrl,
-    scan_file_name: fileName,
+    scan_url: scanUrls[0] || null,
+    scan_file_name: scanFileNames[0] || null,
+    scan_urls: scanUrls,
+    scan_file_names: scanFileNames,
     full_text: ocrText || null,
     ai_analysis: aiAnalysis,
   });

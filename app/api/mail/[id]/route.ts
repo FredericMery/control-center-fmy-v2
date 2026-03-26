@@ -57,7 +57,7 @@ export async function PATCH(
     'context', 'mail_type', 'sender_name', 'sender_address', 'sender_email',
     'subject', 'reference', 'summary', 'full_text', 'received_at', 'due_date',
     'closed_at', 'status', 'action_required', 'action_note', 'priority',
-    'scan_url', 'scan_file_name', 'ai_analyzed', 'ai_tags', 'ai_confidence',
+    'scan_url', 'scan_file_name', 'scan_urls', 'scan_file_names', 'ai_analyzed', 'ai_tags', 'ai_confidence',
     'replied', 'replied_at', 'reply_note', 'notes',
   ]);
 
@@ -66,6 +66,17 @@ export async function PATCH(
     if (ALLOWED_PATCH_FIELDS.has(key)) {
       patch[key] = value;
     }
+  }
+
+  const normalizedScanUrls = normalizeScanArray(patch.scan_urls, patch.scan_url);
+  const normalizedScanFileNames = normalizeScanArray(patch.scan_file_names, patch.scan_file_name);
+  if (patch.scan_urls !== undefined || patch.scan_url !== undefined) {
+    patch.scan_url = normalizedScanUrls[0] || null;
+    patch.scan_urls = normalizedScanUrls.length > 0 ? normalizedScanUrls : null;
+  }
+  if (patch.scan_file_names !== undefined || patch.scan_file_name !== undefined) {
+    patch.scan_file_name = normalizedScanFileNames[0] || null;
+    patch.scan_file_names = normalizedScanFileNames.length > 0 ? normalizedScanFileNames : null;
   }
 
   if (Object.keys(patch).length === 0) {
@@ -108,15 +119,18 @@ export async function DELETE(
   // Supprimer le scan storage si présent
   const { data: existing } = await supabase
     .from('mail_items')
-    .select('scan_file_name')
+    .select('scan_file_name,scan_file_names')
     .eq('id', id)
     .eq('user_id', userId)
     .single();
 
-  if (existing?.scan_file_name) {
+  const filesToRemove = normalizeScanArray(existing?.scan_file_names, existing?.scan_file_name)
+    .map((name) => `${userId}/${name}`);
+
+  if (filesToRemove.length > 0) {
     await supabase.storage
       .from('mail-scans')
-      .remove([`${userId}/${existing.scan_file_name}`]);
+      .remove(filesToRemove);
   }
 
   const { error } = await supabase
@@ -130,4 +144,12 @@ export async function DELETE(
   }
 
   return NextResponse.json({ success: true });
+}
+
+function normalizeScanArray(value: unknown, fallback: unknown): string[] {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.map((entry) => String(entry || '').trim()).filter(Boolean))).slice(0, 10);
+  }
+  const single = String(fallback || '').trim();
+  return single ? [single] : [];
 }

@@ -48,7 +48,7 @@ export async function POST(
 
   const { data: mail, error: mailError } = await supabase
     .from('mail_items')
-    .select('id,context,subject,summary,action_note,due_date,status,scan_url,scan_file_name')
+    .select('id,context,subject,summary,action_note,due_date,status,scan_url,scan_file_name,scan_urls,scan_file_names')
     .eq('id', id)
     .eq('user_id', userId)
     .single();
@@ -66,7 +66,7 @@ export async function POST(
   const taskDeadline = normalizeDate(body.task_deadline) || normalizeDate(mail.due_date);
   const ccEmails = normalizeEmailList(body.cc_emails).filter((email) => email !== recipientEmail);
 
-  const attachments = await buildAttachments(mail.scan_url, mail.scan_file_name);
+  const attachments = await buildAttachments(mail.scan_urls, mail.scan_file_names, mail.scan_url, mail.scan_file_name);
 
   if (!process.env.RESEND_API_KEY) {
     return NextResponse.json({ error: 'RESEND_API_KEY manquant' }, { status: 500 });
@@ -212,20 +212,39 @@ function buildDefaultMessage(summary: unknown, actionNote: unknown): string {
     .join('\n');
 }
 
-async function buildAttachments(scanUrl: unknown, scanFileName: unknown): Promise<Array<{ filename: string; content: string }>> {
-  const url = normalizeText(scanUrl);
-  if (!url) return [];
+async function buildAttachments(
+  scanUrls: unknown,
+  scanFileNames: unknown,
+  scanUrlFallback: unknown,
+  scanFileNameFallback: unknown
+): Promise<Array<{ filename: string; content: string }>> {
+  const urls = normalizeTextArray(scanUrls, scanUrlFallback);
+  const names = normalizeTextArray(scanFileNames, scanFileNameFallback);
+  const results: Array<{ filename: string; content: string }> = [];
 
-  try {
-    const response = await fetch(url);
-    if (!response.ok) return [];
+  for (let index = 0; index < urls.length; index += 1) {
+    const url = urls[index];
+    if (!url) continue;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) continue;
 
-    const arrayBuffer = await response.arrayBuffer();
-    const content = Buffer.from(arrayBuffer).toString('base64');
-    const filename = normalizeText(scanFileName) || 'courrier-scan';
-
-    return [{ filename, content }];
-  } catch {
-    return [];
+      const arrayBuffer = await response.arrayBuffer();
+      const content = Buffer.from(arrayBuffer).toString('base64');
+      const filename = names[index] || `courrier-scan-${index + 1}`;
+      results.push({ filename, content });
+    } catch {
+      continue;
+    }
   }
+
+  return results;
+}
+
+function normalizeTextArray(value: unknown, fallback: unknown): string[] {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.map((entry) => normalizeText(entry)).filter(Boolean))).slice(0, 10);
+  }
+  const single = normalizeText(fallback);
+  return single ? [single] : [];
 }
