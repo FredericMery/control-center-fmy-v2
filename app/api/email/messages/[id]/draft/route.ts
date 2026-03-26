@@ -172,6 +172,32 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  const beforeSubject = String(currentDraft.proposed_subject || '');
+  const beforeBody = String(currentDraft.proposed_body || '');
+  const afterSubject = String(updated?.proposed_subject || '');
+  const afterBody = String(updated?.proposed_body || '');
+  const changed = beforeSubject !== afterSubject || beforeBody !== afterBody;
+
+  if (changed) {
+    await supabase
+      .from('email_processing_logs')
+      .insert({
+        user_id: userId,
+        message_id: id,
+        event_type: 'reply_draft_edited',
+        level: 'info',
+        message: 'Brouillon modifie manuellement',
+        payload: {
+          draft_id: updated?.id || currentDraft.id,
+          version: Number(updated?.version || currentDraft.version || 0),
+          before_subject: beforeSubject,
+          before_body: beforeBody,
+          after_subject: afterSubject,
+          after_body: afterBody,
+        },
+      });
+  }
+
   return NextResponse.json({ draft: updated });
 }
 

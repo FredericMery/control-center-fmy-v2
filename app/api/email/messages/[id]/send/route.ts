@@ -36,6 +36,16 @@ export async function POST(
 
   if (!message) return NextResponse.json({ error: 'Message introuvable' }, { status: 404 });
   if (!draft) return NextResponse.json({ error: 'Brouillon introuvable' }, { status: 404 });
+
+  const { data: aiBaselineDraft } = await supabase
+    .from('email_reply_drafts')
+    .select('id,version,proposed_subject,proposed_body')
+    .eq('message_id', id)
+    .eq('user_id', userId)
+    .order('version', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
   const replyTarget = resolveReplyTargetFromMessage(message);
 
   if (!replyTarget) {
@@ -48,6 +58,10 @@ export async function POST(
   if (!finalBody) {
     return NextResponse.json({ error: 'Le contenu de reponse est vide' }, { status: 400 });
   }
+
+  const aiBaselineSubject = String(aiBaselineDraft?.proposed_subject || draft.proposed_subject || '');
+  const aiBaselineBody = String(aiBaselineDraft?.proposed_body || draft.proposed_body || '');
+  const editedByUser = aiBaselineSubject !== finalSubject || aiBaselineBody !== finalBody;
 
   const sent = await sendPreparedReplyEmail({
     to: replyTarget,
@@ -94,6 +108,11 @@ export async function POST(
           to: replyTarget,
           subject: finalSubject,
           provider_message_id: providerMessageId || null,
+          ai_baseline_subject: aiBaselineSubject,
+          ai_baseline_body: aiBaselineBody,
+          final_subject: finalSubject,
+          final_body: finalBody,
+          edited_by_user: editedByUser,
         },
       }),
   ]);

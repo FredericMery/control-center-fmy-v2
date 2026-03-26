@@ -91,6 +91,8 @@ export default function SettingsPage() {
   const [emailDontRulesDraft, setEmailDontRulesDraft] = useState('');
   const [emailSignatureDraft, setEmailSignatureDraft] = useState('');
   const [emailAiRulesStatus, setEmailAiRulesStatus] = useState<string | null>(null);
+  const [learningEmailRules, setLearningEmailRules] = useState(false);
+  const [emailLearningStatus, setEmailLearningStatus] = useState<string | null>(null);
   const [professionalEmailDraft, setProfessionalEmailDraft] = useState('');
   const [professionalEmailStatus, setProfessionalEmailStatus] = useState<string | null>(null);
 
@@ -564,6 +566,51 @@ export default function SettingsPage() {
     setEmailAiRulesStatus('Regles IA email sauvegardees');
   };
 
+  const learnEmailAiRulesFromCorrections = async () => {
+    if (!user) return;
+
+    setLearningEmailRules(true);
+    setEmailLearningStatus(null);
+
+    try {
+      const response = await fetch('/api/settings/email-ai-rules/learn', {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ apply: true, maxSamples: 60 }),
+      });
+
+      const json = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        summary?: string;
+        editedSamples?: number;
+        suggested?: { doRules?: string[]; dontRules?: string[] };
+        merged?: { doRules?: string[]; dontRules?: string[] };
+      };
+
+      if (!response.ok) {
+        setEmailLearningStatus(json.error || 'Erreur apprentissage IA email');
+        return;
+      }
+
+      const mergedDo = Array.isArray(json.merged?.doRules) ? json.merged?.doRules : [];
+      const mergedDont = Array.isArray(json.merged?.dontRules) ? json.merged?.dontRules : [];
+      setEmailDoRulesDraft((mergedDo || []).join('\n'));
+      setEmailDontRulesDraft((mergedDont || []).join('\n'));
+
+      const edited = Number(json.editedSamples || 0);
+      const doCount = Array.isArray(json.suggested?.doRules) ? json.suggested?.doRules.length : 0;
+      const dontCount = Array.isArray(json.suggested?.dontRules) ? json.suggested?.dontRules.length : 0;
+
+      setEmailLearningStatus(
+        `${json.summary || 'Apprentissage termine.'} Echantillons corriges: ${edited}. Regles ajoutees: ${doCount} do / ${dontCount} dont.`
+      );
+    } catch {
+      setEmailLearningStatus('Erreur reseau apprentissage IA email');
+    } finally {
+      setLearningEmailRules(false);
+    }
+  };
+
   const saveProfessionalEmail = async () => {
     if (!user) return;
 
@@ -823,8 +870,17 @@ export default function SettingsPage() {
             >
               Sauvegarder regles IA email
             </button>
+            <button
+              type="button"
+              onClick={learnEmailAiRulesFromCorrections}
+              disabled={learningEmailRules}
+              className="min-h-11 rounded-xl border border-cyan-300/35 bg-cyan-500/15 px-4 py-2 text-sm font-semibold text-cyan-100 disabled:opacity-50"
+            >
+              {learningEmailRules ? 'Apprentissage en cours...' : 'Apprendre depuis mes corrections'}
+            </button>
             {emailAiRulesStatus && <p className="text-xs text-emerald-300">{emailAiRulesStatus}</p>}
           </div>
+          {emailLearningStatus && <p className="text-xs text-slate-300">{emailLearningStatus}</p>}
         </div>
       </div>
 
