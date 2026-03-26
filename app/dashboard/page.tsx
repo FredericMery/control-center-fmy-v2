@@ -738,16 +738,19 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={openAssistantModal}
-              className="group relative inline-flex min-h-16 items-center gap-3 overflow-hidden rounded-2xl border border-cyan-100/80 bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-300 px-6 py-3 text-base font-extrabold tracking-wide text-slate-950 shadow-[0_18px_46px_-18px_rgba(56,189,248,0.95)] transition hover:scale-[1.03] hover:from-cyan-200 hover:to-blue-200"
+              className="group relative inline-flex min-h-16 items-center gap-3 overflow-hidden rounded-2xl border border-cyan-100/80 bg-[linear-gradient(130deg,#a5f3fc_0%,#7dd3fc_42%,#93c5fd_100%)] px-5 py-3 text-left text-slate-950 shadow-[0_24px_56px_-20px_rgba(56,189,248,0.95)] transition duration-300 hover:scale-[1.03]"
             >
-              <span className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-white/40 to-transparent opacity-60 transition group-hover:opacity-90" />
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-950/10 text-xl">
-                ✨
+              <span className="absolute -right-6 -top-8 h-28 w-28 rounded-full bg-white/35 blur-2xl transition group-hover:scale-110" />
+              <span className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-900/15 bg-slate-950/10 text-xl shadow-inner">
+                🗣️
               </span>
-              <span className="rounded-full border border-slate-900/20 bg-white/35 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-slate-900">
-                {assistantName}
+              <span className="relative flex flex-col">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-900/80">Assistant IA</span>
+                <span className="text-sm font-extrabold leading-tight">Discuter avec {assistantName}</span>
               </span>
-              Lancer la conversation avec {assistantName}
+              <span className="relative ml-2 rounded-full border border-slate-900/20 bg-white/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-900">
+                Live
+              </span>
             </button>
           </div>
         </section>
