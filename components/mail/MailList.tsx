@@ -19,6 +19,8 @@ interface Props {
 export default function MailList({ items, loading, selectedId, onSelect }: Props) {
   const hasAttachment = (item: MailItem) =>
     (Array.isArray(item.scan_urls) && item.scan_urls.length > 0) || Boolean(item.scan_url);
+  const isTransferred = (item: MailItem) =>
+    Boolean(item.replied && String(item.reply_note || '').toLowerCase().includes('transfere'));
 
   const formatDate = (d: string) => {
     if (!d) return "";
@@ -98,6 +100,11 @@ export default function MailList({ items, loading, selectedId, onSelect }: Props
                     </span>
                   )}
                   {item.sender_name && <span className="text-slate-700">·</span>}
+                  {isTransferred(item) && (
+                    <span className="rounded-full border border-cyan-400/40 bg-cyan-400/10 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-cyan-200">
+                      Transfere
+                    </span>
+                  )}
                   <span className={`rounded-full border px-1.5 py-px text-[10px] font-medium ${MAIL_STATUS_COLORS[item.status]}`}>
                     {MAIL_STATUS_LABELS[item.status]}
                   </span>

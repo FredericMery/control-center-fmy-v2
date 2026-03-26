@@ -34,6 +34,7 @@ interface Props {
 }
 
 export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onClose }: Props) {
+  const isTransferred = Boolean(item.replied && String(item.reply_note || "").toLowerCase().includes("transfere"));
   const scanLinks = (Array.isArray(item.scan_urls) && item.scan_urls.length > 0
     ? item.scan_urls.map((url, index) => ({
         url,
@@ -305,6 +306,11 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
 
       {/* Badges statut/priorité */}
       <div className="flex flex-wrap gap-1.5">
+        {isTransferred && (
+          <span className="rounded-full border border-cyan-400/40 bg-cyan-400/10 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-cyan-200">
+            Transfere
+          </span>
+        )}
         <span className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${MAIL_STATUS_COLORS[item.status]}`}>
           {MAIL_STATUS_LABELS[item.status]}
         </span>
@@ -437,7 +443,8 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
       {item.replied ? (
         <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2">
           <p className="text-xs text-emerald-300">
-            ✅ Répondu le {formatDate(item.replied_at)}
+            {isTransferred ? "✅ Transfere le " : "✅ Repondu le "}
+            {formatDate(item.replied_at)}
           </p>
           {item.reply_note && (
             <p className="mt-0.5 text-xs text-emerald-200">{item.reply_note}</p>
