@@ -16,6 +16,8 @@ type StatsPayload = {
     drafts_ready: number;
     sent: number;
     archived: number;
+    addressed_to_me: number;
+    copied_me: number;
   };
   latest: Array<{
     id: string;
@@ -54,10 +56,14 @@ const actionLabel: Record<string, string> = {
 
 export default function EmailAssistantPage() {
   const user = useAuthStore((s) => s.user);
+  const userEmail = String(user?.email || '').trim().toLowerCase();
 
   const [items, setItems] = useState<MessageWithDrafts[]>([]);
   const [stats, setStats] = useState<StatsPayload | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [threadItems, setThreadItems] = useState<MessageWithDrafts[]>([]);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [messageModalOpen, setMessageModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; message: string } | null>(null);
@@ -75,6 +81,7 @@ export default function EmailAssistantPage() {
   const [actionFilter, setActionFilter] = useState<'all' | 'classer' | 'repondre'>('all');
   const [responseFilter, setResponseFilter] = useState<'all' | 'none' | 'draft_ready' | 'sent' | 'cancelled'>('all');
   const [archiveView, setArchiveView] = useState<'active' | 'archived' | 'all'>('active');
+  const [recipientRole, setRecipientRole] = useState<'all' | 'to' | 'cc'>('all');
 
   const [draftSubject, setDraftSubject] = useState('');
   const [draftBody, setDraftBody] = useState('');
@@ -126,12 +133,48 @@ export default function EmailAssistantPage() {
 
   const loadStats = useCallback(async () => {
     if (!user) return;
-    const res = await fetch('/api/email/stats', {
+    const statsQs = new URLSearchParams();
+    if (userEmail) statsQs.set('me', userEmail);
+    const res = await fetch(`/api/email/stats?${statsQs.toString()}`, {
       headers: await getAuthHeaders(false),
     });
     const json = (await res.json()) as StatsPayload;
     if (res.ok) setStats(json);
-  }, [user]);
+  }, [user, userEmail]);
+
+  const loadThreadMessages = useCallback(
+    async (message: MessageWithDrafts | null) => {
+      if (!user || !message) return;
+      if (!message.thread_id) {
+        setThreadItems([message]);
+        return;
+      }
+
+      setThreadLoading(true);
+      try {
+        const qs = new URLSearchParams();
+        qs.set('thread_id', message.thread_id);
+        qs.set('limit', '200');
+        const res = await fetch(`/api/email/messages?${qs.toString()}`, {
+          headers: await getAuthHeaders(false),
+        });
+        const json = (await res.json().catch(() => ({}))) as { items?: MessageWithDrafts[] };
+        if (!res.ok) {
+          setThreadItems([message]);
+          return;
+        }
+        const thread = (json.items || []).sort((a, b) => {
+          const dateA = new Date(a.received_at || a.created_at).getTime();
+          const dateB = new Date(b.received_at || b.created_at).getTime();
+          return dateA - dateB;
+        });
+        setThreadItems(thread.length > 0 ? thread : [message]);
+      } finally {
+        setThreadLoading(false);
+      }
+    },
+    [user]
+  );
 
   const loadMessages = useCallback(async () => {
     if (!user) return;
@@ -142,6 +185,8 @@ export default function EmailAssistantPage() {
     if (search.trim()) qs.set('search', search.trim());
     if (archiveView === 'active') qs.set('archived', '0');
     if (archiveView === 'archived') qs.set('archived', '1');
+    if (recipientRole !== 'all') qs.set('recipient_role', recipientRole);
+    if (userEmail) qs.set('me', userEmail);
 
     try {
       const res = await fetch(`/api/email/messages?${qs.toString()}`, {
@@ -158,7 +203,7 @@ export default function EmailAssistantPage() {
     } finally {
       setLoading(false);
     }
-  }, [user, actionFilter, responseFilter, search, archiveView]);
+  }, [user, actionFilter, responseFilter, search, archiveView, recipientRole, userEmail]);
 
   useEffect(() => {
     if (!user) return;
@@ -171,7 +216,7 @@ export default function EmailAssistantPage() {
       if (user) loadMessages();
     }, 280);
     return () => clearTimeout(timer);
-  }, [search, actionFilter, responseFilter, archiveView]);
+  }, [search, actionFilter, responseFilter, archiveView, recipientRole]);
 
   const refreshAll = async () => {
     await Promise.all([loadMessages(), loadStats()]);
@@ -181,6 +226,17 @@ export default function EmailAssistantPage() {
     setArchiveView('active');
     setActionFilter('repondre');
     setResponseFilter('draft_ready');
+  };
+
+  const openRecipientList = (role: 'to' | 'cc') => {
+    setArchiveView('active');
+    setRecipientRole(role);
+  };
+
+  const openMessageModal = async (message: MessageWithDrafts) => {
+    setSelectedId(message.id);
+    setMessageModalOpen(true);
+    await loadThreadMessages(message);
   };
 
   const openDailySummary = async () => {
@@ -444,11 +500,33 @@ export default function EmailAssistantPage() {
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <section className="grid grid-cols-2 gap-2 sm:grid-cols-7">
         <StatCard label="Total" value={String(stats?.stats.total ?? 0)} color="text-slate-100" />
         <StatCard label="A repondre" value={String(stats?.stats.to_reply ?? 0)} color="text-amber-300" />
         <StatCard label="Brouillons" value={String(stats?.stats.drafts_ready ?? 0)} color="text-indigo-300" />
         <StatCard label="Envoyes" value={String(stats?.stats.sent ?? 0)} color="text-emerald-300" />
+        <button
+          onClick={() => openRecipientList('to')}
+          className={`rounded-xl border p-3 text-left transition ${
+            recipientRole === 'to'
+              ? 'border-cyan-300/35 bg-cyan-500/10'
+              : 'border-white/10 bg-slate-900/65 hover:border-white/20'
+          }`}
+        >
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">Adresses (A)</p>
+          <p className="mt-1 text-xl font-semibold text-cyan-200">{String(stats?.stats.addressed_to_me ?? 0)}</p>
+        </button>
+        <button
+          onClick={() => openRecipientList('cc')}
+          className={`rounded-xl border p-3 text-left transition ${
+            recipientRole === 'cc'
+              ? 'border-violet-300/35 bg-violet-500/10'
+              : 'border-white/10 bg-slate-900/65 hover:border-white/20'
+          }`}
+        >
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">En copie (CC)</p>
+          <p className="mt-1 text-xl font-semibold text-violet-200">{String(stats?.stats.copied_me ?? 0)}</p>
+        </button>
         <button
           onClick={() => setArchiveView('archived')}
           className={`rounded-xl border p-3 text-left transition ${
@@ -499,6 +577,15 @@ export default function EmailAssistantPage() {
             <option value="archived">Messages archives</option>
             <option value="all">Tous</option>
           </select>
+          <select
+            value={recipientRole}
+            onChange={(event) => setRecipientRole(event.target.value as typeof recipientRole)}
+            className="rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white"
+          >
+            <option value="all">Destinataire: tous</option>
+            <option value="to">Destinataire: adresses (A)</option>
+            <option value="cc">Destinataire: en copie (CC)</option>
+          </select>
           <button
             onClick={openResponseManager}
             className="rounded-xl border border-indigo-300/30 bg-indigo-500/10 px-3 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-500/20"
@@ -508,8 +595,8 @@ export default function EmailAssistantPage() {
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-3 lg:grid-cols-5">
-        <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-2 lg:col-span-2">
+      <section className="grid grid-cols-1 gap-3">
+        <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-2">
           <div className="mb-2 px-2 text-xs text-slate-400">
             {archiveView === 'archived'
               ? `Messages archives (${items.length})`
@@ -527,7 +614,7 @@ export default function EmailAssistantPage() {
               return (
                 <button
                   key={item.id}
-                  onClick={() => setSelectedId(item.id)}
+                  onClick={() => openMessageModal(item)}
                   className={`w-full rounded-xl border p-3 text-left transition ${
                     isSelected
                       ? 'border-indigo-300/40 bg-indigo-500/10'
@@ -550,17 +637,33 @@ export default function EmailAssistantPage() {
             })}
           </div>
         </div>
+      </section>
 
-        <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 lg:col-span-3">
-          {!selected && <p className="text-sm text-slate-400">Selectionne un email pour voir le detail et gerer la reponse.</p>}
+      {messageModalOpen && selected && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-white/10 bg-slate-950 p-4 sm:p-6">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Echange email</h2>
+                <p className="text-xs text-slate-400">Thread complet + actions IA</p>
+              </div>
+              <button
+                onClick={() => setMessageModalOpen(false)}
+                className="min-h-10 rounded-lg border border-white/15 bg-slate-900/60 px-2.5 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+                aria-label="Fermer le detail email"
+                title="Fermer"
+              >
+                ✕
+              </button>
+            </div>
 
-          {selected && (
             <div className="space-y-4">
               <div className="rounded-xl border border-white/10 bg-slate-950/35 p-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h2 className="text-lg font-semibold text-white">{selected.subject || '(sans objet)'}</h2>
                     <p className="text-xs text-slate-400">De: {selected.sender_name || '-'} &lt;{selected.sender_email || '-'}&gt;</p>
+                    <p className="mt-1 text-xs text-slate-500">A: {(selected.to_emails || []).join(', ') || '-'}</p>
                     {selected.cc_emails?.length > 0 && (
                       <p className="mt-1 text-xs text-slate-500">CC: {selected.cc_emails.join(', ')}</p>
                     )}
@@ -575,8 +678,25 @@ export default function EmailAssistantPage() {
               </div>
 
               <div className="rounded-xl border border-white/10 bg-slate-950/35 p-3">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Contenu email</p>
-                <p className="whitespace-pre-wrap break-words text-sm text-slate-200">{selected.body_text || selected.body_html || '(contenu vide)'}</p>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Fil de discussion</p>
+                {threadLoading && <p className="text-sm text-slate-400">Chargement du thread...</p>}
+                {!threadLoading && threadItems.length === 0 && (
+                  <p className="text-sm text-slate-400">Aucun message dans cet echange.</p>
+                )}
+                {!threadLoading && threadItems.length > 0 && (
+                  <div className="space-y-2">
+                    {threadItems.map((msg) => (
+                      <div key={msg.id} className={`rounded-lg border p-3 ${msg.id === selected.id ? 'border-indigo-300/35 bg-indigo-500/10' : 'border-white/10 bg-slate-900/60'}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                          <span>{msg.sender_name || msg.sender_email || '-'}</span>
+                          <span>{formatDate(msg.received_at)}</span>
+                        </div>
+                        <p className="mt-1 text-sm font-medium text-white">{msg.subject || '(sans objet)'}</p>
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-200">{msg.body_text || msg.body_html || '(contenu vide)'}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="rounded-xl border border-indigo-300/20 bg-indigo-500/5 p-3">
@@ -651,9 +771,9 @@ export default function EmailAssistantPage() {
                 </div>
               </div>
             </div>
-          )}
+          </div>
         </div>
-      </section>
+      )}
 
       {summaryOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">

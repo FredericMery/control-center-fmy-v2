@@ -10,6 +10,9 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const action = String(searchParams.get('action') || 'all');
   const responseStatus = String(searchParams.get('response_status') || 'all');
+  const recipientRole = String(searchParams.get('recipient_role') || 'all');
+  const me = String(searchParams.get('me') || '').trim().toLowerCase();
+  const threadId = String(searchParams.get('thread_id') || '').trim();
   const archived = searchParams.get('archived');
   const search = String(searchParams.get('search') || '').trim();
   const limit = Math.min(Number(searchParams.get('limit') || 60), 200);
@@ -25,6 +28,13 @@ export async function GET(request: NextRequest) {
 
   if (action !== 'all') query = query.eq('ai_action', action);
   if (responseStatus !== 'all') query = query.eq('response_status', responseStatus);
+  if (threadId) query = query.eq('thread_id', threadId);
+  if (recipientRole === 'to' && me) {
+    query = query.eq('direction', 'inbound').contains('to_emails', [me]);
+  }
+  if (recipientRole === 'cc' && me) {
+    query = query.eq('direction', 'inbound').contains('cc_emails', [me]);
+  }
   if (archived === '1') query = query.eq('archived', true);
   if (archived === '0') query = query.eq('archived', false);
   if (search) {
