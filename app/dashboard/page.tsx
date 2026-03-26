@@ -66,6 +66,7 @@ export default function DashboardPage() {
   const [assistantName, setAssistantName] = useState('Assistant');
   const [assistantSummaryModalOpen, setAssistantSummaryModalOpen] = useState(false);
   const [assistantSummaryPreview, setAssistantSummaryPreview] = useState<string | null>(null);
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const monthName =
@@ -697,6 +698,28 @@ export default function DashboardPage() {
     setAssistantFlowStatus(null);
   };
 
+  const discreetMenuLinks = useMemo(
+    () => cards.slice(0, 8).map((card) => ({
+      id: card.id,
+      title: card.title,
+      icon: card.icon,
+      link: card.link,
+    })),
+    [cards]
+  );
+
+  const quickCreateOptions = useMemo(
+    () => [
+      { id: 'task-pro', label: 'Tache Pro', icon: '💼', link: '/dashboard/tasks?type=pro&new=1' },
+      { id: 'task-perso', label: 'Tache Perso', icon: '🎯', link: '/dashboard/tasks?type=perso&new=1' },
+      { id: 'memoire', label: 'Memoire', icon: '📚', link: '/dashboard/memoire/quick-add' },
+      { id: 'courrier', label: 'Courrier', icon: '📬', link: '/dashboard/courrier' },
+      { id: 'email', label: 'Email', icon: '✉️', link: '/dashboard/emails' },
+      { id: 'agenda', label: 'Agenda', icon: '📅', link: '/dashboard/agenda/pro' },
+    ],
+    []
+  );
+
   return (
     <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-6">
       <div className="mx-auto w-full max-w-6xl space-y-5">
@@ -716,7 +739,7 @@ export default function DashboardPage() {
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-950/10 text-xl">
                 ✨
               </span>
-              Lancer la conversation
+              Lancer la conversation avec {assistantName}
             </button>
           </div>
         </section>
@@ -946,110 +969,64 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <section className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-          {cards.map((card) => {
-            const badge = getModuleBadge(card.id);
-            return (
-              <article
-                key={card.id}
-                className={`group relative overflow-hidden rounded-2xl border border-white/10 ${card.bgColor} p-3 shadow-lg shadow-slate-950/30 transition hover:-translate-y-0.5 hover:border-white/20 sm:p-4`}
+        <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/85 via-slate-900/75 to-slate-950/90 p-4 sm:p-6">
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            {discreetMenuLinks.map((entry) => (
+              <Link
+                key={entry.id}
+                href={entry.link}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 transition hover:border-cyan-300/50 hover:text-cyan-100"
               >
-                <div className="absolute -right-6 -top-8 h-24 w-24 rounded-full bg-white/10 blur-2xl" />
-                <Link href={card.link} className="relative block">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className={`text-xl sm:text-2xl ${card.textColor}`}>{card.icon}</div>
-                    <span className="rounded-full border border-white/20 bg-slate-950/55 px-2.5 py-1 text-xs font-semibold text-white">
-                      {badge.value}
-                    </span>
-                  </div>
-                  <p className="mt-5 text-sm font-semibold text-white sm:mt-6 sm:text-base">{card.title}</p>
-                  <p className="mt-1 line-clamp-2 text-xs text-slate-300">{badge.label}</p>
-                </Link>
-
-                <div className="relative mt-3 min-h-8">
-                  {(card.id === 'pro' || card.id === 'perso') && (
-                    <Link
-                      href={`/dashboard/tasks?type=${card.id}&new=1`}
-                      className="inline-flex min-h-9 items-center rounded-lg bg-cyan-500 px-2.5 py-1.5 text-[11px] font-semibold text-slate-950 transition hover:bg-cyan-400 sm:px-3 sm:text-xs"
-                      aria-label={t('dashboard.addTaskAria', { title: card.title })}
-                    >
-                      + Nouvelle tache
-                    </Link>
-                  )}
-
-                  {card.id === 'memoire' && (
-                    <Link
-                      href="/dashboard/memoire/quick-add"
-                      className="inline-flex min-h-9 items-center rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[11px] font-semibold text-slate-950 transition hover:bg-emerald-400 sm:px-3 sm:text-xs"
-                    >
-                      Ajouter
-                    </Link>
-                  )}
-
-                  {card.id === 'expenses' && (
-                    <Link
-                      href="/expenses"
-                      className="inline-flex min-h-9 items-center rounded-lg bg-amber-400 px-2.5 py-1.5 text-[11px] font-semibold text-slate-950 transition hover:bg-amber-300 sm:px-3 sm:text-xs"
-                    >
-                      {t('dashboard.capture')}
-                    </Link>
-                  )}
-
-                  {card.id === 'planning' && (
-                    <Link
-                      href="/dashboard/agenda/pro"
-                      className="inline-flex min-h-9 items-center rounded-lg bg-teal-400 px-2.5 py-1.5 text-[11px] font-semibold text-slate-950 transition hover:bg-teal-300 sm:px-3 sm:text-xs"
-                    >
-                      Choisir RDV
-                    </Link>
-                  )}
-
-                  {card.id === 'emails' && (
-                    <Link
-                      href="/dashboard/emails"
-                      className="inline-flex min-h-9 items-center rounded-lg bg-indigo-400 px-2.5 py-1.5 text-[11px] font-semibold text-slate-950 transition hover:bg-indigo-300 sm:px-3 sm:text-xs"
-                    >
-                      Gerer les reponses
-                    </Link>
-                  )}
-                </div>
-              </article>
-            );
-          })}
-        </section>
-
-        <section className="mt-4 rounded-2xl border border-white/10 bg-slate-900/55 p-3 sm:mt-5 sm:p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-white">Stats 360</p>
-              <p className="text-xs text-slate-400">Regroupement par themes de toutes les metriques disponibles.</p>
-            </div>
-            <Link href="/dashboard/settings" className="text-xs text-cyan-200 hover:text-cyan-100">
-              Configurer
+                <span>{entry.icon}</span>
+                <span>{entry.title}</span>
+              </Link>
+            ))}
+            <Link
+              href="/dashboard/settings"
+              className="ml-auto inline-flex items-center rounded-full border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300 transition hover:border-white/30 hover:text-white"
+            >
+              Parametres
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {themedStats.map((theme) => (
-              <article
-                key={theme.id}
-                className={`rounded-xl border p-3 ${theme.accent}`}
-              >
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="text-lg">{theme.icon}</span>
-                  <p className="text-sm font-semibold text-white">{theme.title}</p>
-                </div>
+          <div className="flex flex-col items-center justify-center py-6 sm:py-10">
+            <p className="mb-3 text-xs uppercase tracking-[0.2em] text-slate-400">Ajout rapide</p>
+            <p className="mb-8 text-center text-sm text-slate-300">Clique sur le + et choisis ce que tu souhaites ajouter</p>
 
-                <div className="space-y-1.5">
-                  {theme.stats.map((row) => (
-                    <div key={`${theme.id}-${row.label}`} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-slate-950/35 px-2 py-1.5">
-                      <span className="truncate text-[11px] text-slate-300">{row.label}</span>
-                      <span className="max-w-[55%] truncate text-xs font-semibold text-white">{row.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </article>
-            ))}
+            <div className="relative flex h-[320px] w-[320px] items-center justify-center sm:h-[420px] sm:w-[420px]">
+              <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(34,211,238,0.16)_0%,rgba(15,23,42,0)_68%)]" />
+
+              {quickCreateOptions.map((option, index) => {
+                const angle = (-90 + index * (360 / quickCreateOptions.length)) * (Math.PI / 180);
+                const radius = quickCreateOpen ? 136 : 0;
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+
+                return (
+                  <Link
+                    key={option.id}
+                    href={option.link}
+                    className={`absolute inline-flex h-20 w-20 flex-col items-center justify-center rounded-full border border-cyan-200/30 bg-slate-900/90 text-center shadow-lg transition-all duration-300 hover:border-cyan-200/60 hover:bg-slate-800 ${
+                      quickCreateOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+                    }`}
+                    style={{
+                      transform: `translate(${x}px, ${y}px) scale(${quickCreateOpen ? 1 : 0.5})`,
+                    }}
+                  >
+                    <span className="text-lg">{option.icon}</span>
+                    <span className="mt-1 px-1 text-[10px] font-medium leading-tight text-slate-100">{option.label}</span>
+                  </Link>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => setQuickCreateOpen((prev) => !prev)}
+                className="relative z-10 inline-flex h-28 w-28 items-center justify-center rounded-full border border-cyan-200/70 bg-gradient-to-br from-cyan-300 to-blue-300 text-6xl font-light leading-none text-slate-950 shadow-[0_24px_70px_-24px_rgba(34,211,238,0.95)] transition hover:scale-105"
+              >
+                +
+              </button>
+            </div>
           </div>
         </section>
 
