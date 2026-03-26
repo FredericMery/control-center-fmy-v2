@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { MailItem, MailStatus, MailPriority } from "@/types/mail";
+import type { MailItem, MailStatus } from "@/types/mail";
 import {
   MAIL_TYPE_ICONS,
   MAIL_TYPE_LABELS,
@@ -11,6 +11,16 @@ import {
   MAIL_PRIORITY_COLORS,
 } from "@/types/mail";
 import { getAuthHeaders } from "@/lib/auth/clientSession";
+
+type TransferPreview = {
+  recipient_email: string;
+  recipient_name: string;
+  subject: string;
+  message: string;
+  task_title: string;
+  task_type: "pro" | "perso";
+  task_deadline: string | null;
+};
 
 interface Props {
   item: MailItem;
@@ -24,6 +34,19 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [statusLoading, setStatusLoading] = useState(false);
   const [markingReplied, setMarkingReplied] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [loadingTransferPreview, setLoadingTransferPreview] = useState(false);
+  const [sendingTransfer, setSendingTransfer] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
+
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [transferSubject, setTransferSubject] = useState("");
+  const [transferMessage, setTransferMessage] = useState("");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskType, setTaskType] = useState<"pro" | "perso">("pro");
+  const [taskDeadline, setTaskDeadline] = useState("");
 
   const isOverdue =
     item.due_date &&
@@ -74,6 +97,72 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
       headers: await getAuthHeaders(false),
     });
     if (res.ok) onDelete(item.id);
+  };
+
+  const openTransferModal = async () => {
+    setShowTransferModal(true);
+    setTransferError(null);
+    setTransferSuccess(null);
+    setLoadingTransferPreview(true);
+    try {
+      const res = await fetch(`/api/mail/${item.id}/transfer-preview`, {
+        method: "POST",
+        headers: await getAuthHeaders(),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || "Impossible de generer la previsualisation IA");
+      }
+
+      const preview = json?.preview as TransferPreview;
+      setRecipientEmail(preview?.recipient_email || "");
+      setRecipientName(preview?.recipient_name || "");
+      setTransferSubject(preview?.subject || "");
+      setTransferMessage(preview?.message || "");
+      setTaskTitle(preview?.task_title || "");
+      setTaskType(preview?.task_type === "perso" ? "perso" : "pro");
+      setTaskDeadline(preview?.task_deadline || "");
+    } catch (error: unknown) {
+      setTransferError(error instanceof Error ? error.message : "Erreur de previsualisation");
+    } finally {
+      setLoadingTransferPreview(false);
+    }
+  };
+
+  const handleSendTransfer = async () => {
+    setSendingTransfer(true);
+    setTransferError(null);
+    setTransferSuccess(null);
+    try {
+      const res = await fetch(`/api/mail/${item.id}/transfer-send`, {
+        method: "POST",
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({
+          recipient_email: recipientEmail,
+          recipient_name: recipientName,
+          subject: transferSubject,
+          message: transferMessage,
+          task_title: taskTitle,
+          task_type: taskType,
+          task_deadline: taskDeadline || null,
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || "Echec du transfert");
+      }
+
+      if (item.status === "recu") {
+        onStatusChange(item.id, "en_cours");
+      }
+      setTransferSuccess("Courrier transfere et tache creee avec succes.");
+      setTimeout(() => setShowTransferModal(false), 1100);
+    } catch (error: unknown) {
+      setTransferError(error instanceof Error ? error.message : "Erreur de transfert");
+    } finally {
+      setSendingTransfer(false);
+    }
   };
 
   const formatDate = (d: string | null) => {
@@ -278,6 +367,12 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
       {/* Actions */}
       <div className="flex gap-2 border-t border-white/10 pt-3">
         <button
+          onClick={openTransferModal}
+          className="flex-1 rounded-xl border border-cyan-400/30 bg-cyan-400/10 py-2 text-sm text-cyan-200 hover:bg-cyan-400/20 transition-colors"
+        >
+          ↗ Transferer et suivre
+        </button>
+        <button
           onClick={() => onEdit(item)}
           className="flex-1 rounded-xl border border-white/10 bg-slate-800 py-2 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
         >
@@ -307,6 +402,130 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
           </button>
         )}
       </div>
+
+      {showTransferModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-2xl border border-cyan-300/20 bg-slate-900/95 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-300/70">Courrier workflow</p>
+                <h3 className="text-base font-semibold text-white">Transferer et suivre</h3>
+              </div>
+              <button
+                onClick={() => setShowTransferModal(false)}
+                className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-400 hover:text-white"
+              >
+                Fermer
+              </button>
+            </div>
+
+            <div className="space-y-3 px-4 py-4">
+              {loadingTransferPreview ? (
+                <p className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-200">
+                  Preparation IA du message en cours...
+                </p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Destinataire email</label>
+                      <input
+                        value={recipientEmail}
+                        onChange={(event) => setRecipientEmail(event.target.value)}
+                        placeholder="email@entreprise.com"
+                        className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Nom destinataire</label>
+                      <input
+                        value={recipientName}
+                        onChange={(event) => setRecipientName(event.target.value)}
+                        placeholder="Nom (optionnel)"
+                        className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/50"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">Objet email</label>
+                    <input
+                      value={transferSubject}
+                      onChange={(event) => setTransferSubject(event.target.value)}
+                      className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">Message d accompagnement (IA, modifiable)</label>
+                    <textarea
+                      value={transferMessage}
+                      onChange={(event) => setTransferMessage(event.target.value)}
+                      rows={6}
+                      className="w-full resize-none rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/50"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="sm:col-span-2">
+                      <label className="mb-1 block text-xs text-slate-400">Titre de tache de suivi</label>
+                      <input
+                        value={taskTitle}
+                        onChange={(event) => setTaskTitle(event.target.value)}
+                        className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Type tache</label>
+                      <select
+                        value={taskType}
+                        onChange={(event) => setTaskType(event.target.value as "pro" | "perso")}
+                        className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/50"
+                      >
+                        <option value="pro">Pro</option>
+                        <option value="perso">Perso</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">Echeance tache (optionnel)</label>
+                    <input
+                      type="date"
+                      value={taskDeadline}
+                      onChange={(event) => setTaskDeadline(event.target.value)}
+                      className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/50"
+                    />
+                  </div>
+                </>
+              )}
+
+              {transferError && (
+                <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{transferError}</p>
+              )}
+              {transferSuccess && (
+                <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">{transferSuccess}</p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-white/10 px-4 py-3">
+              <button
+                onClick={() => setShowTransferModal(false)}
+                className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleSendTransfer}
+                disabled={sendingTransfer || loadingTransferPreview || !recipientEmail || !transferSubject || !taskTitle}
+                className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50"
+              >
+                {sendingTransfer ? "Envoi + creation tache..." : "Transferer et suivre"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

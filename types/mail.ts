@@ -72,6 +72,7 @@ export interface MailStats {
 }
 
 export interface AiMailAnalysis {
+  context: MailContext;
   subject: string;
   sender_name: string;
   sender_address: string;

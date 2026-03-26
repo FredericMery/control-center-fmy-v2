@@ -62,6 +62,7 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
   const [aiConfidence, setAiConfidence]     = useState<number | null>(item?.ai_confidence ?? null);
 
   const applyAiAnalysis = (ai: AiMailAnalysis) => {
+    if (ai.context === 'pro' || ai.context === 'perso') setContext(ai.context);
     if (ai.subject)         setSubject(ai.subject);
     if (ai.sender_name)     setSenderName(ai.sender_name);
     if (ai.sender_address)  setSenderAddress(ai.sender_address);

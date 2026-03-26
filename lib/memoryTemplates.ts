@@ -37,6 +37,27 @@ export interface SectionTemplate {
 }
 
 export const MEMORY_TEMPLATES: Record<string, SectionTemplate> = {
+  hotels: {
+    id: 'hotels',
+    name: 'Mes Hotels',
+    slug: 'hotels',
+    description: 'Hotels verifies a retenir pour les deplacements pro et perso',
+    icon: '🏨',
+    color_tag: 'teal',
+    search_template: '${nom_de_l_hotel} ${ville_pays}',
+    fields: [
+      { label: 'Nom de l hotel', field_type: 'text', is_required: true, is_searchable: true },
+      { label: 'Ville / Pays', field_type: 'text', is_required: true, is_searchable: true },
+      { label: 'Type de sejour', field_type: 'select', is_required: true, options: ['Pro', 'Perso'] },
+      { label: 'Adresse', field_type: 'text' },
+      { label: 'Budget moyen', field_type: 'select', options: ['€', '€€', '€€€', '€€€€'] },
+      { label: 'Points forts', field_type: 'textarea' },
+      { label: 'Points faibles', field_type: 'textarea' },
+      { label: 'Note personnelle', field_type: 'textarea', is_required: true },
+      { label: 'Photo', field_type: 'url', is_required: true },
+    ],
+  },
+
   wines: {
     id: 'wines',
     name: 'Mes Vins',

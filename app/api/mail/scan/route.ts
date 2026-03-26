@@ -21,6 +21,7 @@ Analyse le texte extrait d'un courrier et retourne un JSON strict avec ces champ
   "sender_name":      "Nom de l'expéditeur (personne physique ou morale)",
   "sender_address":   "Adresse postale complète de l'expéditeur, ou vide",
   "sender_email":     "Email de l'expéditeur si présent, sinon vide",
+  "context":          "pro|perso selon le contenu principal du courrier",
   "mail_type":        "UN de ces types: facture|contrat|administratif|bancaire|juridique|fiscal|assurance|sante|immobilier|relance|offre_commerciale|autre",
   "summary":          "Résumé concis de 2-3 lignes expliquant le contenu, le but et les actions à prendre",
   "action_required":  true ou false — une action explicite est-elle demandée à la personne ?
@@ -38,6 +39,54 @@ Règles :
 - Pour priority "urgent" : délai <= 48h ou termes "urgent", "mise en demeure", "saisie", "huissier".
 - Pour priority "haute" : délai 3-7j ou relance, montant > 1000€.
 - Sois précis sur les montants, dates et références détectés.`;
+
+function normalizeAiAnalysis(raw: unknown): AiMailAnalysis {
+  const source = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const normalizeText = (value: unknown) => String(value || '').trim();
+  const context = normalizeText(source.context).toLowerCase() === 'perso' ? 'perso' : 'pro';
+  const priorityRaw = normalizeText(source.priority).toLowerCase();
+  const priority: MailPriority =
+    priorityRaw === 'urgent' || priorityRaw === 'haute' || priorityRaw === 'basse'
+      ? (priorityRaw as MailPriority)
+      : 'normal';
+  const allowedMailTypes = new Set<MailType>([
+    'facture',
+    'contrat',
+    'administratif',
+    'bancaire',
+    'juridique',
+    'fiscal',
+    'assurance',
+    'sante',
+    'immobilier',
+    'relance',
+    'offre_commerciale',
+    'autre',
+  ]);
+  const mailTypeRaw = normalizeText(source.mail_type) as MailType;
+  const mailType: MailType = allowedMailTypes.has(mailTypeRaw) ? mailTypeRaw : 'autre';
+
+  return {
+    context,
+    subject: normalizeText(source.subject),
+    sender_name: normalizeText(source.sender_name),
+    sender_address: normalizeText(source.sender_address),
+    sender_email: normalizeText(source.sender_email),
+    mail_type: mailType,
+    summary: normalizeText(source.summary),
+    action_required: Boolean(source.action_required),
+    action_note: normalizeText(source.action_note),
+    priority,
+    due_date: normalizeText(source.due_date) || null,
+    reference: normalizeText(source.reference),
+    tags: Array.isArray(source.tags)
+      ? source.tags.map((tag) => normalizeText(tag)).filter(Boolean).slice(0, 5)
+      : [],
+    confidence: Number.isFinite(Number(source.confidence))
+      ? Math.max(0, Math.min(1, Number(source.confidence)))
+      : 0.4,
+  };
+}
 
 // POST /api/mail/scan — upload scan + OCR + analyse IA
 export async function POST(request: NextRequest) {
@@ -135,7 +184,7 @@ export async function POST(request: NextRequest) {
       // Extraire le JSON même si entouré de backticks
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        aiAnalysis = JSON.parse(jsonMatch[0]) as AiMailAnalysis;
+        aiAnalysis = normalizeAiAnalysis(JSON.parse(jsonMatch[0]));
       }
     } catch (err) {
       console.error('AI analysis error:', err);
