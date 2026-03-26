@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { MailItem, MailStatus } from "@/types/mail";
 import {
   MAIL_TYPE_ICONS,
@@ -65,6 +65,8 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
   const [taskDeadline, setTaskDeadline] = useState("");
   const [aiBaselineSubject, setAiBaselineSubject] = useState("");
   const [aiBaselineMessage, setAiBaselineMessage] = useState("");
+  const [recipientFocused, setRecipientFocused] = useState(false);
+  const [ccFocused, setCcFocused] = useState(false);
 
   const isOverdue =
     item.due_date &&
@@ -155,6 +157,12 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
   };
 
   const handleSendTransfer = async () => {
+    const cleanRecipient = recipientEmail.trim();
+    if (!cleanRecipient) {
+      setTransferError("Renseigne un email destinataire.");
+      return;
+    }
+
     setTransferStepState("sending");
     setSendingTransfer(true);
     setTransferError(null);
@@ -185,6 +193,19 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
       if (item.status === "recu") {
         onStatusChange(item.id, "en_cours");
       }
+
+      // Lance l apprentissage des regles quand le message IA a ete corrige.
+      if (
+        aiBaselineSubject.trim() !== transferSubject.trim() ||
+        aiBaselineMessage.trim() !== transferMessage.trim()
+      ) {
+        fetch("/api/settings/email-ai-rules/learn", {
+          method: "POST",
+          headers: await getAuthHeaders(),
+          body: JSON.stringify({ apply: true, maxSamples: 60 }),
+        }).catch(() => undefined);
+      }
+
       setTransferSuccess("Courrier transfere et tache creee avec succes.");
       setTransferStepState("success");
       setTimeout(() => setShowTransferModal(false), 1100);
@@ -236,6 +257,24 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
   };
   const nextStatus = NEXT_STATUS_MAP[item.status];
   const nextStatusLabel = nextStatus ? MAIL_STATUS_LABELS[nextStatus] : null;
+
+  const recipientSuggestions = useMemo(() => {
+    const query = recipientEmail.trim().toLowerCase();
+    if (!query) return [];
+    return emailHistoryCandidates
+      .filter((email) => email.toLowerCase().includes(query))
+      .filter((email) => email.toLowerCase() !== query)
+      .slice(0, 8);
+  }, [emailHistoryCandidates, recipientEmail]);
+
+  const ccSuggestions = useMemo(() => {
+    const token = getLastCsvToken(ccEmailsInput).toLowerCase();
+    if (!token) return [];
+    return emailHistoryCandidates
+      .filter((email) => email.toLowerCase().includes(token))
+      .filter((email) => email.toLowerCase() !== token)
+      .slice(0, 8);
+  }, [emailHistoryCandidates, ccEmailsInput]);
 
   return (
     <div className="space-y-4">
@@ -406,6 +445,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
         </div>
       ) : item.action_required ? (
         <button
+          type="button"
           onClick={handleMarkReplied}
           disabled={markingReplied}
           className="w-full rounded-xl bg-emerald-600/80 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
@@ -417,6 +457,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
       {/* Bouton avance rapide */}
       {nextStatusLabel && (
         <button
+          type="button"
           onClick={() => handleStatusChange(nextStatus!)}
           disabled={statusLoading}
           className="w-full rounded-xl border border-violet-400/30 bg-violet-400/10 py-2.5 text-sm font-medium text-violet-200 hover:bg-violet-400/20 disabled:opacity-50 transition-colors"
@@ -428,12 +469,14 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
       {/* Actions */}
       <div className="flex gap-2 border-t border-white/10 pt-3">
         <button
+          type="button"
           onClick={openTransferModal}
           className="flex-1 rounded-xl border border-cyan-400/30 bg-cyan-400/10 py-2 text-sm text-cyan-200 hover:bg-cyan-400/20 transition-colors"
         >
           ↗ Transferer et suivre
         </button>
         <button
+          type="button"
           onClick={() => onEdit(item)}
           className="flex-1 rounded-xl border border-white/10 bg-slate-800 py-2 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
         >
@@ -442,12 +485,14 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
         {confirmingDelete ? (
           <div className="flex flex-1 gap-1.5">
             <button
+              type="button"
               onClick={() => setConfirmingDelete(false)}
               className="flex-1 rounded-xl border border-white/10 bg-slate-800 py-2 text-xs text-slate-400"
             >
               Annuler
             </button>
             <button
+              type="button"
               onClick={handleDelete}
               className="flex-1 rounded-xl bg-red-600 py-2 text-xs font-semibold text-white hover:bg-red-500 transition-colors"
             >
@@ -456,6 +501,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
           </div>
         ) : (
           <button
+            type="button"
             onClick={() => setConfirmingDelete(true)}
             className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-400 hover:bg-red-500/20 transition-colors"
           >
@@ -473,6 +519,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
                 <h3 className="text-base font-semibold text-white">Transferer et suivre</h3>
               </div>
               <button
+                type="button"
                 onClick={() => setShowTransferModal(false)}
                 className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-400 hover:text-white"
               >
@@ -514,12 +561,30 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
                     <div>
                       <label className="mb-1 block text-xs text-slate-400">Destinataire email</label>
                       <input
-                        list="mail-transfer-email-history"
                         value={recipientEmail}
                         onChange={(event) => setRecipientEmail(event.target.value)}
+                        onFocus={() => setRecipientFocused(true)}
+                        onBlur={() => setTimeout(() => setRecipientFocused(false), 120)}
                         placeholder="email@entreprise.com"
                         className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/50"
                       />
+                      {recipientFocused && recipientSuggestions.length > 0 && (
+                        <div className="mt-1 max-h-36 overflow-y-auto rounded-xl border border-white/10 bg-slate-900/95 p-1">
+                          {recipientSuggestions.map((email) => (
+                            <button
+                              key={`recipient-${email}`}
+                              type="button"
+                              onClick={() => {
+                                setRecipientEmail(email);
+                                setRecipientFocused(false);
+                              }}
+                              className="w-full rounded-lg px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-800"
+                            >
+                              {email}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-400">Nom destinataire</label>
@@ -535,12 +600,30 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
                   <div>
                     <label className="mb-1 block text-xs text-slate-400">CC (plusieurs emails, separes par virgule)</label>
                     <input
-                      list="mail-transfer-email-history"
                       value={ccEmailsInput}
                       onChange={(event) => setCcEmailsInput(event.target.value)}
+                      onFocus={() => setCcFocused(true)}
+                      onBlur={() => setTimeout(() => setCcFocused(false), 120)}
                       placeholder="compta@entreprise.com, manager@entreprise.com"
                       className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/50"
                     />
+                    {ccFocused && ccSuggestions.length > 0 && (
+                      <div className="mt-1 max-h-36 overflow-y-auto rounded-xl border border-white/10 bg-slate-900/95 p-1">
+                        {ccSuggestions.map((email) => (
+                          <button
+                            key={`cc-${email}`}
+                            type="button"
+                            onClick={() => {
+                              setCcEmailsInput(replaceLastCsvToken(ccEmailsInput, email));
+                              setCcFocused(false);
+                            }}
+                            className="w-full rounded-lg px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-800"
+                          >
+                            {email}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -596,12 +679,6 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
                 </>
               )}
 
-              <datalist id="mail-transfer-email-history">
-                {emailHistoryCandidates.map((email) => (
-                  <option key={email} value={email} />
-                ))}
-              </datalist>
-
               {transferError && (
                 <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{transferError}</p>
               )}
@@ -612,14 +689,16 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
 
             <div className="flex items-center justify-end gap-2 border-t border-white/10 px-4 py-3">
               <button
+                type="button"
                 onClick={() => setShowTransferModal(false)}
                 className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
               >
                 Annuler
               </button>
               <button
+                type="button"
                 onClick={handleSendTransfer}
-                disabled={sendingTransfer || loadingTransferPreview || !recipientEmail || !transferSubject || !taskTitle}
+                disabled={sendingTransfer || loadingTransferPreview}
                 className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50"
               >
                 {sendingTransfer ? "Envoi + creation tache..." : "Transferer et suivre"}
@@ -635,4 +714,18 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
 function parseEmailCsv(value: string): string[] {
   const matches = value.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || [];
   return Array.from(new Set(matches.map((entry) => String(entry).trim().toLowerCase()))).slice(0, 20);
+}
+
+function getLastCsvToken(value: string): string {
+  const parts = value.split(",");
+  return String(parts[parts.length - 1] || "").trim();
+}
+
+function replaceLastCsvToken(input: string, replacement: string): string {
+  const parts = input.split(",");
+  parts[parts.length - 1] = ` ${replacement}`;
+  return parts
+    .map((part, index) => (index === 0 ? part.trim() : part.trim()))
+    .filter((part) => part.length > 0)
+    .join(", ");
 }
