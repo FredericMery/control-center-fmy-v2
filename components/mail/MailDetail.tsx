@@ -20,7 +20,7 @@ type TransferPreview = {
   task_title: string;
   task_type: "pro" | "perso";
   task_deadline: string | null;
-  recipient_suggestions?: Array<{ email: string; name: string; source: "contacts" | "expense_recipients" }>;
+  email_history_candidates?: string[];
 };
 
 type TransferStepState = "idle" | "generating" | "ready" | "sending" | "success";
@@ -43,17 +43,18 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
   const [transferError, setTransferError] = useState<string | null>(null);
   const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
   const [transferStepState, setTransferStepState] = useState<TransferStepState>("idle");
-  const [recipientSuggestions, setRecipientSuggestions] = useState<
-    Array<{ email: string; name: string; source: "contacts" | "expense_recipients" }>
-  >([]);
+  const [emailHistoryCandidates, setEmailHistoryCandidates] = useState<string[]>([]);
 
   const [recipientEmail, setRecipientEmail] = useState("");
   const [recipientName, setRecipientName] = useState("");
+  const [ccEmailsInput, setCcEmailsInput] = useState("");
   const [transferSubject, setTransferSubject] = useState("");
   const [transferMessage, setTransferMessage] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
   const [taskType, setTaskType] = useState<"pro" | "perso">("pro");
   const [taskDeadline, setTaskDeadline] = useState("");
+  const [aiBaselineSubject, setAiBaselineSubject] = useState("");
+  const [aiBaselineMessage, setAiBaselineMessage] = useState("");
 
   const isOverdue =
     item.due_date &&
@@ -130,7 +131,10 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
       setTaskTitle(preview?.task_title || "");
       setTaskType(preview?.task_type === "perso" ? "perso" : "pro");
       setTaskDeadline(preview?.task_deadline || "");
-      setRecipientSuggestions(Array.isArray(preview?.recipient_suggestions) ? preview.recipient_suggestions : []);
+      setEmailHistoryCandidates(Array.isArray(preview?.email_history_candidates) ? preview.email_history_candidates : []);
+      setCcEmailsInput("");
+      setAiBaselineSubject(preview?.subject || "");
+      setAiBaselineMessage(preview?.message || "");
       setTransferStepState("ready");
     } catch (error: unknown) {
       setTransferError(error instanceof Error ? error.message : "Erreur de previsualisation");
@@ -152,8 +156,11 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
         body: JSON.stringify({
           recipient_email: recipientEmail,
           recipient_name: recipientName,
+          cc_emails: parseEmailCsv(ccEmailsInput),
           subject: transferSubject,
           message: transferMessage,
+          ai_baseline_subject: aiBaselineSubject,
+          ai_baseline_message: aiBaselineMessage,
           task_title: taskTitle,
           task_type: taskType,
           task_deadline: taskDeadline || null,
@@ -177,11 +184,6 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
     } finally {
       setSendingTransfer(false);
     }
-  };
-
-  const applySuggestedRecipient = (suggestion: { email: string; name: string }) => {
-    setRecipientEmail(suggestion.email);
-    if (suggestion.name) setRecipientName(suggestion.name);
   };
 
   const timelineSteps = [
@@ -495,31 +497,11 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
                 </p>
               ) : (
                 <>
-                  {recipientSuggestions.length > 0 && (
-                    <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-cyan-200/80">
-                        Suggestions destinataires (contacts internes)
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {recipientSuggestions.slice(0, 6).map((suggestion) => (
-                          <button
-                            key={`${suggestion.email}-${suggestion.source}`}
-                            type="button"
-                            onClick={() => applySuggestedRecipient(suggestion)}
-                            className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-xs text-cyan-100 hover:bg-cyan-300/20"
-                          >
-                            {suggestion.name ? `${suggestion.name} · ` : ""}
-                            {suggestion.email}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <label className="mb-1 block text-xs text-slate-400">Destinataire email</label>
                       <input
+                        list="mail-transfer-email-history"
                         value={recipientEmail}
                         onChange={(event) => setRecipientEmail(event.target.value)}
                         placeholder="email@entreprise.com"
@@ -535,6 +517,17 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
                         className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/50"
                       />
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">CC (plusieurs emails, separes par virgule)</label>
+                    <input
+                      list="mail-transfer-email-history"
+                      value={ccEmailsInput}
+                      onChange={(event) => setCcEmailsInput(event.target.value)}
+                      placeholder="compta@entreprise.com, manager@entreprise.com"
+                      className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/50"
+                    />
                   </div>
 
                   <div>
@@ -590,6 +583,12 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
                 </>
               )}
 
+              <datalist id="mail-transfer-email-history">
+                {emailHistoryCandidates.map((email) => (
+                  <option key={email} value={email} />
+                ))}
+              </datalist>
+
               {transferError && (
                 <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{transferError}</p>
               )}
@@ -618,4 +617,9 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
       )}
     </div>
   );
+}
+
+function parseEmailCsv(value: string): string[] {
+  const matches = value.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || [];
+  return Array.from(new Set(matches.map((entry) => String(entry).trim().toLowerCase()))).slice(0, 20);
 }

@@ -13,8 +13,11 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 type TransferSendPayload = {
   recipient_email?: string;
   recipient_name?: string;
+  cc_emails?: string[] | string;
   subject?: string;
   message?: string;
+  ai_baseline_subject?: string;
+  ai_baseline_message?: string;
   task_title?: string;
   task_type?: 'pro' | 'perso';
   task_deadline?: string | null;
@@ -56,9 +59,12 @@ export async function POST(
 
   const subject = normalizeText(body.subject) || buildDefaultSubject(mail.subject);
   const message = normalizeText(body.message) || buildDefaultMessage(mail.summary, mail.action_note);
+  const aiBaselineSubject = normalizeText(body.ai_baseline_subject) || subject;
+  const aiBaselineMessage = normalizeText(body.ai_baseline_message) || message;
   const taskTitle = normalizeText(body.task_title) || buildDefaultTaskTitle(mail.subject, mail.action_note);
   const taskType = body.task_type === 'perso' ? 'perso' : mail.context === 'perso' ? 'perso' : 'pro';
   const taskDeadline = normalizeDate(body.task_deadline) || normalizeDate(mail.due_date);
+  const ccEmails = normalizeEmailList(body.cc_emails).filter((email) => email !== recipientEmail);
 
   const attachments = await buildAttachments(mail.scan_url, mail.scan_file_name);
 
@@ -77,6 +83,7 @@ export async function POST(
   const sendPromise = resend.emails.send({
     from,
     to,
+    cc: ccEmails.length > 0 ? ccEmails : undefined,
     subject,
     text: message,
     attachments: attachments.length > 0 ? attachments : undefined,
@@ -119,6 +126,27 @@ export async function POST(
     .eq('id', id)
     .eq('user_id', userId);
 
+  const editedByUser = aiBaselineSubject !== subject || aiBaselineMessage !== message;
+  await supabase.from('email_processing_logs').insert({
+    user_id: userId,
+    message_id: null,
+    event_type: 'mail_transfer_sent',
+    level: 'info',
+    message: 'Transfert courrier envoye avec suivi',
+    payload: {
+      mail_item_id: id,
+      recipient_email: recipientEmail,
+      cc_emails: ccEmails,
+      ai_baseline_subject: aiBaselineSubject,
+      ai_baseline_body: aiBaselineMessage,
+      final_subject: subject,
+      final_body: message,
+      edited_by_user: editedByUser,
+      task_id: taskResult.data?.id || null,
+      provider_message_id: String((sendResult.data as { id?: string } | null)?.id || ''),
+    },
+  });
+
   return NextResponse.json({
     success: true,
     task: taskResult.data,
@@ -133,6 +161,19 @@ function normalizeText(value: unknown): string {
 function normalizeEmail(value: unknown): string {
   const email = normalizeText(value).toLowerCase();
   return email.includes('@') ? email : '';
+}
+
+function normalizeEmailList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return Array.from(
+      new Set(value.map((entry) => normalizeEmail(entry)).filter(Boolean))
+    ).slice(0, 20);
+  }
+
+  const raw = String(value || '');
+  if (!raw) return [];
+  const matches = raw.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || [];
+  return Array.from(new Set(matches.map((entry) => normalizeEmail(entry)).filter(Boolean))).slice(0, 20);
 }
 
 function normalizeDate(value: unknown): string | null {

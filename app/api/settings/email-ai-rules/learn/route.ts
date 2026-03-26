@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     .from('email_processing_logs')
     .select('id,message_id,payload,created_at')
     .eq('user_id', userId)
-    .eq('event_type', 'reply_sent')
+    .in('event_type', ['reply_sent', 'mail_transfer_sent'])
     .order('created_at', { ascending: false })
     .limit(maxSamples);
 
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
       const editedByUser = Boolean(payload.edited_by_user);
 
       return {
-        message_id: String(entry.message_id || ''),
+        message_id: String(entry.message_id || entry.id || ''),
         edited_by_user: editedByUser,
         ai_baseline_subject: aiBaselineSubject,
         ai_baseline_body: aiBaselineBody,
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         final_body: finalBody,
       };
     })
-    .filter((sample) => sample.message_id && sample.ai_baseline_body && sample.final_body);
+    .filter((sample) => sample.ai_baseline_body && sample.final_body);
 
   const editedSamples = samples.filter((sample) => sample.edited_by_user);
   if (editedSamples.length === 0) {
