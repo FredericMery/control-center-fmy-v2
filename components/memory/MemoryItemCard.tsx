@@ -64,6 +64,7 @@ export default function MemoryItemCard({
   // Count filled vs total fields
   const filledCount = itemValues.filter(v => v.field_value && v.field_value.trim()).length;
   const totalCount = fields.length;
+  const createdAtLabel = formatCreatedAt(item.created_at);
 
   return (
     <>
@@ -88,36 +89,37 @@ export default function MemoryItemCard({
         </div>
       )}
 
-      <div 
-        className="bg-gray-800 border border-gray-700 rounded-lg hover:border-gray-600 transition-all overflow-hidden"
-      >
+      <div className="overflow-hidden rounded-2xl border border-slate-700/70 bg-gradient-to-br from-slate-900 to-slate-800/90 shadow-lg transition-all hover:border-cyan-500/40 hover:shadow-cyan-500/10">
         {/* Vue réduite : Layout horizontal avec info à gauche et photo à droite */}
         {!expanded && (
-          <div className="p-4 flex gap-4">
+          <div className="p-4 sm:p-5 flex gap-4">
             {/* Partie gauche : Informations */}
             <div className="flex-1 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-              <div className="flex items-center gap-3 mb-2">
-                <h3 className="text-lg font-light text-white hover:text-gray-200 transition-colors">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-medium text-white hover:text-cyan-100 transition-colors">
                   {item.item_title || 'Sans titre'}
                 </h3>
-                <span className="text-xs text-gray-500">
+                <span className="rounded-full border border-slate-600 bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300">
+                  Cree le {createdAtLabel}
+                </span>
+                <span className="rounded-full border border-slate-600 bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300">
                   {filledCount}/{totalCount} remplis
                 </span>
-                <span className="text-xs text-gray-600">▶</span>
+                <span className="text-xs text-slate-500">▶</span>
               </div>
               
               {/* Affichage de toutes les valeurs saisies */}
               {itemValues.length > 0 ? (
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {itemValues.map((val) => {
                     const field = fields.find((f) => f.id === val.field_id);
                     // Skip photo fields
                     if (field && field.field_type === 'url' && isPhotoLikeField(field.field_label)) return null;
                     if (!val.field_value || !field) return null;
                     return (
-                      <div key={val.id} className="text-xs">
-                        <span className="text-gray-500 font-medium">{field.field_label}: </span>
-                        <span className="text-gray-300">
+                      <div key={val.id} className="rounded-lg border border-slate-700/70 bg-slate-900/60 px-2.5 py-2 text-xs">
+                        <span className="font-medium text-slate-400">{field.field_label}: </span>
+                        <span className="text-slate-200">
                           {field.field_type === 'rating' ? (
                             <span className="inline-flex gap-0.5 ml-1">
                               {[1, 2, 3, 4, 5].map((star) => (
@@ -126,7 +128,7 @@ export default function MemoryItemCard({
                                   className={`text-sm ${
                                     parseInt(val.field_value || '0') >= star 
                                       ? 'text-yellow-400' 
-                                      : 'text-gray-600'
+                                      : 'text-slate-600'
                                   }`}
                                 >
                                   ⭐
@@ -142,14 +144,14 @@ export default function MemoryItemCard({
                   })}
                 </div>
               ) : (
-                <p className="text-xs text-gray-500 italic">Aucune information saisie</p>
+                <p className="text-xs text-slate-500 italic">Aucune information saisie</p>
               )}
             </div>
 
             {/* Partie droite : Photo cliquable */}
             {photoValue && (
               <div 
-                className="w-48 h-48 flex-shrink-0 cursor-pointer rounded-lg overflow-hidden border border-gray-700 hover:border-indigo-500 transition-all bg-gray-900"
+                className="h-28 w-28 sm:h-36 sm:w-36 flex-shrink-0 cursor-pointer overflow-hidden rounded-xl border border-slate-700 hover:border-cyan-500 transition-all bg-slate-900"
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowPhotoModal(true);
@@ -158,7 +160,7 @@ export default function MemoryItemCard({
                 <img
                   src={photoValue}
                   alt={item.item_title || 'Photo'}
-                  className="w-full h-full object-contain hover:scale-105 transition-transform"
+                  className="h-full w-full object-cover hover:scale-105 transition-transform"
                 />
               </div>
             )}
@@ -166,15 +168,17 @@ export default function MemoryItemCard({
             {/* Boutons Edit/Delete */}
             <div className="flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
               <button
+                type="button"
                 onClick={() => setEditing(!editing)}
-                className="text-xs px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+                className="rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
                 title={editing ? 'Terminer l\'édition' : 'Modifier'}
               >
                 {editing ? '✓' : '✎'}
               </button>
               <button
+                type="button"
                 onClick={onDelete}
-                className="text-xs px-2 py-1 text-gray-400 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
+                className="rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-300 hover:text-red-300 hover:bg-red-900/30 transition-colors"
                 title="Supprimer"
               >
                 ✕
@@ -185,49 +189,52 @@ export default function MemoryItemCard({
 
         {/* Vue étendue : Header avec titre */}
         {expanded && (
-          <div className="p-4 pb-0">
-            <div className="flex items-center justify-between mb-4">
+          <div className="border-b border-slate-700/70 p-4 pb-3 sm:p-5 sm:pb-4">
+            <div className="mb-1 flex items-center justify-between">
               <div className="flex items-center gap-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-                <h3 className="text-lg font-light text-white hover:text-gray-200 transition-colors">
+                <h3 className="text-xl font-medium text-white hover:text-cyan-100 transition-colors">
                   {item.item_title || 'Sans titre'}
                 </h3>
-                <span className="text-xs text-gray-500">
+                <span className="rounded-full border border-slate-600 bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300">
                   {filledCount}/{totalCount} remplis
                 </span>
-                <span className="text-xs text-gray-600">▼</span>
+                <span className="text-xs text-slate-500">▼</span>
               </div>
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={() => setEditing(!editing)}
-                  className="text-xs px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+                  className="rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
                   title={editing ? 'Terminer l\'édition' : 'Modifier'}
                 >
                   {editing ? '✓' : '✎'}
                 </button>
                 <button
+                  type="button"
                   onClick={onDelete}
-                  className="text-xs px-2 py-1 text-gray-400 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
+                  className="rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-300 hover:text-red-300 hover:bg-red-900/30 transition-colors"
                   title="Supprimer"
                 >
                   ✕
                 </button>
               </div>
             </div>
+            <p className="text-xs text-slate-400">Date de creation : {createdAtLabel}</p>
           </div>
         )}
 
         {/* Expanded View - 2 colonnes */}
         {expanded && (
-          <div className="p-4 pt-0">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="p-4 sm:p-5">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               {/* Colonne gauche: Informations */}
               <div className="lg:col-span-2 space-y-3">
                 {infoFields.length === 0 ? (
-                  <p className="text-sm text-gray-500">Aucun champ défini</p>
+                  <p className="text-sm text-slate-500">Aucun champ défini</p>
                 ) : (
                   infoFields.map((field) => (
-                    <div key={field.id} className="bg-gray-900/50 p-3 rounded-lg">
-                      <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                    <div key={field.id} className="rounded-xl border border-slate-700/70 bg-slate-900/50 p-3">
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">
                         {field.field_label}
                       </label>
                       {editing ? (
@@ -272,7 +279,7 @@ export default function MemoryItemCard({
                                 className={`text-2xl ${
                                   parseInt(values[field.id] || '0') >= star 
                                     ? 'text-yellow-400' 
-                                    : 'text-gray-600'
+                                    : 'text-slate-600'
                                 } hover:text-yellow-300 transition-colors`}
                               >
                                 ⭐
@@ -294,7 +301,7 @@ export default function MemoryItemCard({
                           />
                         )
                       ) : (
-                        <div className="text-sm text-white">
+                        <div className="rounded-lg bg-slate-950/50 px-3 py-2 text-sm text-white">
                           {values[field.id] ? (
                             field.field_type === 'rating' ? (
                               <div className="flex gap-1">
@@ -304,7 +311,7 @@ export default function MemoryItemCard({
                                     className={`text-xl ${
                                       parseInt(values[field.id] || '0') >= star 
                                         ? 'text-yellow-400' 
-                                        : 'text-gray-600'
+                                        : 'text-slate-600'
                                     }`}
                                   >
                                     ⭐
@@ -316,7 +323,7 @@ export default function MemoryItemCard({
                                 href={values[field.id] || ''}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-indigo-400 hover:text-indigo-300 underline"
+                                className="text-cyan-300 hover:text-cyan-200 underline"
                               >
                                 {values[field.id]}
                               </a>
@@ -324,7 +331,7 @@ export default function MemoryItemCard({
                               values[field.id]
                             )
                           ) : (
-                            <span className="text-gray-600 italic">—</span>
+                            <span className="text-slate-500 italic">—</span>
                           )}
                         </div>
                       )}
@@ -336,18 +343,18 @@ export default function MemoryItemCard({
               {/* Colonne droite: Photo */}
               {photoValue && (
                 <div className="lg:col-span-1">
-                  <div className="sticky top-4">
-                    <label className="block text-xs font-medium text-gray-400 mb-2">
+                  <div className="sticky top-4 rounded-xl border border-slate-700/70 bg-slate-900/40 p-3">
+                    <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
                       Photo
                     </label>
                     <div 
-                      className="relative group cursor-pointer rounded-lg overflow-hidden border border-gray-700 hover:border-indigo-500 transition-all"
+                      className="relative group cursor-pointer overflow-hidden rounded-lg border border-slate-700 hover:border-cyan-500 transition-all"
                       onClick={() => setShowPhotoModal(true)}
                     >
                       <img
                         src={photoValue}
                         alt={item.item_title || 'Photo'}
-                        className="w-full h-64 object-cover group-hover:scale-105 transition-transform"
+                        className="h-64 w-full object-cover group-hover:scale-105 transition-transform"
                       />
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center">
                         <span className="text-white opacity-0 group-hover:opacity-100 text-sm font-medium">
@@ -364,4 +371,15 @@ export default function MemoryItemCard({
       </div>
     </>
   );
+}
+
+function formatCreatedAt(value: string | null): string {
+  if (!value) return 'date inconnue';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'date inconnue';
+  return new Intl.DateTimeFormat('fr-FR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
 }
