@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 import type { EmailMessage, EmailReplyDraft } from '@/types/emailAssistant';
@@ -67,6 +67,9 @@ export default function EmailAssistantPage() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; message: string } | null>(null);
+  const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
+  const swipeStartRef = useRef<{ id: string; x: number } | null>(null);
+  const swipeMovedRef = useRef<Record<string, boolean>>({});
 
   const showOk = (msg: string) => {
     setFeedback({ type: 'ok', message: msg });
@@ -454,11 +457,10 @@ export default function EmailAssistantPage() {
     }
   };
 
-  const removeMessage = async () => {
-    if (!selected) return;
+  const removeMessageById = async (messageId: string) => {
     setBusy(true);
     try {
-      const res = await fetch(`/api/email/messages/${selected.id}`, {
+      const res = await fetch(`/api/email/messages/${messageId}`, {
         method: 'DELETE',
         headers: await getAuthHeaders(false),
       });
@@ -467,11 +469,53 @@ export default function EmailAssistantPage() {
         showErr(err.error || `Erreur ${res.status} lors de la suppression`);
         return;
       }
+
+      setItems((prev) => prev.filter((entry) => entry.id !== messageId));
+      setSwipeOffsets((prev) => {
+        const next = { ...prev };
+        delete next[messageId];
+        return next;
+      });
+      if (selectedId === messageId) {
+        setMessageModalOpen(false);
+        setSelectedId(null);
+      }
+
       showOk('Email supprime.');
-      await refreshAll();
+      await loadStats();
     } finally {
       setBusy(false);
     }
+  };
+
+  const removeMessage = async () => {
+    if (!selected) return;
+    await removeMessageById(selected.id);
+  };
+
+  const onSwipeStart = (id: string, clientX: number) => {
+    swipeStartRef.current = { id, x: clientX };
+    swipeMovedRef.current[id] = false;
+  };
+
+  const onSwipeMove = (id: string, clientX: number) => {
+    if (!swipeStartRef.current || swipeStartRef.current.id !== id) return;
+    const delta = clientX - swipeStartRef.current.x;
+    const next = Math.min(0, Math.max(-120, delta));
+    if (Math.abs(next) > 8) swipeMovedRef.current[id] = true;
+    setSwipeOffsets((prev) => ({ ...prev, [id]: next }));
+  };
+
+  const onSwipeEnd = async (id: string) => {
+    const offset = swipeOffsets[id] || 0;
+    swipeStartRef.current = null;
+
+    if (offset <= -88) {
+      await removeMessageById(id);
+      return;
+    }
+
+    setSwipeOffsets((prev) => ({ ...prev, [id]: 0 }));
   };
 
   const formatDate = (value: string | null) => {
@@ -604,28 +648,63 @@ export default function EmailAssistantPage() {
             )}
             {!loading && items.map((item) => {
               const isSelected = selectedId === item.id;
+              const offset = swipeOffsets[item.id] || 0;
               return (
-                <button
-                  key={item.id}
-                  onClick={() => openMessageModal(item)}
-                  className={`w-full rounded-xl border p-3 text-left transition ${
-                    isSelected
-                      ? 'border-indigo-300/40 bg-indigo-500/10'
-                      : 'border-white/10 bg-slate-950/35 hover:border-white/20'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-semibold text-white">{item.subject || '(sans objet)'}</p>
-                    <span className="rounded-full border border-white/10 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-300">
-                      {actionLabel[item.ai_action] || item.ai_action}
-                    </span>
+                <div key={item.id} className="relative overflow-hidden rounded-xl border border-white/10 bg-slate-950/35">
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex w-24 items-center justify-center bg-red-500/20 text-[11px] font-semibold uppercase tracking-wide text-red-200">
+                    Supprimer
                   </div>
-                  <p className="mt-1 truncate text-xs text-slate-400">{item.sender_name || item.sender_email || 'expediteur inconnu'}</p>
-                  <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
-                    <span>{formatDate(item.received_at)}</span>
-                    <span>{item.response_status}</span>
-                  </div>
-                </button>
+                  <button
+                    onTouchStart={(event) => onSwipeStart(item.id, event.touches[0].clientX)}
+                    onTouchMove={(event) => onSwipeMove(item.id, event.touches[0].clientX)}
+                    onTouchEnd={() => onSwipeEnd(item.id)}
+                    onMouseDown={(event) => onSwipeStart(item.id, event.clientX)}
+                    onMouseMove={(event) => {
+                      if (!swipeStartRef.current || swipeStartRef.current.id !== item.id) return;
+                      onSwipeMove(item.id, event.clientX);
+                    }}
+                    onMouseUp={() => onSwipeEnd(item.id)}
+                    onMouseLeave={() => {
+                      if (!swipeStartRef.current || swipeStartRef.current.id !== item.id) return;
+                      onSwipeEnd(item.id);
+                    }}
+                    onClick={() => {
+                      if (swipeMovedRef.current[item.id]) {
+                        swipeMovedRef.current[item.id] = false;
+                        return;
+                      }
+                      openMessageModal(item);
+                    }}
+                    className={`relative w-full rounded-xl border p-3 text-left transition ${
+                      isSelected
+                        ? 'border-indigo-300/40 bg-indigo-500/10'
+                        : 'border-white/10 bg-slate-950/35 hover:border-white/20'
+                    }`}
+                    style={{ transform: `translateX(${offset}px)` }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-sm font-semibold text-white">{item.subject || '(sans objet)'}</p>
+                      <span className="rounded-full border border-white/10 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-300">
+                        {actionLabel[item.ai_action] || item.ai_action}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-slate-400">{item.sender_name || item.sender_email || 'expediteur inconnu'}</p>
+                    <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+                      <span>{formatDate(item.received_at)}</span>
+                      <span>{item.response_status}</span>
+                    </div>
+                  </button>
+                  {offset <= -88 && (
+                    <button
+                      type="button"
+                      onClick={() => removeMessageById(item.id)}
+                      className="absolute inset-y-0 right-0 w-24 text-[11px] font-semibold uppercase tracking-wide text-red-200"
+                    >
+                      Supprimer
+                    </button>
+                  )}
+                  <div className="px-2 pb-1 text-[10px] text-slate-500">Glisse a gauche pour supprimer</div>
+                </div>
               );
             })}
           </div>
