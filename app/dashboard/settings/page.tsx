@@ -57,6 +57,8 @@ type MemoryActionsSettingsResponse = {
   catalog: Record<string, { id: string; label: string; description: string }>;
 };
 
+type EmailReplyScope = 'to_only' | 'all' | 'none';
+
 export default function SettingsPage() {
   const { t, language, setLanguage } = useI18n();
   const user = useAuthStore((s) => s.user);
@@ -83,6 +85,12 @@ export default function SettingsPage() {
   const [assistantName, setAssistantName] = useState('Assistant');
   const [assistantNameDraft, setAssistantNameDraft] = useState('Assistant');
   const [assistantNameStatus, setAssistantNameStatus] = useState<string | null>(null);
+  const [emailReplyScope, setEmailReplyScope] = useState<EmailReplyScope>('to_only');
+  const [emailGlobalInstructionsDraft, setEmailGlobalInstructionsDraft] = useState('');
+  const [emailDoRulesDraft, setEmailDoRulesDraft] = useState('');
+  const [emailDontRulesDraft, setEmailDontRulesDraft] = useState('');
+  const [emailSignatureDraft, setEmailSignatureDraft] = useState('');
+  const [emailAiRulesStatus, setEmailAiRulesStatus] = useState<string | null>(null);
   const [professionalEmailDraft, setProfessionalEmailDraft] = useState('');
   const [professionalEmailStatus, setProfessionalEmailStatus] = useState<string | null>(null);
 
@@ -215,7 +223,7 @@ export default function SettingsPage() {
     const loadAssistantSettings = async () => {
       const { data, error } = await supabase
         .from('user_ai_settings')
-        .select('assistant_name')
+        .select('assistant_name,email_reply_scope,email_global_instructions,email_do_rules,email_dont_rules,email_signature')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -227,6 +235,14 @@ export default function SettingsPage() {
       const name = String(data?.assistant_name || 'Assistant').trim();
       setAssistantName(name || 'Assistant');
       setAssistantNameDraft(name || 'Assistant');
+
+      const scopeRaw = String(data?.email_reply_scope || 'to_only');
+      const scope: EmailReplyScope = scopeRaw === 'all' || scopeRaw === 'none' ? scopeRaw : 'to_only';
+      setEmailReplyScope(scope);
+      setEmailGlobalInstructionsDraft(String(data?.email_global_instructions || ''));
+      setEmailDoRulesDraft(Array.isArray(data?.email_do_rules) ? data.email_do_rules.join('\n') : '');
+      setEmailDontRulesDraft(Array.isArray(data?.email_dont_rules) ? data.email_dont_rules.join('\n') : '');
+      setEmailSignatureDraft(String(data?.email_signature || ''));
     };
 
     loadAssistantSettings();
@@ -507,6 +523,47 @@ export default function SettingsPage() {
     setAssistantNameStatus('Nom IA sauvegarde');
   };
 
+  const saveEmailAiRules = async () => {
+    if (!user) return;
+
+    setEmailAiRulesStatus(null);
+
+    const doRules = emailDoRulesDraft
+      .split('\n')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .slice(0, 30)
+      .map((entry) => entry.slice(0, 200));
+
+    const dontRules = emailDontRulesDraft
+      .split('\n')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .slice(0, 30)
+      .map((entry) => entry.slice(0, 200));
+
+    const dedupe = (values: string[]) => Array.from(new Map(values.map((value) => [value.toLowerCase(), value])).values());
+
+    const { error } = await supabase
+      .from('user_ai_settings')
+      .upsert({
+        user_id: user.id,
+        email_reply_scope: emailReplyScope,
+        email_global_instructions: emailGlobalInstructionsDraft.trim().slice(0, 5000),
+        email_do_rules: dedupe(doRules),
+        email_dont_rules: dedupe(dontRules),
+        email_signature: emailSignatureDraft.trim().slice(0, 1000),
+        updated_at: new Date().toISOString(),
+      });
+
+    if (error) {
+      setEmailAiRulesStatus('Erreur sauvegarde regles IA email');
+      return;
+    }
+
+    setEmailAiRulesStatus('Regles IA email sauvegardees');
+  };
+
   const saveProfessionalEmail = async () => {
     if (!user) return;
 
@@ -687,6 +744,87 @@ export default function SettingsPage() {
             {t('settings.myAi.currentName')}: <span className="font-semibold text-cyan-100">{assistantName}</span>
           </p>
           {assistantNameStatus && <p className="mt-1 text-xs text-emerald-300">{assistantNameStatus}</p>}
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-slate-950/35 p-3 space-y-3">
+          <div>
+            <label className="mb-2 block text-xs uppercase tracking-wide text-slate-400">
+              Reponses IA automatiques
+            </label>
+            <select
+              value={emailReplyScope}
+              onChange={(event) => setEmailReplyScope(event.target.value as EmailReplyScope)}
+              className="min-h-11 w-full rounded-xl border border-white/10 bg-slate-900 px-3 text-sm text-white outline-none focus:border-cyan-300"
+            >
+              <option value="to_only">Uniquement si je suis en A</option>
+              <option value="all">Si je suis en A ou CC</option>
+              <option value="none">Desactive (jamais de brouillon auto)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-xs uppercase tracking-wide text-slate-400">
+              Instruction globale
+            </label>
+            <textarea
+              value={emailGlobalInstructionsDraft}
+              onChange={(event) => setEmailGlobalInstructionsDraft(event.target.value)}
+              rows={3}
+              placeholder="Ex: Priorise les actions concretes, style court, ton professionnel"
+              className="w-full resize-y rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-xs uppercase tracking-wide text-slate-400">
+                Regles a appliquer (1/ligne)
+              </label>
+              <textarea
+                value={emailDoRulesDraft}
+                onChange={(event) => setEmailDoRulesDraft(event.target.value)}
+                rows={4}
+                placeholder="Ex: Toujours proposer une date\nEx: Commencer par Bonjour"
+                className="w-full resize-y rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-xs uppercase tracking-wide text-slate-400">
+                Regles a eviter (1/ligne)
+              </label>
+              <textarea
+                value={emailDontRulesDraft}
+                onChange={(event) => setEmailDontRulesDraft(event.target.value)}
+                rows={4}
+                placeholder="Ex: Eviter les longs paragraphes\nEx: Pas de formulation trop informelle"
+                className="w-full resize-y rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-xs uppercase tracking-wide text-slate-400">
+              Signature email
+            </label>
+            <input
+              value={emailSignatureDraft}
+              onChange={(event) => setEmailSignatureDraft(event.target.value)}
+              placeholder="Ex: Bien cordialement, Frederic"
+              className="min-h-11 w-full rounded-xl border border-white/10 bg-slate-900 px-3 text-sm text-white outline-none focus:border-cyan-300"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={saveEmailAiRules}
+              className="min-h-11 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950"
+            >
+              Sauvegarder regles IA email
+            </button>
+            {emailAiRulesStatus && <p className="text-xs text-emerald-300">{emailAiRulesStatus}</p>}
+          </div>
         </div>
       </div>
 
