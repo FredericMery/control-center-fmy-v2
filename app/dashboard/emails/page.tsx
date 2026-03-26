@@ -633,15 +633,16 @@ export default function EmailAssistantPage() {
       </section>
 
       <section className="grid grid-cols-1 gap-3">
-        <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-2">
-          <div className="mb-2 px-2 text-xs text-slate-400">
+        <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-slate-900/90 to-slate-950/90 p-2.5">
+          <div className="mb-2 flex items-center justify-between px-2 text-xs text-slate-400">
             {archiveView === 'archived'
               ? `Messages archives (${items.length})`
               : archiveView === 'all'
                 ? `Tous les messages (${items.length})`
                 : `Inbox IA (${items.length})`}
+            <span className="text-[10px] text-slate-500">Glisse a gauche pour supprimer</span>
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {loading && <p className="rounded-xl border border-white/10 bg-slate-950/35 p-3 text-xs text-slate-400">Chargement...</p>}
             {!loading && items.length === 0 && (
               <p className="rounded-xl border border-white/10 bg-slate-950/35 p-3 text-xs text-slate-400">Aucun email pour ces filtres.</p>
@@ -649,9 +650,13 @@ export default function EmailAssistantPage() {
             {!loading && items.map((item) => {
               const isSelected = selectedId === item.id;
               const offset = swipeOffsets[item.id] || 0;
+              const revealOpacity = clamp(Math.abs(offset) / 92, 0, 1);
               return (
-                <div key={item.id} className="relative overflow-hidden rounded-xl border border-white/10 bg-slate-950/35">
-                  <div className="pointer-events-none absolute inset-y-0 right-0 flex w-24 items-center justify-center bg-red-500/20 text-[11px] font-semibold uppercase tracking-wide text-red-200">
+                <div key={item.id} className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950">
+                  <div
+                    className="pointer-events-none absolute inset-y-0 right-0 flex w-24 items-center justify-center bg-gradient-to-l from-red-500/40 to-red-500/20 text-[11px] font-semibold uppercase tracking-wide text-red-100 transition-opacity"
+                    style={{ opacity: revealOpacity }}
+                  >
                     Supprimer
                   </div>
                   <button
@@ -675,23 +680,23 @@ export default function EmailAssistantPage() {
                       }
                       openMessageModal(item);
                     }}
-                    className={`relative w-full rounded-xl border p-3 text-left transition ${
+                    className={`relative w-full rounded-2xl border p-3 text-left transition ${
                       isSelected
-                        ? 'border-indigo-300/40 bg-indigo-500/10'
-                        : 'border-white/10 bg-slate-950/35 hover:border-white/20'
+                        ? 'border-indigo-300/40 bg-indigo-500/15'
+                        : 'border-white/10 bg-slate-950 hover:border-white/20'
                     }`}
                     style={{ transform: `translateX(${offset}px)` }}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-semibold text-white">{item.subject || '(sans objet)'}</p>
-                      <span className="rounded-full border border-white/10 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-300">
+                      <p className="truncate text-[15px] font-semibold text-white">{item.subject || '(sans objet)'}</p>
+                      <span className="rounded-full border border-white/15 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-200">
                         {actionLabel[item.ai_action] || item.ai_action}
                       </span>
                     </div>
-                    <p className="mt-1 truncate text-xs text-slate-400">{item.sender_name || item.sender_email || 'expediteur inconnu'}</p>
+                    <p className="mt-1 truncate text-sm text-slate-300">{item.sender_name || item.sender_email || 'expediteur inconnu'}</p>
                     <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
                       <span>{formatDate(item.received_at)}</span>
-                      <span>{item.response_status}</span>
+                      <span className="rounded-full border border-white/10 px-1.5 py-0.5">{item.response_status}</span>
                     </div>
                   </button>
                   {offset <= -88 && (
@@ -703,7 +708,6 @@ export default function EmailAssistantPage() {
                       Supprimer
                     </button>
                   )}
-                  <div className="px-2 pb-1 text-[10px] text-slate-500">Glisse a gauche pour supprimer</div>
                 </div>
               );
             })}
@@ -1020,4 +1024,8 @@ function StatCard(props: { label: string; value: string; color: string; onClick?
       <p className={`mt-1 text-xl font-semibold ${props.color}`}>{props.value}</p>
     </article>
   );
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
