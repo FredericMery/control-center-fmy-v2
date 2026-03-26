@@ -20,7 +20,10 @@ type TransferPreview = {
   task_title: string;
   task_type: "pro" | "perso";
   task_deadline: string | null;
+  recipient_suggestions?: Array<{ email: string; name: string; source: "contacts" | "expense_recipients" }>;
 };
+
+type TransferStepState = "idle" | "generating" | "ready" | "sending" | "success";
 
 interface Props {
   item: MailItem;
@@ -39,6 +42,10 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
   const [sendingTransfer, setSendingTransfer] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
   const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
+  const [transferStepState, setTransferStepState] = useState<TransferStepState>("idle");
+  const [recipientSuggestions, setRecipientSuggestions] = useState<
+    Array<{ email: string; name: string; source: "contacts" | "expense_recipients" }>
+  >([]);
 
   const [recipientEmail, setRecipientEmail] = useState("");
   const [recipientName, setRecipientName] = useState("");
@@ -103,6 +110,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
     setShowTransferModal(true);
     setTransferError(null);
     setTransferSuccess(null);
+    setTransferStepState("generating");
     setLoadingTransferPreview(true);
     try {
       const res = await fetch(`/api/mail/${item.id}/transfer-preview`, {
@@ -122,14 +130,18 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
       setTaskTitle(preview?.task_title || "");
       setTaskType(preview?.task_type === "perso" ? "perso" : "pro");
       setTaskDeadline(preview?.task_deadline || "");
+      setRecipientSuggestions(Array.isArray(preview?.recipient_suggestions) ? preview.recipient_suggestions : []);
+      setTransferStepState("ready");
     } catch (error: unknown) {
       setTransferError(error instanceof Error ? error.message : "Erreur de previsualisation");
+      setTransferStepState("idle");
     } finally {
       setLoadingTransferPreview(false);
     }
   };
 
   const handleSendTransfer = async () => {
+    setTransferStepState("sending");
     setSendingTransfer(true);
     setTransferError(null);
     setTransferSuccess(null);
@@ -157,13 +169,47 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
         onStatusChange(item.id, "en_cours");
       }
       setTransferSuccess("Courrier transfere et tache creee avec succes.");
+      setTransferStepState("success");
       setTimeout(() => setShowTransferModal(false), 1100);
     } catch (error: unknown) {
       setTransferError(error instanceof Error ? error.message : "Erreur de transfert");
+      setTransferStepState("ready");
     } finally {
       setSendingTransfer(false);
     }
   };
+
+  const applySuggestedRecipient = (suggestion: { email: string; name: string }) => {
+    setRecipientEmail(suggestion.email);
+    if (suggestion.name) setRecipientName(suggestion.name);
+  };
+
+  const timelineSteps = [
+    {
+      id: "scan",
+      label: "Analyse IA",
+      done: transferStepState !== "idle",
+      active: transferStepState === "generating",
+    },
+    {
+      id: "recipient",
+      label: "Destinataire",
+      done: transferStepState === "ready" || transferStepState === "sending" || transferStepState === "success",
+      active: transferStepState === "ready",
+    },
+    {
+      id: "send",
+      label: "Envoi + tache",
+      done: transferStepState === "success",
+      active: transferStepState === "sending",
+    },
+    {
+      id: "done",
+      label: "Suivi cree",
+      done: transferStepState === "success",
+      active: transferStepState === "success",
+    },
+  ];
 
   const formatDate = (d: string | null) => {
     if (!d) return "—";
@@ -405,7 +451,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
 
       {showTransferModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl border border-cyan-300/20 bg-slate-900/95 shadow-2xl">
+          <div className="w-full max-w-2xl rounded-2xl border border-cyan-300/20 bg-[radial-gradient(circle_at_10%_0%,rgba(6,182,212,0.16),transparent_40%),radial-gradient(circle_at_90%_10%,rgba(16,185,129,0.14),transparent_45%),rgba(15,23,42,0.95)] shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-300/70">Courrier workflow</p>
@@ -420,12 +466,56 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
             </div>
 
             <div className="space-y-3 px-4 py-4">
+              <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
+                <div className="grid grid-cols-4 gap-2">
+                  {timelineSteps.map((step) => (
+                    <div key={step.id} className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold transition-all ${
+                          step.done
+                            ? "bg-emerald-500/25 text-emerald-200"
+                            : step.active
+                            ? "bg-cyan-500/25 text-cyan-100 animate-pulse"
+                            : "bg-slate-700/50 text-slate-400"
+                        }`}
+                      >
+                        {step.done ? "✓" : "•"}
+                      </span>
+                      <span className={`text-[11px] ${step.active ? "text-cyan-200" : step.done ? "text-emerald-200" : "text-slate-500"}`}>
+                        {step.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {loadingTransferPreview ? (
                 <p className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-200">
                   Preparation IA du message en cours...
                 </p>
               ) : (
                 <>
+                  {recipientSuggestions.length > 0 && (
+                    <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-3">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-cyan-200/80">
+                        Suggestions destinataires (contacts internes)
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {recipientSuggestions.slice(0, 6).map((suggestion) => (
+                          <button
+                            key={`${suggestion.email}-${suggestion.source}`}
+                            type="button"
+                            onClick={() => applySuggestedRecipient(suggestion)}
+                            className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-xs text-cyan-100 hover:bg-cyan-300/20"
+                          >
+                            {suggestion.name ? `${suggestion.name} · ` : ""}
+                            {suggestion.email}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <label className="mb-1 block text-xs text-slate-400">Destinataire email</label>
@@ -504,7 +594,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
                 <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{transferError}</p>
               )}
               {transferSuccess && (
-                <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">{transferSuccess}</p>
+                <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200 animate-pulse">{transferSuccess}</p>
               )}
             </div>
 

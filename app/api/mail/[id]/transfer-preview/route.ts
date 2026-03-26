@@ -12,6 +12,7 @@ type TransferPreview = {
   task_title: string;
   task_type: MailContext;
   task_deadline: string | null;
+  recipient_suggestions?: Array<{ email: string; name: string; source: 'contacts' | 'expense_recipients' }>;
 };
 
 const supabase = createClient(
@@ -43,20 +44,46 @@ export async function POST(
 
   const senderEmail = normalizeEmail(mail.sender_email);
   const senderName = normalizeText(mail.sender_name);
+  const senderDomain = extractEmailDomain(senderEmail);
 
-  const { data: historyRows } = await supabase
-    .from('email_messages')
-    .select('subject,response_status,received_at,sender_email')
-    .eq('user_id', userId)
-    .not('sender_email', 'is', null)
-    .order('received_at', { ascending: false })
-    .limit(30);
+  const [memoryContactsResult, expenseRecipientsResult, historyRowsResult] = await Promise.all([
+    supabase
+      .from('memories')
+      .select('title,content,structured_data,type,created_at')
+      .eq('user_id', userId)
+      .in('type', ['contact', 'business_card'])
+      .order('created_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('expense_recipients')
+      .select('name,destination,created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(80),
+    supabase
+      .from('email_messages')
+      .select('subject,response_status,received_at,sender_email')
+      .eq('user_id', userId)
+      .not('sender_email', 'is', null)
+      .order('received_at', { ascending: false })
+      .limit(30),
+  ]);
+
+  const historyRows = historyRowsResult.data || [];
+
+  const suggestedRecipients = buildRecipientSuggestions({
+    senderDomain,
+    senderEmail,
+    memoryContacts: memoryContactsResult.data || [],
+    expenseRecipients: expenseRecipientsResult.data || [],
+  });
 
   const senderHistory = (historyRows || []).filter(
     (row) => normalizeEmail(row.sender_email) === senderEmail
   );
 
   const fallbackRecipient =
+    suggestedRecipients[0]?.email ||
     senderEmail ||
     normalizeEmail((historyRows || []).map((row) => row.sender_email).find(Boolean)) ||
     '';
@@ -73,6 +100,7 @@ export async function POST(
     task_title: buildFallbackTaskTitle(mail.subject, mail.action_note),
     task_type: mail.context === 'perso' ? 'perso' : 'pro',
     task_deadline: normalizeDate(mail.due_date),
+    recipient_suggestions: suggestedRecipients,
   };
 
   if (!fallbackRecipient) {
@@ -151,6 +179,7 @@ export async function POST(
       task_title: normalizeText(parsed.task_title) || fallback.task_title,
       task_type: parsed.task_type === 'perso' ? 'perso' : fallback.task_type,
       task_deadline: normalizeDate(parsed.task_deadline) || fallback.task_deadline,
+      recipient_suggestions: fallback.recipient_suggestions,
     };
 
     return NextResponse.json({ preview });
@@ -166,6 +195,114 @@ function normalizeText(value: unknown): string {
 function normalizeEmail(value: unknown): string {
   const email = normalizeText(value).toLowerCase();
   return email.includes('@') ? email : '';
+}
+
+function extractEmailDomain(email: string): string {
+  const at = email.indexOf('@');
+  if (at <= 0) return '';
+  return email.slice(at + 1).toLowerCase();
+}
+
+function extractEmailsFromText(value: unknown): string[] {
+  const text = String(value || '');
+  if (!text) return [];
+  const matches = text.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || [];
+  return matches.map((entry) => normalizeEmail(entry)).filter(Boolean);
+}
+
+function toTemplateFieldKey(label: string): string {
+  return String(label || '')
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, '_');
+}
+
+function firstNonEmpty(values: unknown[]): string {
+  for (const value of values) {
+    const normalized = normalizeText(value);
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
+function buildRecipientSuggestions(args: {
+  senderDomain: string;
+  senderEmail: string;
+  memoryContacts: Array<Record<string, unknown>>;
+  expenseRecipients: Array<Record<string, unknown>>;
+}): Array<{ email: string; name: string; source: 'contacts' | 'expense_recipients' }> {
+  const byEmail = new Map<string, { email: string; name: string; source: 'contacts' | 'expense_recipients'; score: number }>();
+
+  for (const row of args.memoryContacts) {
+    const structured =
+      row.structured_data && typeof row.structured_data === 'object'
+        ? (row.structured_data as Record<string, unknown>)
+        : {};
+    const nested =
+      structured.template_fields && typeof structured.template_fields === 'object'
+        ? (structured.template_fields as Record<string, unknown>)
+        : {};
+
+    const emailCandidates = [
+      nested[toTemplateFieldKey('Email')],
+      structured.email,
+      row.content,
+      row.title,
+    ];
+
+    const extracted = emailCandidates.flatMap((value) => extractEmailsFromText(value));
+    const name = firstNonEmpty([
+      nested[toTemplateFieldKey('Nom')],
+      nested[toTemplateFieldKey('Name')],
+      structured.name,
+      row.title,
+    ]);
+
+    for (const email of extracted) {
+      const current = byEmail.get(email);
+      const emailDomain = extractEmailDomain(email);
+      const domainBonus = args.senderDomain && emailDomain === args.senderDomain ? 30 : 0;
+      const senderBonus = args.senderEmail && email === args.senderEmail ? 20 : 0;
+      const score = 20 + domainBonus + senderBonus;
+      if (!current || score > current.score) {
+        byEmail.set(email, {
+          email,
+          name,
+          source: 'contacts',
+          score,
+        });
+      }
+    }
+  }
+
+  for (const row of args.expenseRecipients) {
+    const email = normalizeEmail(row.destination);
+    if (!email) continue;
+
+    const existing = byEmail.get(email);
+    const baseName = normalizeText(row.name);
+    const emailDomain = extractEmailDomain(email);
+    const domainBonus = args.senderDomain && emailDomain === args.senderDomain ? 30 : 0;
+    const senderBonus = args.senderEmail && email === args.senderEmail ? 20 : 0;
+    const score = 12 + domainBonus + senderBonus;
+
+    if (!existing || score > existing.score) {
+      byEmail.set(email, {
+        email,
+        name: baseName || existing?.name || '',
+        source: 'expense_recipients',
+        score,
+      });
+    }
+  }
+
+  return Array.from(byEmail.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .map(({ score: _score, ...rest }) => rest);
 }
 
 function normalizeDate(value: unknown): string | null {
