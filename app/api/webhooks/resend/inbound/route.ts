@@ -1301,21 +1301,34 @@ async function processInboundEmailAssistant(args: {
     const bodyText = truncate(normalizeText(args.plainText || ''), 30000);
     const bodyHtml = truncate(String(args.htmlText || ''), 60000);
     const receivedAt = parseInputDate(args.eventData['date'] || args.eventData['created_at'])?.toISOString() || new Date().toISOString();
-    const toEmails = extractEmailList(args.eventData['to']);
-    const ccEmails = extractEmailList(args.eventData['cc']);
+    const rawToEmails = extractEmailList(args.eventData['to']);
+    const rawCcEmails = extractEmailList(args.eventData['cc']);
     const bccEmails = extractEmailList(args.eventData['bcc']);
     const [userEmails, emailAiSettings] = await Promise.all([
       loadUserRecipientEmails(args.userId),
       loadUserEmailAiSettings(args.userId),
     ]);
 
-    const recipientRole = resolveRecipientRole({
+    // Les emails arrivant via l'assistant sont forwardés/BCC'd vers l'adresse de routage
+    // (traitement@...), donc to_emails ne contiendra jamais l'email réel de l'utilisateur.
+    // On résout d'abord le rôle sur les champs bruts, puis si aucun match n'est trouvé on
+    // considère que l'email était adressé à l'utilisateur (c'est le principe du forwarding).
+    const rawRecipientRole = resolveRecipientRole({
       userEmails,
-      toEmails,
-      ccEmails,
+      toEmails: rawToEmails,
+      ccEmails: rawCcEmails,
     });
 
+    const recipientRole: 'to' | 'cc' | 'none' = rawRecipientRole !== 'none' ? rawRecipientRole : 'to';
+
+    // Enrichit to_emails avec l'email principal de l'utilisateur pour que les filtres A/CC
+    // du UI trouvent une correspondance lors de la lecture en base.
     const primaryRecipientEmail = userEmails[0] || '';
+    const toEmails =
+      rawRecipientRole === 'none' && primaryRecipientEmail
+        ? Array.from(new Set([...rawToEmails, primaryRecipientEmail]))
+        : rawToEmails;
+    const ccEmails = rawCcEmails;
 
     const allowReplyByScope = canPrepareReply({
       replyScope: emailAiSettings.replyScope,

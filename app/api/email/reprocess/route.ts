@@ -105,11 +105,13 @@ export async function POST(request: NextRequest) {
       try {
         const toEmails = normalizeEmails(message.to_emails);
         const ccEmails = normalizeEmails(message.cc_emails);
-        const recipientRole = resolveRecipientRole({
+        const rawRecipientRole = resolveRecipientRole({
           userEmails,
           toEmails,
           ccEmails,
         });
+        // Si aucun match (email routé via adresse assistant), on considère 'to'
+        const recipientRole: 'to' | 'cc' | 'none' = rawRecipientRole !== 'none' ? rawRecipientRole : 'to';
 
         const allowReplyByScope = canPrepareReply({
           replyScope: emailAiSettings.replyScope,
@@ -219,6 +221,14 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // Si l'email était routé via l'adresse assistant (to_emails sans email utilisateur),
+        // injecte l'email principal de l'utilisateur pour que les filtres A/CC du UI matchent.
+        const primaryEmail = userEmails[0] || '';
+        const enrichedToEmails =
+          rawRecipientRole === 'none' && primaryEmail && !toEmails.includes(primaryEmail)
+            ? Array.from(new Set([...toEmails, primaryEmail]))
+            : null;
+
         if (!dryRun) {
           const updatePayload: Record<string, unknown> = {
             ai_action: finalAction,
@@ -227,6 +237,10 @@ export async function POST(request: NextRequest) {
             archived,
             ai_status: 'analyzed',
           };
+
+          if (enrichedToEmails) {
+            updatePayload.to_emails = enrichedToEmails;
+          }
 
           if (triage) {
             updatePayload.ai_summary = triage.summary;
