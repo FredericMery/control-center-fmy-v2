@@ -16,6 +16,7 @@ import {
 type ReprocessPayload = {
   since?: string;
   limit?: number;
+  batchSize?: number;
   dryRun?: boolean;
   regenerateDrafts?: boolean;
   mode?: 'full' | 'routing_only';
@@ -52,7 +53,8 @@ export async function POST(request: NextRequest) {
   const dryRun = Boolean(payload.dryRun);
   const regenerateDrafts = payload.regenerateDrafts !== false;
   const mode = payload.mode === 'routing_only' ? 'routing_only' : 'full';
-  const limit = Math.min(Math.max(Number(payload.limit || 500), 1), 2000);
+  const limit = Math.min(Math.max(Number(payload.limit || 500), 1), 10000);
+  const batchSize = Math.min(Math.max(Number(payload.batchSize || 200), 1), 500);
 
   const supabase = getSupabaseAdminClient();
   const [userEmails, emailAiSettings] = await Promise.all([
@@ -60,202 +62,212 @@ export async function POST(request: NextRequest) {
     loadUserEmailAiSettings(userId),
   ]);
 
-  let query = supabase
-    .from('email_messages')
-    .select('id,sender_email,sender_name,subject,body_text,body_html,to_emails,cc_emails,received_at,ai_action,ai_summary,ai_confidence,ai_category,ai_priority,ai_reasoning,ai_tags,response_status')
-    .eq('user_id', userId)
-    .eq('direction', 'inbound')
-    .is('deleted_at', null)
-    .order('received_at', { ascending: false, nullsFirst: false })
-    .limit(limit);
-
-  if (since) {
-    query = query.gte('received_at', since);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  const messages = (data || []) as DbMessage[];
   const globalRules = buildEmailBehaviorInstructions(emailAiSettings);
 
   let processed = 0;
+  let batches = 0;
   let updated = 0;
   let reclassifiedToReply = 0;
   let reclassifiedToClasser = 0;
   let draftsGenerated = 0;
   let errors = 0;
 
-  for (const message of messages) {
-    processed += 1;
+  while (processed < limit) {
+    const remaining = limit - processed;
+    const currentBatchSize = Math.min(batchSize, remaining);
 
-    try {
-      const toEmails = normalizeEmails(message.to_emails);
-      const ccEmails = normalizeEmails(message.cc_emails);
-      const recipientRole = resolveRecipientRole({
-        userEmails,
-        toEmails,
-        ccEmails,
-      });
+    let query = supabase
+      .from('email_messages')
+      .select('id,sender_email,sender_name,subject,body_text,body_html,to_emails,cc_emails,received_at,ai_action,ai_summary,ai_confidence,ai_category,ai_priority,ai_reasoning,ai_tags,response_status')
+      .eq('user_id', userId)
+      .eq('direction', 'inbound')
+      .is('deleted_at', null)
+      .order('received_at', { ascending: false, nullsFirst: false })
+      .range(processed, processed + currentBatchSize - 1);
 
-      const allowReplyByScope = canPrepareReply({
-        replyScope: emailAiSettings.replyScope,
-        recipientRole,
-      });
+    if (since) {
+      query = query.gte('received_at', since);
+    }
 
-      const body = String(message.body_text || message.body_html || '').trim();
-      const receivedAt = String(message.received_at || '').trim() || null;
+    const { data, error } = await query;
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
-      const triage =
-        mode === 'full'
-          ? await analyzeInboundEmailWithAi({
-              userId,
-              subject: String(message.subject || ''),
-              body,
-              senderEmail: String(message.sender_email || ''),
-              to: toEmails,
-              cc: ccEmails,
-              userEmail: userEmails[0] || '',
-              globalRules,
-              receivedAt,
-            })
-          : null;
+    const messages = (data || []) as DbMessage[];
+    if (messages.length === 0) break;
 
-      const currentAction = String(message.ai_action || '').trim();
-      const suggestedAction = triage?.action || (currentAction === 'repondre' ? 'repondre' : 'classer');
-      const finalAction: 'repondre' | 'classer' =
-        allowReplyByScope && suggestedAction === 'repondre' ? 'repondre' : 'classer';
+    batches += 1;
 
-      const previousAction = currentAction === 'repondre' ? 'repondre' : 'classer';
-      if (previousAction !== finalAction) {
-        if (finalAction === 'repondre') reclassifiedToReply += 1;
-        else reclassifiedToClasser += 1;
-      }
+    for (const message of messages) {
+      processed += 1;
 
-      const currentResponseStatus = String(message.response_status || 'none');
-      const isAlreadySent = currentResponseStatus === 'sent';
-
-      let responseStatus = currentResponseStatus;
-      let responseRequired = finalAction === 'repondre' && !isAlreadySent;
-      let archived = finalAction === 'classer';
-
-      if (isAlreadySent) {
-        responseRequired = false;
-        archived = true;
-      }
-
-      if (finalAction === 'classer' && !isAlreadySent) {
-        responseStatus = 'none';
-      }
-
-      if (finalAction === 'repondre' && !isAlreadySent && responseStatus === 'none') {
-        responseStatus = regenerateDrafts ? 'draft_ready' : 'none';
-      }
-
-      if (!dryRun && finalAction === 'repondre' && !isAlreadySent && regenerateDrafts) {
-        const suggestion = await generateReplySuggestionWithAi({
-          userId,
-          senderEmail: String(message.sender_email || ''),
-          senderName: String(message.sender_name || ''),
-          originalSubject: String(message.subject || ''),
-          originalBody: body,
-          summary: triage?.summary || message.ai_summary || '',
-          tone: 'professionnel',
-          globalRules,
-          signature: emailAiSettings.signature,
+      try {
+        const toEmails = normalizeEmails(message.to_emails);
+        const ccEmails = normalizeEmails(message.cc_emails);
+        const recipientRole = resolveRecipientRole({
+          userEmails,
+          toEmails,
+          ccEmails,
         });
 
-        const { data: lastDraft } = await supabase
-          .from('email_reply_drafts')
-          .select('version')
-          .eq('message_id', message.id)
-          .eq('user_id', userId)
-          .order('version', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const allowReplyByScope = canPrepareReply({
+          replyScope: emailAiSettings.replyScope,
+          recipientRole,
+        });
 
-        const nextVersion = Number(lastDraft?.version || 0) + 1;
+        const body = String(message.body_text || message.body_html || '').trim();
+        const receivedAt = String(message.received_at || '').trim() || null;
 
-        await supabase
-          .from('email_reply_drafts')
-          .update({ is_current: false })
-          .eq('message_id', message.id)
-          .eq('user_id', userId)
-          .eq('is_current', true);
+        const triage =
+          mode === 'full'
+            ? await analyzeInboundEmailWithAi({
+                userId,
+                subject: String(message.subject || ''),
+                body,
+                senderEmail: String(message.sender_email || ''),
+                to: toEmails,
+                cc: ccEmails,
+                userEmail: userEmails[0] || '',
+                globalRules,
+                receivedAt,
+              })
+            : null;
 
-        const { error: draftError } = await supabase
-          .from('email_reply_drafts')
-          .insert({
-            message_id: message.id,
-            user_id: userId,
-            version: nextVersion,
-            is_current: true,
+        const currentAction = String(message.ai_action || '').trim();
+        const suggestedAction = triage?.action || (currentAction === 'repondre' ? 'repondre' : 'classer');
+        const finalAction: 'repondre' | 'classer' =
+          allowReplyByScope && suggestedAction === 'repondre' ? 'repondre' : 'classer';
+
+        const previousAction = currentAction === 'repondre' ? 'repondre' : 'classer';
+        if (previousAction !== finalAction) {
+          if (finalAction === 'repondre') reclassifiedToReply += 1;
+          else reclassifiedToClasser += 1;
+        }
+
+        const currentResponseStatus = String(message.response_status || 'none');
+        const isAlreadySent = currentResponseStatus === 'sent';
+
+        let responseStatus = currentResponseStatus;
+        let responseRequired = finalAction === 'repondre' && !isAlreadySent;
+        let archived = finalAction === 'classer';
+
+        if (isAlreadySent) {
+          responseRequired = false;
+          archived = true;
+        }
+
+        if (finalAction === 'classer' && !isAlreadySent) {
+          responseStatus = 'none';
+        }
+
+        if (finalAction === 'repondre' && !isAlreadySent && responseStatus === 'none') {
+          responseStatus = regenerateDrafts ? 'draft_ready' : 'none';
+        }
+
+        if (!dryRun && finalAction === 'repondre' && !isAlreadySent && regenerateDrafts) {
+          const suggestion = await generateReplySuggestionWithAi({
+            userId,
+            senderEmail: String(message.sender_email || ''),
+            senderName: String(message.sender_name || ''),
+            originalSubject: String(message.subject || ''),
+            originalBody: body,
+            summary: triage?.summary || message.ai_summary || '',
             tone: 'professionnel',
-            language: 'fr',
-            proposed_subject: suggestion.subject,
-            proposed_body: suggestion.body,
-            ai_model: 'gpt-4.1-mini',
-            ai_confidence: suggestion.confidence,
-            edited_by_user: false,
+            globalRules,
+            signature: emailAiSettings.signature,
           });
 
-        if (!draftError) {
-          draftsGenerated += 1;
-          responseStatus = 'draft_ready';
-          responseRequired = true;
+          const { data: lastDraft } = await supabase
+            .from('email_reply_drafts')
+            .select('version')
+            .eq('message_id', message.id)
+            .eq('user_id', userId)
+            .order('version', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const nextVersion = Number(lastDraft?.version || 0) + 1;
+
+          await supabase
+            .from('email_reply_drafts')
+            .update({ is_current: false })
+            .eq('message_id', message.id)
+            .eq('user_id', userId)
+            .eq('is_current', true);
+
+          const { error: draftError } = await supabase
+            .from('email_reply_drafts')
+            .insert({
+              message_id: message.id,
+              user_id: userId,
+              version: nextVersion,
+              is_current: true,
+              tone: 'professionnel',
+              language: 'fr',
+              proposed_subject: suggestion.subject,
+              proposed_body: suggestion.body,
+              ai_model: 'gpt-4.1-mini',
+              ai_confidence: suggestion.confidence,
+              edited_by_user: false,
+            });
+
+          if (!draftError) {
+            draftsGenerated += 1;
+            responseStatus = 'draft_ready';
+            responseRequired = true;
+          }
         }
-      }
 
-      if (!dryRun) {
-        const updatePayload: Record<string, unknown> = {
-          ai_action: finalAction,
-          response_required: responseRequired,
-          response_status: responseStatus,
-          archived,
-          ai_status: 'analyzed',
-        };
-
-        if (triage) {
-          updatePayload.ai_summary = triage.summary;
-          updatePayload.ai_confidence = triage.confidence;
-          updatePayload.ai_category = triage.category;
-          updatePayload.ai_priority = triage.priority;
-          updatePayload.ai_tags = triage.tags;
-          updatePayload.ai_reasoning = triage.reasoning;
-        }
-
-        const { error: updateError } = await supabase
-          .from('email_messages')
-          .update(updatePayload)
-          .eq('id', message.id)
-          .eq('user_id', userId);
-
-        if (!updateError) {
-          updated += 1;
-        } else {
-          errors += 1;
-          continue;
-        }
-
-        await supabase.from('email_processing_logs').insert({
-          user_id: userId,
-          message_id: message.id,
-          event_type: 'email_reprocessed',
-          level: 'info',
-          message: `Reprocessing ${mode} termine`,
-          payload: {
-            recipient_role: recipientRole,
-            final_action: finalAction,
+        if (!dryRun) {
+          const updatePayload: Record<string, unknown> = {
+            ai_action: finalAction,
+            response_required: responseRequired,
             response_status: responseStatus,
             archived,
-            dry_run: dryRun,
-          },
-        });
+            ai_status: 'analyzed',
+          };
+
+          if (triage) {
+            updatePayload.ai_summary = triage.summary;
+            updatePayload.ai_confidence = triage.confidence;
+            updatePayload.ai_category = triage.category;
+            updatePayload.ai_priority = triage.priority;
+            updatePayload.ai_tags = triage.tags;
+            updatePayload.ai_reasoning = triage.reasoning;
+          }
+
+          const { error: updateError } = await supabase
+            .from('email_messages')
+            .update(updatePayload)
+            .eq('id', message.id)
+            .eq('user_id', userId);
+
+          if (!updateError) {
+            updated += 1;
+          } else {
+            errors += 1;
+            continue;
+          }
+
+          await supabase.from('email_processing_logs').insert({
+            user_id: userId,
+            message_id: message.id,
+            event_type: 'email_reprocessed',
+            level: 'info',
+            message: `Reprocessing ${mode} termine`,
+            payload: {
+              recipient_role: recipientRole,
+              final_action: finalAction,
+              response_status: responseStatus,
+              archived,
+              dry_run: dryRun,
+            },
+          });
+        }
+      } catch {
+        errors += 1;
       }
-    } catch {
-      errors += 1;
     }
   }
 
@@ -264,6 +276,8 @@ export async function POST(request: NextRequest) {
     dryRun,
     mode,
     limit,
+    batch_size: batchSize,
+    batches,
     since: since || null,
     processed,
     updated,
