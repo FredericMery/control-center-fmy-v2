@@ -15,7 +15,6 @@ import MailFilters from "@/components/mail/MailFilters";
 import MailForm from "@/components/mail/MailForm";
 import MailDetail from "@/components/mail/MailDetail";
 import MailStatsPanel from "@/components/mail/MailStatsPanel";
-import ComposeModal from "@/components/mail/ComposeModal";
 
 type StatsData = {
   stats: {
@@ -65,7 +64,6 @@ export default function CourrierPage() {
   const [stats, setStats]                 = useState<StatsData | null>(null);
   const [statsLoading, setStatsLoading]   = useState(false);
   const [activeTab, setActiveTab]         = useState<"all" | MailContext>("all");
-  const [showCompose, setShowCompose]     = useState(false);
 
   // ------- Chargement liste -------
   const buildQuery = useCallback(() => {
@@ -211,8 +209,6 @@ export default function CourrierPage() {
   const hasAction  = (stats?.stats.action_required || 0) > 0;
 
   return (
-    <>
-
     <div className="mx-auto max-w-7xl px-3 pb-24 sm:px-4">
 
       {/* ── Header ── */}
@@ -245,14 +241,6 @@ export default function CourrierPage() {
               title="Statistiques"
             >
               📊
-            </button>
-            <button
-              onClick={() => setShowCompose(true)}
-              className="flex items-center gap-1.5 rounded-xl border border-violet-400/30 bg-violet-400/10 px-3 py-2 text-sm font-medium text-violet-300 hover:bg-violet-400/20 transition-colors"
-              title="Rédiger un email"
-            >
-              ✉️
-              <span className="hidden sm:inline">Rédiger</span>
             </button>
             <button
               onClick={() => setModal("new")}
@@ -451,17 +439,5 @@ export default function CourrierPage() {
         </div>
       </div>
     </div>
-
-      {/* ── Compose modal ── */}
-      {showCompose && (
-        <ComposeModal
-          userEmail={user?.email ?? ""}
-          userName={(user?.user_metadata?.full_name as string) || null}
-          defaultContext={activeTab === "pro" || activeTab === "perso" ? activeTab : "pro"}
-          onClose={() => setShowCompose(false)}
-          onSent={() => setShowCompose(false)}
-        />
-      )}
-    </>
   );
 }

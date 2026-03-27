@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 import { sendPreparedReplyEmail } from '@/lib/email/assistantService';
@@ -14,6 +15,7 @@ export async function POST(
   const payload = (await request.json().catch(() => ({}))) as {
     subject?: string;
     body?: string;
+    reply_to_email?: string;
   };
 
   const supabase = getSupabaseAdminClient();
@@ -63,11 +65,26 @@ export async function POST(
   const aiBaselineBody = String(aiBaselineDraft?.proposed_body || draft.proposed_body || '');
   const editedByUser = aiBaselineSubject !== finalSubject || aiBaselineBody !== finalBody;
 
+  const { data: schedulingPreferences } = await supabase
+    .from('scheduling_preferences')
+    .select('professional_email')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  const personalEmail = await getAuthenticatedUserEmail(request);
+  const professionalEmail = normalizeEmail(schedulingPreferences?.professional_email) || '';
+  const requestedReplyTo = normalizeEmail(payload.reply_to_email) || '';
+  const allowedReplyTos = new Set([personalEmail, professionalEmail].filter(Boolean));
+  const replyToEmail = allowedReplyTos.has(requestedReplyTo)
+    ? requestedReplyTo
+    : professionalEmail || personalEmail;
+
   const sent = await sendPreparedReplyEmail({
     to: replyTarget,
     cc: Array.isArray(message.cc_emails) ? (message.cc_emails as string[]) : [],
     subject: finalSubject,
     body: finalBody,
+    replyTo: replyToEmail || undefined,
   });
 
   const providerMessageId = String((sent as { data?: { id?: string } })?.data?.id || '');
@@ -106,6 +123,7 @@ export async function POST(
         message: 'Reponse envoyee via module email assistant',
         payload: {
           to: replyTarget,
+          reply_to_email: replyToEmail || null,
           subject: finalSubject,
           provider_message_id: providerMessageId || null,
           ai_baseline_subject: aiBaselineSubject,
@@ -121,6 +139,29 @@ export async function POST(
     success: true,
     provider_message_id: providerMessageId || null,
   });
+}
+
+async function getAuthenticatedUserEmail(request: NextRequest): Promise<string> {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) return '';
+
+  const authClient = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get() { return undefined; },
+        set() {},
+        remove() {},
+      },
+    }
+  );
+
+  const {
+    data: { user },
+  } = await authClient.auth.getUser(authHeader.slice(7));
+
+  return normalizeEmail(user?.email);
 }
 
 function resolveReplyTargetFromMessage(message: Record<string, unknown>): string {

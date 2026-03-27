@@ -176,6 +176,7 @@ export async function sendPreparedReplyEmail(args: {
   cc?: string[];
   subject: string;
   body: string;
+  replyTo?: string;
 }) {
   if (!process.env.RESEND_API_KEY) {
     throw new Error('RESEND_API_KEY manquant');
@@ -188,6 +189,7 @@ export async function sendPreparedReplyEmail(args: {
 
   return resend.emails.send({
     from,
+    replyTo: args.replyTo,
     to: args.to,
     cc: args.cc && args.cc.length > 0 ? args.cc : undefined,
     subject: normalize(args.subject, 240) || 'Reponse',

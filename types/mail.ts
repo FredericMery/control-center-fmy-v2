@@ -73,22 +73,6 @@ export interface MailStats {
   action_required: number;
 }
 
-export interface MailCompose {
-  id: string;
-  user_id: string;
-  context: MailContext;
-  from_email: string;
-  from_name: string | null;
-  to_emails: string[];
-  cc_emails: string[] | null;
-  subject: string;
-  body: string;
-  resend_id: string | null;
-  status: 'sent' | 'failed' | 'draft';
-  sent_at: string;
-  created_at: string;
-}
-
 export interface AiMailAnalysis {
   context: MailContext;
   subject: string;

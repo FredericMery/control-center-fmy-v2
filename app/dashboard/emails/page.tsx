@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 import type { EmailMessage, EmailReplyDraft } from '@/types/emailAssistant';
+import EmailComposeModal from '@/components/email/EmailComposeModal';
 
 type MessageWithDrafts = EmailMessage & {
   email_reply_drafts?: EmailReplyDraft[];
@@ -57,6 +58,7 @@ const actionLabel: Record<string, string> = {
 export default function EmailAssistantPage() {
   const user = useAuthStore((s) => s.user);
   const userEmail = String(user?.email || '').trim().toLowerCase();
+  const userName = String(user?.user_metadata?.full_name || '').trim();
 
   const [items, setItems] = useState<MessageWithDrafts[]>([]);
   const [stats, setStats] = useState<StatsPayload | null>(null);
@@ -93,6 +95,9 @@ export default function EmailAssistantPage() {
   const [creatingSummaryTasks, setCreatingSummaryTasks] = useState(false);
   const [autoCreateScope, setAutoCreateScope] = useState<'urgent' | 'urgent_high' | 'all'>('urgent_high');
   const [summaryDate, setSummaryDate] = useState(() => toDateInputValue(new Date()));
+  const [professionalEmail, setProfessionalEmail] = useState('');
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [replySenderType, setReplySenderType] = useState<'personal' | 'professional'>('personal');
 
   const selected = useMemo(
     () => items.find((entry) => entry.id === selectedId) || null,
@@ -211,6 +216,36 @@ export default function EmailAssistantPage() {
     loadMessages();
     loadStats();
   }, [user, loadMessages, loadStats]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    const loadProfessionalEmail = async () => {
+      try {
+        const response = await fetch('/api/calendar/preferences', {
+          headers: await getAuthHeaders(false),
+        });
+        const json = (await response.json().catch(() => ({}))) as {
+          preferences?: { professional_email?: string | null };
+        };
+        if (!response.ok || cancelled) return;
+
+        const nextProfessionalEmail = String(json.preferences?.professional_email || '').trim().toLowerCase();
+        setProfessionalEmail(nextProfessionalEmail);
+        if (nextProfessionalEmail) {
+          setReplySenderType('professional');
+        }
+      } catch {
+        if (!cancelled) setProfessionalEmail('');
+      }
+    };
+
+    loadProfessionalEmail();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -371,7 +406,11 @@ export default function EmailAssistantPage() {
       const res = await fetch(`/api/email/messages/${selected.id}/send`, {
         method: 'POST',
         headers: await getAuthHeaders(),
-        body: JSON.stringify({ subject: draftSubject, body: draftBody }),
+        body: JSON.stringify({
+          subject: draftSubject,
+          body: draftBody,
+          reply_to_email: replySenderType === 'professional' && professionalEmail ? professionalEmail : userEmail,
+        }),
       });
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
@@ -547,6 +586,12 @@ export default function EmailAssistantPage() {
         <p className="mt-2 text-sm text-slate-300">Tri IA, proposition de reponse, validation avant envoi, journalisation complete.</p>
 
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <button
+            onClick={() => setComposeOpen(true)}
+            className="min-h-11 w-full rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 sm:w-auto"
+          >
+            Nouveau message
+          </button>
           <button
             onClick={openResponseManager}
             className="min-h-11 w-full rounded-xl bg-indigo-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-indigo-300 sm:w-auto"
@@ -778,14 +823,46 @@ export default function EmailAssistantPage() {
               <div className="rounded-xl border border-indigo-300/20 bg-indigo-500/5 p-3">
                 <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm font-semibold text-indigo-100">Brouillon de reponse</p>
-                  <button
-                    onClick={generateDraft}
-                    disabled={busy}
-                    className="min-h-10 rounded-lg border border-indigo-300/30 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-100 hover:bg-indigo-500/20 disabled:opacity-50"
-                  >
-                    {busy ? '...' : 'Generer / Regenerer IA'}
-                  </button>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setReplySenderType('personal')}
+                        className={`rounded-full border px-3 py-1 text-xs transition ${
+                          replySenderType === 'personal'
+                            ? 'border-cyan-300/35 bg-cyan-500/10 text-cyan-100'
+                            : 'border-white/10 bg-slate-900/50 text-slate-400 hover:border-white/20 hover:text-slate-200'
+                        }`}
+                      >
+                        Perso · {userEmail || 'non renseigne'}
+                      </button>
+                      {professionalEmail && (
+                        <button
+                          type="button"
+                          onClick={() => setReplySenderType('professional')}
+                          className={`rounded-full border px-3 py-1 text-xs transition ${
+                            replySenderType === 'professional'
+                              ? 'border-cyan-300/35 bg-cyan-500/10 text-cyan-100'
+                              : 'border-white/10 bg-slate-900/50 text-slate-400 hover:border-white/20 hover:text-slate-200'
+                          }`}
+                        >
+                          Pro · {professionalEmail}
+                        </button>
+                      )}
+                    </div>
+                    <button
+                      onClick={generateDraft}
+                      disabled={busy}
+                      className="min-h-10 rounded-lg border border-indigo-300/30 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-100 hover:bg-indigo-500/20 disabled:opacity-50"
+                    >
+                      {busy ? '...' : 'Generer / Regenerer IA'}
+                    </button>
+                  </div>
                 </div>
+
+                <p className="mb-3 text-xs text-slate-400">
+                  Les reponses partiront depuis le domaine applicatif, avec une reponse dirigee vers {replySenderType === 'professional' && professionalEmail ? professionalEmail : userEmail || 'ton email perso'}.
+                </p>
 
                 <input
                   value={draftSubject}
@@ -969,6 +1046,20 @@ export default function EmailAssistantPage() {
             )}
           </div>
         </div>
+      )}
+
+      {composeOpen && (
+        <EmailComposeModal
+          personalEmail={userEmail}
+          professionalEmail={professionalEmail || null}
+          userName={userName || null}
+          defaultContext={professionalEmail ? 'pro' : 'perso'}
+          onClose={() => setComposeOpen(false)}
+          onSent={({ replyToEmail }) => {
+            setComposeOpen(false);
+            showOk(`Email envoye. Les reponses iront vers ${replyToEmail}.`);
+          }}
+        />
       )}
     </div>
   );
