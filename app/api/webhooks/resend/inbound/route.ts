@@ -10,7 +10,7 @@ import {
   buildEmailBehaviorInstructions,
   canPrepareReply,
   loadUserEmailAiSettings,
-  loadUserPrimaryEmail,
+  loadUserRecipientEmails,
   resolveRecipientRole,
 } from '@/lib/email/userEmailAiSettings';
 
@@ -1304,16 +1304,18 @@ async function processInboundEmailAssistant(args: {
     const toEmails = extractEmailList(args.eventData['to']);
     const ccEmails = extractEmailList(args.eventData['cc']);
     const bccEmails = extractEmailList(args.eventData['bcc']);
-    const [userEmail, emailAiSettings] = await Promise.all([
-      loadUserPrimaryEmail(args.userId),
+    const [userEmails, emailAiSettings] = await Promise.all([
+      loadUserRecipientEmails(args.userId),
       loadUserEmailAiSettings(args.userId),
     ]);
 
     const recipientRole = resolveRecipientRole({
-      userEmail,
+      userEmails,
       toEmails,
       ccEmails,
     });
+
+    const primaryRecipientEmail = userEmails[0] || '';
 
     const allowReplyByScope = canPrepareReply({
       replyScope: emailAiSettings.replyScope,
@@ -1329,7 +1331,7 @@ async function processInboundEmailAssistant(args: {
       senderEmail: args.senderEmail,
       to: toEmails,
       cc: ccEmails,
-      userEmail,
+      userEmail: primaryRecipientEmail,
       globalRules,
       receivedAt,
     });

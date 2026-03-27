@@ -6,7 +6,7 @@ import {
   buildEmailBehaviorInstructions,
   canPrepareReply,
   loadUserEmailAiSettings,
-  loadUserPrimaryEmail,
+  loadUserRecipientEmails,
   resolveRecipientRole,
 } from '@/lib/email/userEmailAiSettings';
 
@@ -34,13 +34,13 @@ export async function POST(
     return NextResponse.json({ error: 'Email introuvable' }, { status: 404 });
   }
 
-  const [userEmail, emailAiSettings] = await Promise.all([
-    loadUserPrimaryEmail(userId),
+  const [userEmails, emailAiSettings] = await Promise.all([
+    loadUserRecipientEmails(userId),
     loadUserEmailAiSettings(userId),
   ]);
 
   const recipientRole = resolveRecipientRole({
-    userEmail,
+    userEmails,
     toEmails: Array.isArray(message.to_emails) ? (message.to_emails as string[]) : [],
     ccEmails: Array.isArray(message.cc_emails) ? (message.cc_emails as string[]) : [],
   });

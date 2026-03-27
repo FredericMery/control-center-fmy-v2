@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
+import { loadUserRecipientEmails } from '@/lib/email/userEmailAiSettings';
 
 export async function GET(request: NextRequest) {
   const userId = await getUserIdFromRequest(request);
@@ -9,6 +10,8 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabaseAdminClient();
   const { searchParams } = new URL(request.url);
   const me = String(searchParams.get('me') || '').trim().toLowerCase();
+  const knownRecipientEmails = await loadUserRecipientEmails(userId);
+  const recipientEmails = Array.from(new Set([me, ...knownRecipientEmails].filter(Boolean)));
 
   const [
     { count: total },
@@ -24,7 +27,7 @@ export async function GET(request: NextRequest) {
     supabase.from('email_messages').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('response_status', 'draft_ready').is('deleted_at', null),
     supabase.from('email_messages').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('response_status', 'sent').is('deleted_at', null),
     supabase.from('email_messages').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('archived', true).is('deleted_at', null),
-    me
+    recipientEmails.length > 0
       ? supabase
           .from('email_messages')
           .select('to_emails,cc_emails')
@@ -42,11 +45,11 @@ export async function GET(request: NextRequest) {
   ]);
 
   const inboundRows = (inboundRowsResult.data || []) as Array<{ to_emails?: string[] | null; cc_emails?: string[] | null }>;
-  const addressedToMe = me
-    ? inboundRows.filter((row) => includesEmail(row.to_emails, me)).length
+  const addressedToMe = recipientEmails.length > 0
+    ? inboundRows.filter((row) => includesAnyEmail(row.to_emails, recipientEmails)).length
     : 0;
-  const copiedMe = me
-    ? inboundRows.filter((row) => includesEmail(row.cc_emails, me)).length
+  const copiedMe = recipientEmails.length > 0
+    ? inboundRows.filter((row) => includesAnyEmail(row.cc_emails, recipientEmails)).length
     : 0;
 
   return NextResponse.json({
@@ -63,8 +66,8 @@ export async function GET(request: NextRequest) {
   });
 }
 
-function includesEmail(values: string[] | null | undefined, target: string): boolean {
-  if (!Array.isArray(values) || !target) return false;
-  const normalizedTarget = target.trim().toLowerCase();
-  return values.some((entry) => String(entry || '').trim().toLowerCase() === normalizedTarget);
+function includesAnyEmail(values: string[] | null | undefined, targets: string[]): boolean {
+  if (!Array.isArray(values) || !Array.isArray(targets) || targets.length === 0) return false;
+  const normalizedTargets = new Set(targets.map((value) => String(value || '').trim().toLowerCase()).filter(Boolean));
+  return values.some((entry) => normalizedTargets.has(String(entry || '').trim().toLowerCase()));
 }

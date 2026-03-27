@@ -45,19 +45,53 @@ export async function loadUserPrimaryEmail(userId: string): Promise<string> {
   return String(data?.user?.email || '').trim().toLowerCase();
 }
 
+export async function loadUserRecipientEmails(userId: string): Promise<string[]> {
+  const supabase = getSupabaseAdminClient();
+
+  const [primaryResult, preferencesResult, aliasesResult] = await Promise.all([
+    supabase.auth.admin.getUserById(userId),
+    supabase
+      .from('scheduling_preferences')
+      .select('professional_email')
+      .eq('user_id', userId)
+      .maybeSingle(),
+    supabase
+      .from('user_email_aliases')
+      .select('email_alias')
+      .eq('user_id', userId)
+      .eq('is_active', true),
+  ]);
+
+  const values = [
+    String(primaryResult.data?.user?.email || '').trim().toLowerCase(),
+    String(preferencesResult.data?.professional_email || '').trim().toLowerCase(),
+    ...((aliasesResult.data || []).map((row) => String(row.email_alias || '').trim().toLowerCase())),
+  ];
+
+  return Array.from(new Set(values.filter((value) => /[^\s@]+@[^\s@]+\.[^\s@]+/.test(value))));
+}
+
 export function resolveRecipientRole(args: {
-  userEmail: string;
+  userEmails: string[];
   toEmails: string[];
   ccEmails: string[];
 }): 'to' | 'cc' | 'none' {
-  const userEmail = String(args.userEmail || '').trim().toLowerCase();
-  if (!userEmail) return 'none';
+  const userEmails = new Set(
+    (args.userEmails || [])
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+  if (userEmails.size === 0) return 'none';
 
   const to = new Set((args.toEmails || []).map((value) => String(value || '').trim().toLowerCase()));
   const cc = new Set((args.ccEmails || []).map((value) => String(value || '').trim().toLowerCase()));
 
-  if (to.has(userEmail)) return 'to';
-  if (cc.has(userEmail)) return 'cc';
+  for (const email of userEmails) {
+    if (to.has(email)) return 'to';
+  }
+  for (const email of userEmails) {
+    if (cc.has(email)) return 'cc';
+  }
   return 'none';
 }
 

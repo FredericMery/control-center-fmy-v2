@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
+import { loadUserRecipientEmails } from '@/lib/email/userEmailAiSettings';
 
 export async function GET(request: NextRequest) {
   const userId = await getUserIdFromRequest(request);
@@ -16,7 +17,9 @@ export async function GET(request: NextRequest) {
   const archived = searchParams.get('archived');
   const search = String(searchParams.get('search') || '').trim();
   const requestedLimit = Math.min(Number(searchParams.get('limit') || 60), 200);
-  const needsRecipientFilter = (recipientRole === 'to' || recipientRole === 'cc') && Boolean(me);
+  const knownRecipientEmails = await loadUserRecipientEmails(userId);
+  const recipientEmails = Array.from(new Set([me, ...knownRecipientEmails].filter(Boolean)));
+  const needsRecipientFilter = (recipientRole === 'to' || recipientRole === 'cc') && recipientEmails.length > 0;
   const queryLimit = needsRecipientFilter ? Math.min(Math.max(requestedLimit * 4, 200), 1000) : requestedLimit;
 
   let query = supabase
@@ -48,18 +51,18 @@ export async function GET(request: NextRequest) {
   }
 
   let items = data || [];
-  if (recipientRole === 'to' && me) {
-    items = items.filter((item) => includesEmail(item.to_emails, me));
+  if (recipientRole === 'to' && recipientEmails.length > 0) {
+    items = items.filter((item) => includesAnyEmail(item.to_emails, recipientEmails));
   }
-  if (recipientRole === 'cc' && me) {
-    items = items.filter((item) => includesEmail(item.cc_emails, me));
+  if (recipientRole === 'cc' && recipientEmails.length > 0) {
+    items = items.filter((item) => includesAnyEmail(item.cc_emails, recipientEmails));
   }
 
   return NextResponse.json({ items: items.slice(0, requestedLimit) });
 }
 
-function includesEmail(values: unknown, target: string): boolean {
-  if (!Array.isArray(values) || !target) return false;
-  const normalizedTarget = target.trim().toLowerCase();
-  return values.some((entry) => String(entry || '').trim().toLowerCase() === normalizedTarget);
+function includesAnyEmail(values: unknown, targets: string[]): boolean {
+  if (!Array.isArray(values) || !Array.isArray(targets) || targets.length === 0) return false;
+  const normalizedTargets = new Set(targets.map((value) => String(value || '').trim().toLowerCase()).filter(Boolean));
+  return values.some((entry) => normalizedTargets.has(String(entry || '').trim().toLowerCase()));
 }
