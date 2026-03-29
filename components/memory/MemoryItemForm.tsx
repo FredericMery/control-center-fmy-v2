@@ -3,6 +3,13 @@ import type { Database } from '../../types/database';
 import { useAuthStore } from '@/store/authStore';
 import { isPhotoLikeField, uploadMemoryPhoto } from '@/lib/memoryPhotos';
 import { incrementOcrUsageCount } from '@/lib/ocrUsage';
+import {
+  appendMemoryPhotoUrl,
+  MAX_MEMORY_PHOTOS,
+  parseMemoryPhotoUrls,
+  removeMemoryPhotoUrl,
+  serializeMemoryPhotoUrls,
+} from '@/lib/memoryPhotoValue';
 
 type MemoryField = Database['public']['Tables']['memory_fields']['Row'];
 
@@ -32,6 +39,8 @@ export default function MemoryItemForm({
   const [authCode, setAuthCode] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [pendingScanFile, setPendingScanFile] = useState<File | null>(null);
+
+  const maxPhotosErrorMessage = `Maximum ${MAX_MEMORY_PHOTOS} photos pour ce champ.`;
 
   const photoField = fields.find(
     (f) => f.field_type === 'url' && isPhotoLikeField(f.field_label)
@@ -110,14 +119,22 @@ export default function MemoryItemForm({
       }
 
       if (photoField && user) {
+        const currentPhotos = parseMemoryPhotoUrls(fieldValues[photoField.id]);
         setUploadingFieldId(photoField.id);
-        const publicUrl = await uploadMemoryPhoto({
-          file,
-          userId: user.id,
-          sectionId,
-          fieldId: photoField.id,
-        });
-        setFieldValues((prev) => ({ ...prev, [photoField.id]: publicUrl }));
+        if (currentPhotos.length < MAX_MEMORY_PHOTOS) {
+          const publicUrl = await uploadMemoryPhoto({
+            file,
+            userId: user.id,
+            sectionId,
+            fieldId: photoField.id,
+          });
+          setFieldValues((prev) => ({
+            ...prev,
+            [photoField.id]: appendMemoryPhotoUrl(prev[photoField.id], publicUrl) || '',
+          }));
+        } else {
+          setUploadError(maxPhotosErrorMessage);
+        }
       }
 
       setScanInfo(
@@ -151,8 +168,28 @@ export default function MemoryItemForm({
   const renderField = (field: MemoryField) => {
     const value = fieldValues[field.id] || '';
 
+    const setPhotoFieldFromUrls = (urls: string[]) => {
+      const limitedUrls = urls.slice(0, MAX_MEMORY_PHOTOS);
+      if (urls.length > MAX_MEMORY_PHOTOS) {
+        setUploadError(maxPhotosErrorMessage);
+      } else if (uploadError === maxPhotosErrorMessage) {
+        setUploadError(null);
+      }
+
+      setFieldValues((prev) => ({
+        ...prev,
+        [field.id]: serializeMemoryPhotoUrls(limitedUrls) || '',
+      }));
+    };
+
     const handlePhotoFile = async (file?: File) => {
       if (!file || !user) return;
+      const currentPhotos = parseMemoryPhotoUrls(fieldValues[field.id]);
+      if (currentPhotos.length >= MAX_MEMORY_PHOTOS) {
+        setUploadError(maxPhotosErrorMessage);
+        return;
+      }
+
       setUploadError(null);
       setUploadingFieldId(field.id);
       try {
@@ -162,7 +199,10 @@ export default function MemoryItemForm({
           sectionId,
           fieldId: field.id,
         });
-        setFieldValues((prev) => ({ ...prev, [field.id]: publicUrl }));
+        setFieldValues((prev) => ({
+          ...prev,
+          [field.id]: appendMemoryPhotoUrl(prev[field.id], publicUrl) || '',
+        }));
       } catch (error) {
         console.error('Photo upload failed:', error);
         setUploadError('Upload photo impossible. Vérifie le bucket Supabase "memory-photos" et ses policies.');
@@ -226,43 +266,93 @@ export default function MemoryItemForm({
 
       case 'url':
         if (isPhotoLikeField(field.field_label)) {
+          const photoUrls = parseMemoryPhotoUrls(value);
+          const uploadLimitReached = photoUrls.length >= MAX_MEMORY_PHOTOS;
+
           return (
             <div className="space-y-2">
-              <input
-                type="url"
-                value={value}
-                onChange={(e) => setFieldValues({ ...fieldValues, [field.id]: e.target.value })}
-                placeholder="https://..."
+              <textarea
+                value={photoUrls.join('\n')}
+                onChange={(e) => {
+                  const nextUrls = e.target.value
+                    .split('\n')
+                    .map((entry) => entry.trim())
+                    .filter(Boolean);
+                  setPhotoFieldFromUrls(nextUrls);
+                }}
+                placeholder={'https://...\nhttps://...'}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-400 focus:outline-none focus:border-white transition-colors"
+                rows={Math.max(2, Math.min(5, photoUrls.length || 2))}
               />
 
-              {value && (
-                <img
-                  src={value}
-                  alt={field.field_label}
-                  className="w-full h-36 object-cover rounded border border-gray-700"
-                />
+              <p className="text-xs text-gray-400">{photoUrls.length}/{MAX_MEMORY_PHOTOS} photos</p>
+
+              {photoUrls.length > 0 && (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {photoUrls.map((photoUrl, index) => (
+                    <div key={`${photoUrl}-${index}`} className="relative overflow-hidden rounded border border-gray-700 bg-gray-900">
+                      <img
+                        src={photoUrl}
+                        alt={`${field.field_label} ${index + 1}`}
+                        className="h-28 w-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFieldValues((prev) => ({
+                            ...prev,
+                            [field.id]: removeMemoryPhotoUrl(prev[field.id], photoUrl) || '',
+                          }));
+                          if (uploadError === maxPhotosErrorMessage) {
+                            setUploadError(null);
+                          }
+                        }}
+                        className="absolute right-1 top-1 rounded bg-black/70 px-2 py-1 text-[11px] text-white hover:bg-black/85"
+                      >
+                        Retirer
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
 
               <div className="flex flex-wrap gap-2">
-                <label className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded cursor-pointer transition-colors">
+                <label
+                  className={`px-3 py-2 text-white text-xs rounded cursor-pointer transition-colors ${
+                    uploadLimitReached ? 'bg-gray-800 opacity-50' : 'bg-gray-700 hover:bg-gray-600'
+                  }`}
+                >
                   📁 Bibliothèque
                   <input
                     type="file"
                     accept="image/*"
                     className="hidden"
-                    onChange={(e) => handlePhotoFile(e.target.files?.[0])}
+                    disabled={uploadLimitReached}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      void handlePhotoFile(file);
+                    }}
                   />
                 </label>
 
-                <label className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded cursor-pointer transition-colors">
+                <label
+                  className={`px-3 py-2 text-white text-xs rounded cursor-pointer transition-colors ${
+                    uploadLimitReached ? 'bg-gray-800 opacity-50' : 'bg-gray-700 hover:bg-gray-600'
+                  }`}
+                >
                   📷 Prendre une photo
                   <input
                     type="file"
                     accept="image/*"
                     capture="environment"
                     className="hidden"
-                    onChange={(e) => handlePhotoFile(e.target.files?.[0])}
+                    disabled={uploadLimitReached}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      void handlePhotoFile(file);
+                    }}
                   />
                 </label>
 
@@ -305,7 +395,7 @@ export default function MemoryItemForm({
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 w-96 max-w-full">
-            <h4 className="text-lg font-light text-white mb-4">Code d'authentification OCR</h4>
+            <h4 className="text-lg font-light text-white mb-4">Code d&apos;authentification OCR</h4>
             <p className="text-xs text-gray-400 mb-4">Entrez le code pour déverrouiller le scan OCR</p>
             <input
               type="password"

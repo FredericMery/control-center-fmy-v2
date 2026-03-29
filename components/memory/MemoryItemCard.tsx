@@ -4,6 +4,14 @@ import { useState, useEffect } from 'react';
 import { useMemoryStore } from '@/store/memoryStore';
 import type { Database } from '../../types/database';
 import { isPhotoLikeField } from '@/lib/memoryPhotos';
+import { useAuthStore } from '@/store/authStore';
+import { uploadMemoryPhoto } from '@/lib/memoryPhotos';
+import {
+  appendMemoryPhotoUrl,
+  MAX_MEMORY_PHOTOS,
+  parseMemoryPhotoUrls,
+  removeMemoryPhotoUrl,
+} from '@/lib/memoryPhotoValue';
 
 type MemoryItem = Database['public']['Tables']['memory_items']['Row'];
 type MemoryField = Database['public']['Tables']['memory_fields']['Row'];
@@ -20,11 +28,13 @@ export default function MemoryItemCard({
   onDelete,
 }: MemoryItemCardProps) {
   const { getValuesByItemId, setItemValue } = useMemoryStore();
+  const { user } = useAuthStore();
   const [expanded, setExpanded] = useState(false);
   const [values, setValues] = useState<Record<string, string | null>>({});
   const [editing, setEditing] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   const itemValues = getValuesByItemId(item.id);
 
@@ -38,28 +48,53 @@ export default function MemoryItemCard({
   }, [item.id, fields, itemValues]);
 
   const handleSaveField = async (fieldId: string, value: string) => {
-    setLoading(true);
-    try {
-      await setItemValue(item.id, fieldId, value || null);
-    } finally {
-      setLoading(false);
-    }
+    await setItemValue(item.id, fieldId, value || null);
   };
 
   // Find photo field value
   const photoField = fields.find(f => f.field_type === 'url' && isPhotoLikeField(f.field_label));
   const photoValue = photoField ? itemValues.find(v => v.field_id === photoField.id)?.field_value : null;
+  const photoUrls = parseMemoryPhotoUrls(photoValue);
+  const mainPhotoUrl = photoUrls[0] || null;
+
+  const handlePhotoUpload = async (file?: File) => {
+    if (!file || !user || !photoField) return;
+    if (photoUrls.length >= MAX_MEMORY_PHOTOS) {
+      setPhotoError(`Maximum ${MAX_MEMORY_PHOTOS} photos pour cette fiche.`);
+      return;
+    }
+
+    setPhotoError(null);
+    setUploadingPhoto(true);
+    try {
+      const publicUrl = await uploadMemoryPhoto({
+        file,
+        userId: user.id,
+        sectionId: item.section_id,
+        fieldId: photoField.id,
+      });
+      const nextValue = appendMemoryPhotoUrl(photoValue, publicUrl) || '';
+      await setItemValue(item.id, photoField.id, nextValue || null);
+      setValues((prev) => ({ ...prev, [photoField.id]: nextValue }));
+    } catch (error) {
+      console.error('Photo upload failed:', error);
+      setPhotoError('Upload photo impossible. Vérifie le bucket memory-photos.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handlePhotoRemove = async (photoUrl: string) => {
+    if (!photoField) return;
+
+    setPhotoError(null);
+    const nextValue = removeMemoryPhotoUrl(photoValue, photoUrl) || '';
+    await setItemValue(item.id, photoField.id, nextValue || null);
+    setValues((prev) => ({ ...prev, [photoField.id]: nextValue }));
+  };
   
   // Non-photo fields for display
   const infoFields = fields.filter(f => !(f.field_type === 'url' && isPhotoLikeField(f.field_label)));
-  
-  // Preview values (non-photo fields)
-  const previewValues = itemValues
-    .filter(v => {
-      const field = fields.find(f => f.id === v.field_id);
-      return field && !(field.field_type === 'url' && isPhotoLikeField(field.field_label));
-    })
-    .slice(0, 2);
   
   // Count filled vs total fields
   const filledCount = itemValues.filter(v => v.field_value && v.field_value.trim()).length;
@@ -69,7 +104,7 @@ export default function MemoryItemCard({
   return (
     <>
       {/* Photo Modal */}
-      {showPhotoModal && photoValue && (
+      {showPhotoModal && photoUrls.length > 0 && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
           onClick={() => setShowPhotoModal(false)}
@@ -80,12 +115,25 @@ export default function MemoryItemCard({
           >
             ×
           </button>
-          <img
-            src={photoValue}
-            alt={item.item_title || 'Photo'}
-            className="max-w-full max-h-full object-contain rounded-lg"
+          <div
+            className="max-h-full w-full max-w-5xl overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 p-4"
             onClick={(e) => e.stopPropagation()}
-          />
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h4 className="text-sm font-medium text-white">{photoUrls.length > 1 ? 'Photos' : 'Photo'}</h4>
+              <span className="text-xs text-slate-400">{photoUrls.length}/{MAX_MEMORY_PHOTOS}</span>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {photoUrls.map((photoUrl, index) => (
+                <img
+                  key={`${photoUrl}-${index}`}
+                  src={photoUrl}
+                  alt={`${item.item_title || 'Photo'} ${index + 1}`}
+                  className="max-h-[70vh] w-full rounded-lg object-contain"
+                />
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -149,7 +197,7 @@ export default function MemoryItemCard({
             </div>
 
             {/* Partie droite : Photo cliquable */}
-            {photoValue && (
+            {mainPhotoUrl && (
               <div 
                 className="h-28 w-28 sm:h-36 sm:w-36 flex-shrink-0 cursor-pointer overflow-hidden rounded-xl border border-slate-700 hover:border-cyan-500 transition-all bg-slate-900"
                 onClick={(e) => {
@@ -158,10 +206,15 @@ export default function MemoryItemCard({
                 }}
               >
                 <img
-                  src={photoValue}
+                  src={mainPhotoUrl}
                   alt={item.item_title || 'Photo'}
                   className="h-full w-full object-cover hover:scale-105 transition-transform"
                 />
+                {photoUrls.length > 1 && (
+                  <span className="absolute right-2 top-2 rounded-full bg-black/75 px-2 py-0.5 text-[11px] text-white">
+                    +{photoUrls.length - 1}
+                  </span>
+                )}
               </div>
             )}
 
@@ -341,27 +394,81 @@ export default function MemoryItemCard({
               </div>
 
               {/* Colonne droite: Photo */}
-              {photoValue && (
+              {photoField && (photoUrls.length > 0 || editing) && (
                 <div className="lg:col-span-1">
                   <div className="sticky top-4 rounded-xl border border-slate-700/70 bg-slate-900/40 p-3">
                     <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">
-                      Photo
+                      {photoUrls.length > 1 ? 'Photos' : 'Photo'}
                     </label>
-                    <div 
-                      className="relative group cursor-pointer overflow-hidden rounded-lg border border-slate-700 hover:border-cyan-500 transition-all"
-                      onClick={() => setShowPhotoModal(true)}
-                    >
-                      <img
-                        src={photoValue}
-                        alt={item.item_title || 'Photo'}
-                        className="h-64 w-full object-cover group-hover:scale-105 transition-transform"
-                      />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center">
-                        <span className="text-white opacity-0 group-hover:opacity-100 text-sm font-medium">
-                          🔍 Voir en grand
-                        </span>
+                    <p className="mb-3 text-xs text-slate-400">{photoUrls.length}/{MAX_MEMORY_PHOTOS} photos</p>
+
+                    {editing && (
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        <label className={`rounded-md px-3 py-2 text-xs text-white ${photoUrls.length >= MAX_MEMORY_PHOTOS ? 'bg-slate-800 opacity-50' : 'bg-slate-700 hover:bg-slate-600 cursor-pointer'}`}>
+                          Ajouter depuis la bibliotheque
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            disabled={photoUrls.length >= MAX_MEMORY_PHOTOS || uploadingPhoto}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              event.target.value = '';
+                              void handlePhotoUpload(file);
+                            }}
+                          />
+                        </label>
+                        <label className={`rounded-md px-3 py-2 text-xs text-white ${photoUrls.length >= MAX_MEMORY_PHOTOS ? 'bg-slate-800 opacity-50' : 'bg-slate-700 hover:bg-slate-600 cursor-pointer'}`}>
+                          Prendre une photo
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            disabled={photoUrls.length >= MAX_MEMORY_PHOTOS || uploadingPhoto}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              event.target.value = '';
+                              void handlePhotoUpload(file);
+                            }}
+                          />
+                        </label>
+                        {uploadingPhoto && <span className="self-center text-xs text-slate-400">Upload...</span>}
                       </div>
-                    </div>
+                    )}
+
+                    {photoError && <p className="mb-3 text-xs text-red-300">{photoError}</p>}
+
+                    {photoUrls.length > 0 ? (
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                        {photoUrls.map((photoUrl, index) => (
+                          <div key={`${photoUrl}-${index}`} className="relative overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
+                            <button
+                              type="button"
+                              className="block w-full"
+                              onClick={() => setShowPhotoModal(true)}
+                            >
+                              <img
+                                src={photoUrl}
+                                alt={`${item.item_title || 'Photo'} ${index + 1}`}
+                                className="h-44 w-full object-cover"
+                              />
+                            </button>
+                            {editing && (
+                              <button
+                                type="button"
+                                onClick={() => void handlePhotoRemove(photoUrl)}
+                                className="absolute right-2 top-2 rounded bg-black/75 px-2 py-1 text-[11px] text-white hover:bg-black/90"
+                              >
+                                Retirer
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-500">Aucune photo</p>
+                    )}
                   </div>
                 </div>
               )}

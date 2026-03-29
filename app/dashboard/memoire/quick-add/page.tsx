@@ -1,12 +1,19 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/components/providers/LanguageProvider';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 import { useMemoryStore } from '@/store/memoryStore';
 import { useAuthStore } from '@/store/authStore';
 import { isPhotoLikeField, uploadMemoryPhoto } from '@/lib/memoryPhotos';
+import {
+  appendMemoryPhotoUrl,
+  MAX_MEMORY_PHOTOS,
+  parseMemoryPhotoUrls,
+  removeMemoryPhotoUrl,
+  serializeMemoryPhotoUrls,
+} from '@/lib/memoryPhotoValue';
 
 type MemoryTypeField = {
   id: string;
@@ -64,8 +71,6 @@ export default function QuickAddMemoryPage() {
   const [saveMessage, setSaveMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const requiredPhotoLibraryRef = useRef<HTMLInputElement>(null);
-  const requiredPhotoCaptureRef = useRef<HTMLInputElement>(null);
 
   const selectedType = useMemo(
     () => typeOptions.find((entry) => entry.id === selectedTypeId) || null,
@@ -157,8 +162,53 @@ export default function QuickAddMemoryPage() {
     t('memory.quickAdd.step5'),
   ];
 
+  const maxPhotosErrorMessage = t('memory.quickAdd.error.maxPhotos', {
+    max: MAX_MEMORY_PHOTOS,
+  });
+
+  const setPhotoFieldFromUrls = (fieldId: string, urls: string[]) => {
+    if (urls.length <= MAX_MEMORY_PHOTOS && error === maxPhotosErrorMessage) {
+      setError(null);
+    }
+
+    const limitedUrls = urls.slice(0, MAX_MEMORY_PHOTOS);
+    if (urls.length > MAX_MEMORY_PHOTOS) {
+      setError(maxPhotosErrorMessage);
+    }
+
+    setFieldValues((prev) => ({
+      ...prev,
+      [fieldId]: serializeMemoryPhotoUrls(limitedUrls) || '',
+    }));
+  };
+
+  const handlePhotoTextChange = (fieldId: string, rawValue: string) => {
+    const urls = rawValue
+      .split('\n')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    setPhotoFieldFromUrls(fieldId, urls);
+  };
+
+  const handlePhotoRemove = (fieldId: string, photoUrl: string) => {
+    setFieldValues((prev) => ({
+      ...prev,
+      [fieldId]: removeMemoryPhotoUrl(prev[fieldId], photoUrl) || '',
+    }));
+
+    if (error === maxPhotosErrorMessage) {
+      setError(null);
+    }
+  };
+
   const handlePhotoSelect = async (field: MemoryTypeField, file?: File) => {
     if (!file || !user || !selectedTypeId || !selectedType) return;
+
+    const currentPhotos = parseMemoryPhotoUrls(fieldValues[field.id]);
+    if (currentPhotos.length >= MAX_MEMORY_PHOTOS) {
+      setError(maxPhotosErrorMessage);
+      return;
+    }
 
     setError(null);
     setPhotoUploadingFieldId(field.id);
@@ -171,7 +221,7 @@ export default function QuickAddMemoryPage() {
       });
       setFieldValues((prev) => ({
         ...prev,
-        [field.id]: photoUrl,
+        [field.id]: appendMemoryPhotoUrl(prev[field.id], photoUrl) || '',
       }));
     } catch (uploadError) {
       console.error('Photo upload failed', uploadError);
@@ -193,7 +243,7 @@ export default function QuickAddMemoryPage() {
     }
 
     if (requiredPhotoField) {
-      const hasPhotoValue = Boolean(fieldValues[requiredPhotoField.id]?.trim());
+      const hasPhotoValue = parseMemoryPhotoUrls(fieldValues[requiredPhotoField.id]).length > 0;
       if (!hasPhotoValue) {
         setError(t('memory.quickAdd.error.photoRequired'));
         return;
@@ -354,43 +404,81 @@ export default function QuickAddMemoryPage() {
     }
 
     if (field.type === 'url' && isPhotoLikeField(field.label)) {
+      const photoUrls = parseMemoryPhotoUrls(value);
+      const uploadLimitReached = photoUrls.length >= MAX_MEMORY_PHOTOS;
+
       return (
         <div className="space-y-2">
-          <input
-            type="url"
-            value={value}
-            onChange={(event) => setFieldValues((prev) => ({ ...prev, [field.id]: event.target.value }))}
+          <textarea
+            value={photoUrls.join('\n')}
+            onChange={(event) => handlePhotoTextChange(field.id, event.target.value)}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-            placeholder="https://..."
+            placeholder={'https://...\nhttps://...'}
+            rows={Math.max(2, Math.min(5, photoUrls.length || 2))}
           />
 
-          {value && (
-            <img
-              src={value}
-              alt={field.label}
-              className="h-36 w-full rounded-lg border border-slate-700 object-cover"
-            />
+          <p className="text-xs text-slate-400">
+            {t('memory.quickAdd.photoCount', { count: photoUrls.length, max: MAX_MEMORY_PHOTOS })}
+          </p>
+
+          {photoUrls.length > 0 && (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {photoUrls.map((photoUrl, index) => (
+                <div key={`${photoUrl}-${index}`} className="relative overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
+                  <img
+                    src={photoUrl}
+                    alt={`${field.label} ${index + 1}`}
+                    className="h-28 w-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handlePhotoRemove(field.id, photoUrl)}
+                    className="absolute right-1 top-1 rounded bg-black/70 px-2 py-1 text-[11px] text-white hover:bg-black/85"
+                  >
+                    {t('memory.quickAdd.removePhoto')}
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
 
           <div className="flex flex-wrap gap-2">
-            <label className="cursor-pointer rounded-md bg-slate-700 px-3 py-2 text-xs text-white hover:bg-slate-600">
+            <label
+              className={`cursor-pointer rounded-md px-3 py-2 text-xs text-white ${
+                uploadLimitReached ? 'bg-slate-800 opacity-50' : 'bg-slate-700 hover:bg-slate-600'
+              }`}
+            >
               {t('memory.quickAdd.photoLibrary')}
               <input
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(event) => handlePhotoSelect(field, event.target.files?.[0])}
+                disabled={uploadLimitReached}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = '';
+                  void handlePhotoSelect(field, file);
+                }}
               />
             </label>
 
-            <label className="cursor-pointer rounded-md bg-slate-700 px-3 py-2 text-xs text-white hover:bg-slate-600">
+            <label
+              className={`cursor-pointer rounded-md px-3 py-2 text-xs text-white ${
+                uploadLimitReached ? 'bg-slate-800 opacity-50' : 'bg-slate-700 hover:bg-slate-600'
+              }`}
+            >
               {t('memory.quickAdd.takePhoto')}
               <input
                 type="file"
                 accept="image/*"
                 capture="environment"
                 className="hidden"
-                onChange={(event) => handlePhotoSelect(field, event.target.files?.[0])}
+                disabled={uploadLimitReached}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = '';
+                  void handlePhotoSelect(field, file);
+                }}
               />
             </label>
 
@@ -512,47 +600,10 @@ export default function QuickAddMemoryPage() {
                 <div className="rounded-lg border border-amber-300/40 bg-amber-500/10 p-3 text-xs text-amber-100 space-y-2">
                   <p className="font-semibold">{t('memory.quickAdd.requiredPhotoTitle')}</p>
                   <p>{t('memory.quickAdd.requiredPhotoText')}</p>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => requiredPhotoLibraryRef.current?.click()}
-                      className="rounded-md bg-slate-700 px-3 py-2 text-xs text-white hover:bg-slate-600"
-                    >
-                      {t('memory.quickAdd.photoLibrary')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => requiredPhotoCaptureRef.current?.click()}
-                      className="rounded-md bg-slate-700 px-3 py-2 text-xs text-white hover:bg-slate-600"
-                    >
-                      {t('memory.quickAdd.takePhoto')}
-                    </button>
-                  </div>
-
-                  <input
-                    ref={requiredPhotoLibraryRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(event) => handlePhotoSelect(requiredPhotoField, event.target.files?.[0])}
-                  />
-                  <input
-                    ref={requiredPhotoCaptureRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={(event) => handlePhotoSelect(requiredPhotoField, event.target.files?.[0])}
-                  />
-
-                  {fieldValues[requiredPhotoField.id] && (
-                    <img
-                      src={fieldValues[requiredPhotoField.id]}
-                      alt={requiredPhotoField.label}
-                      className="h-36 w-full rounded-lg border border-slate-700 object-cover"
-                    />
-                  )}
+                  <p>{t('memory.quickAdd.photoCount', {
+                    count: parseMemoryPhotoUrls(fieldValues[requiredPhotoField.id]).length,
+                    max: MAX_MEMORY_PHOTOS,
+                  })}</p>
                 </div>
               )}
 

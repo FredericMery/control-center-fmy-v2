@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 import { createMemory } from '@/lib/memory/memoryService';
+import { getPrimaryMemoryPhotoUrl } from '@/lib/memoryPhotoValue';
 
 type FieldValuePayload = {
   label: string;
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
       searchableLines.push(`${label}: ${value}`);
 
       if (!sourceImage && fieldType === 'url' && /photo|image|affiche/i.test(label)) {
-        sourceImage = value;
+        sourceImage = getPrimaryMemoryPhotoUrl(value);
       }
     }
 

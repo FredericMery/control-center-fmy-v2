@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 import { useI18n } from '@/components/providers/LanguageProvider';
 import { MEMORY_TEMPLATES, type FieldTemplate } from '@/lib/memoryTemplates';
+import { getPrimaryMemoryPhotoUrl } from '@/lib/memoryPhotoValue';
 
 type Memory = {
   id: string;
@@ -400,7 +401,7 @@ function getScanDetail(memory: Memory): string {
 }
 
 function getThumbnail(memory: Memory): string | null {
-  const source = safeString(memory.source_image).trim();
+  const source = getPrimaryMemoryPhotoUrl(safeString(memory.source_image).trim());
   if (!source) return null;
 
   const isDataImage = source.startsWith('data:image/');
