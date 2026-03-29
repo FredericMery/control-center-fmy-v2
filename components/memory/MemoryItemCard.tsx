@@ -27,11 +27,12 @@ export default function MemoryItemCard({
   fields,
   onDelete,
 }: MemoryItemCardProps) {
-  const { getValuesByItemId, setItemValue } = useMemoryStore();
+  const { getValuesByItemId, setItemValue, updateItem } = useMemoryStore();
   const { user } = useAuthStore();
   const [expanded, setExpanded] = useState(false);
   const [values, setValues] = useState<Record<string, string | null>>({});
   const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(item.item_title || '');
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -47,8 +48,32 @@ export default function MemoryItemCard({
     setValues(newValues);
   }, [item.id, fields, itemValues]);
 
+  useEffect(() => {
+    setTitle(item.item_title || '');
+  }, [item.item_title]);
+
   const handleSaveField = async (fieldId: string, value: string) => {
     await setItemValue(item.id, fieldId, value || null);
+  };
+
+  const handleSaveTitle = async (nextTitle: string) => {
+    const trimmedTitle = nextTitle.trim();
+    if (!trimmedTitle || trimmedTitle === (item.item_title || '')) {
+      setTitle(item.item_title || '');
+      return;
+    }
+
+    await updateItem(item.id, { item_title: trimmedTitle });
+  };
+
+  const handleToggleEditing = () => {
+    setEditing((prev) => {
+      const next = !prev;
+      if (next) {
+        setExpanded(true);
+      }
+      return next;
+    });
   };
 
   // Find photo field value
@@ -222,7 +247,7 @@ export default function MemoryItemCard({
             <div className="flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                onClick={() => setEditing(!editing)}
+                onClick={handleToggleEditing}
                 className="rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
                 title={editing ? 'Terminer l\'édition' : 'Modifier'}
               >
@@ -245,9 +270,22 @@ export default function MemoryItemCard({
           <div className="border-b border-slate-700/70 p-4 pb-3 sm:p-5 sm:pb-4">
             <div className="mb-1 flex items-center justify-between">
               <div className="flex items-center gap-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-                <h3 className="text-xl font-medium text-white hover:text-cyan-100 transition-colors">
-                  {item.item_title || 'Sans titre'}
-                </h3>
+                {editing ? (
+                  <input
+                    type="text"
+                    value={title}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setTitle(e.target.value)}
+                    onBlur={(e) => void handleSaveTitle(e.target.value)}
+                    placeholder="Sans titre"
+                    className="w-full max-w-md rounded border border-gray-700 bg-gray-800 px-3 py-2 text-xl font-medium text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+                    autoFocus
+                  />
+                ) : (
+                  <h3 className="text-xl font-medium text-white hover:text-cyan-100 transition-colors">
+                    {item.item_title || 'Sans titre'}
+                  </h3>
+                )}
                 <span className="rounded-full border border-slate-600 bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300">
                   {filledCount}/{totalCount} remplis
                 </span>
@@ -256,7 +294,7 @@ export default function MemoryItemCard({
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setEditing(!editing)}
+                  onClick={handleToggleEditing}
                   className="rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
                   title={editing ? 'Terminer l\'édition' : 'Modifier'}
                 >
