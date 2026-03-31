@@ -35,6 +35,11 @@ type ExpenseReportResponse = {
   };
 };
 
+type FactureRecipientsPreview = {
+  recipients: string[];
+  source: 'company_links' | 'global' | 'none';
+};
+
 export default function ExpensesListPage() {
   const { t, language } = useI18n();
   const now = new Date();
@@ -48,6 +53,10 @@ export default function ExpensesListPage() {
   const [selectedExpense, setSelectedExpense] = useState<ExpenseRow | null>(null);
   const [isResendingEmail, setIsResendingEmail] = useState(false);
   const [modalMessage, setModalMessage] = useState<string | null>(null);
+  const [resendPreview, setResendPreview] = useState<FactureRecipientsPreview | null>(null);
+  const [resendPreviewLoading, setResendPreviewLoading] = useState(false);
+  const [resendPreviewError, setResendPreviewError] = useState<string | null>(null);
+  const [resendRecipientsValidated, setResendRecipientsValidated] = useState(false);
   const [showNdfModal, setShowNdfModal] = useState(false);
   const [ndfToEmail, setNdfToEmail] = useState('');
   const [ndfSubject, setNdfSubject] = useState('');
@@ -163,6 +172,42 @@ export default function ExpensesListPage() {
   const closeModal = () => {
     setSelectedExpense(null);
     setModalMessage(null);
+    setResendPreview(null);
+    setResendPreviewLoading(false);
+    setResendPreviewError(null);
+    setResendRecipientsValidated(false);
+  };
+
+  const handleShowResendPreview = async () => {
+    if (!selectedExpense) return;
+
+    try {
+      setResendPreviewLoading(true);
+      setResendPreviewError(null);
+      setResendPreview(null);
+
+      const headers = await getAuthHeaders(false);
+      const params = new URLSearchParams();
+      if (selectedExpense.recipient_name) params.set('recipientName', selectedExpense.recipient_name);
+      if (selectedExpense.recipient_destination) params.set('recipientDestination', selectedExpense.recipient_destination);
+
+      const response = await fetch(`/api/expenses/facture-recipients?${params.toString()}`, { headers });
+      const json = (await response.json()) as { success?: boolean; recipients?: string[]; source?: string; error?: string };
+
+      if (!response.ok || !json.success) {
+        setResendPreviewError(json.error || 'Impossible de résoudre les destinataires');
+        return;
+      }
+
+      setResendPreview({
+        recipients: json.recipients || [],
+        source: (json.source as 'company_links' | 'global' | 'none') || 'none',
+      });
+    } catch {
+      setResendPreviewError('Erreur réseau');
+    } finally {
+      setResendPreviewLoading(false);
+    }
   };
 
   const handleResendEmail = async () => {
@@ -185,6 +230,8 @@ export default function ExpensesListPage() {
       }
 
       setModalMessage(json.message || 'Email renvoye avec succes');
+      setResendPreview(null);
+      setResendRecipientsValidated(false);
 
       setSelectedExpense((prev) => (prev ? { ...prev, email_sent: true } : prev));
       setReport((prev) => {
@@ -630,6 +677,53 @@ export default function ExpensesListPage() {
                 )}
               </div>
 
+              {resendPreview && !resendRecipientsValidated && (
+                <div className="rounded-lg border border-violet-400/30 bg-violet-500/10 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-violet-200 uppercase tracking-wide">
+                    Destinataire(s) de la facture
+                  </p>
+                  {resendPreview.recipients.length > 0 ? (
+                    <ul className="space-y-1">
+                      {resendPreview.recipients.map((email) => (
+                        <li key={email} className="text-sm text-violet-100">• {email}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-rose-300">Aucun destinataire trouvé</p>
+                  )}
+                  <p className="text-[11px] text-slate-400">
+                    {resendPreview.source === 'company_links'
+                      ? 'Source : adresses liées à la société'
+                      : resendPreview.source === 'global'
+                      ? 'Source : adresse globale'
+                      : 'Source : non déterminée'}
+                  </p>
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setResendRecipientsValidated(true)}
+                      disabled={resendPreview.recipients.length === 0}
+                      className="flex-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Valider l&apos;envoi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setResendPreview(null); setResendPreviewError(null); }}
+                      className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {resendPreviewError && (
+                <div className="rounded-lg border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                  {resendPreviewError}
+                </div>
+              )}
+
               {modalMessage && (
                 <div className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100">
                   {modalMessage}
@@ -637,14 +731,22 @@ export default function ExpensesListPage() {
               )}
 
               <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={handleResendEmail}
-                  disabled={selectedExpense.payment_method !== 'cb_pro' || isResendingEmail}
-                  className="flex-1 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isResendingEmail ? 'Renvoi en cours...' : 'Renvoyer email'}
-                </button>
+                {(!resendPreview || resendRecipientsValidated) && (
+                  <button
+                    type="button"
+                    onClick={resendRecipientsValidated ? handleResendEmail : handleShowResendPreview}
+                    disabled={selectedExpense.payment_method !== 'cb_pro' || isResendingEmail || resendPreviewLoading}
+                    className="flex-1 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isResendingEmail
+                      ? 'Renvoi en cours...'
+                      : resendPreviewLoading
+                      ? 'Chargement...'
+                      : resendRecipientsValidated
+                      ? 'Confirmer l\'envoi'
+                      : 'Renvoyer email'}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={closeModal}
