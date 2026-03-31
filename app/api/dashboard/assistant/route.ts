@@ -45,6 +45,13 @@ type AssistantActionPlan = {
   confidence?: number;
 };
 
+type AssistantUserPreferences = {
+  assistantName: string;
+  globalInstructions: string;
+  doRules: string[];
+  dontRules: string[];
+};
+
 async function loadUserContext(userId: string) {
   const supabase = getSupabaseAdminClient();
 
@@ -134,6 +141,46 @@ async function loadAssistantName(userId: string): Promise<string> {
 
   const name = String(data?.assistant_name || 'Assistant').trim();
   return name || 'Assistant';
+}
+
+async function loadAssistantUserPreferences(userId: string): Promise<AssistantUserPreferences> {
+  const supabase = getSupabaseAdminClient();
+  const { data } = await supabase
+    .from('user_ai_settings')
+    .select('assistant_name,email_global_instructions,email_do_rules,email_dont_rules')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  return {
+    assistantName: String(data?.assistant_name || 'Assistant').trim() || 'Assistant',
+    globalInstructions: String(data?.email_global_instructions || '').trim(),
+    doRules: Array.isArray(data?.email_do_rules)
+      ? data.email_do_rules.map((entry) => String(entry || '').trim()).filter(Boolean)
+      : [],
+    dontRules: Array.isArray(data?.email_dont_rules)
+      ? data.email_dont_rules.map((entry) => String(entry || '').trim()).filter(Boolean)
+      : [],
+  };
+}
+
+function buildOnboardingShowcase(assistantName: string): string {
+  return [
+    'Mission Flash 120 - decouverte de ton copilote',
+    '',
+    `Salut, je suis ${assistantName}. En moins de 2 minutes, je te montre comment je peux te faire gagner du temps chaque jour.`,
+    '',
+    'Maintenant fais ceci: pense a moi comme un chef d orchestre. Je detecte les priorites, je te propose des actions prêtes, et tu valides en un clic.',
+    '',
+    'Puis fais cela: utilise-moi pour tes emails et courriers. Je peux te proposer une reponse, creer une tache de suivi, classer le message, et apprendre de tes corrections.',
+    '',
+    'Ensuite fais cela: pour les depenses, je t aide a OCRiser, preparer les justificatifs, proposer les destinataires et te guider jusqu a la validation.',
+    '',
+    'Puis fais cela: pour l agenda, je peux te proposer des creneaux, relancer les participants et centraliser les confirmations.',
+    '',
+    'Enfin verifie: dans le dashboard, suis les etapes guidees "Maintenant fais ca". Mon role est simple: je propose, tu disposes.',
+    '',
+    'Quand tu veux, on commence par ton parametrage initial pour que tout soit preconfigure selon ton organisation.',
+  ].join('\n');
 }
 
 async function detectAssistantAction(args: {
@@ -461,6 +508,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const action = String(body?.action || 'ask');
 
+    if (action === 'onboarding_showcase') {
+      const assistantName = await loadAssistantName(userId);
+      return NextResponse.json({
+        success: true,
+        showcaseName: 'Mission Flash 120',
+        message: buildOnboardingShowcase(assistantName),
+      });
+    }
+
     if (action === 'ask') {
       const question = String(body?.question || '').trim();
       const allowInternet = Boolean(body?.allowInternet);
@@ -486,7 +542,8 @@ export async function POST(request: NextRequest) {
 
       const messages = await listMessages(userId, conversation.id);
       const contextPayload = await loadUserContext(userId);
-      const assistantName = await loadAssistantName(userId);
+      const assistantPrefs = await loadAssistantUserPreferences(userId);
+      const assistantName = assistantPrefs.assistantName;
 
       let actionExecutionResult: Record<string, unknown> | null = null;
       try {
@@ -514,11 +571,35 @@ export async function POST(request: NextRequest) {
         ? `You are a personal assistant named ${assistantName}. First use connected user data below. If needed, and only when useful, complete with web search. Always separate what comes from app data and what comes from web. Respond in user language. If an app action has been executed, confirm the result clearly.`
         : `You are a personal assistant named ${assistantName}. You must answer using only connected user data below. If information is missing, say so explicitly. Never use external facts. Respond in user language. If an app action has been executed, confirm the result clearly.`;
 
+      const guideInstruction = [
+        'You must behave like an execution guide.',
+        'Always propose a short actionable sequence in this exact style:',
+        '1) Maintenant fais ceci: ...',
+        '2) Puis fais cela: ...',
+        '3) Enfin verifie: ...',
+        'Keep the sequence to 2-5 steps maximum.',
+        'Use imperative wording and avoid long explanations.',
+      ].join(' ');
+
+      const preferencesInstruction = [
+        assistantPrefs.globalInstructions
+          ? `User global instructions: ${assistantPrefs.globalInstructions}`
+          : 'User global instructions: none.',
+        assistantPrefs.doRules.length > 0
+          ? `User preferred style (do): ${assistantPrefs.doRules.join(' | ')}`
+          : 'User preferred style (do): none.',
+        assistantPrefs.dontRules.length > 0
+          ? `User constraints (dont): ${assistantPrefs.dontRules.join(' | ')}`
+          : 'User constraints (dont): none.',
+      ].join('\n');
+
       const inputMessages = [
         {
           role: 'system',
           content: [
             baseInstruction,
+            guideInstruction,
+            preferencesInstruction,
             'User data context JSON (strictly scoped to the connected user):',
             JSON.stringify(contextPayload),
             actionExecutionResult

@@ -32,6 +32,33 @@ type AssistantMessage = {
   created_at: string;
 };
 
+type DailySuggestion = {
+  priority: 'urgent' | 'high' | 'normal' | 'low';
+  action: string;
+  why: string;
+  sender: string;
+  email_message_id: string;
+};
+
+type GuideStep = {
+  id: string;
+  title: string;
+  description: string;
+  href: string;
+  actionLabel: string;
+};
+
+type GuideProgress = {
+  day: string;
+  doneStepIds: string[];
+};
+
+type SetupCompanyDraft = {
+  name: string;
+  paymentEmail: string;
+  ndfEmail: string;
+};
+
 export default function DashboardPage() {
   const { t, language } = useI18n();
   const user = useAuthStore((state) => state.user);
@@ -67,6 +94,28 @@ export default function DashboardPage() {
   const [assistantSummaryModalOpen, setAssistantSummaryModalOpen] = useState(false);
   const [assistantSummaryPreview, setAssistantSummaryPreview] = useState<string | null>(null);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [dailySuggestions, setDailySuggestions] = useState<DailySuggestion[]>([]);
+  const [dailySuggestionsSummary, setDailySuggestionsSummary] = useState('');
+  const [dailySuggestionsLoading, setDailySuggestionsLoading] = useState(false);
+  const [validatingSuggestionIds, setValidatingSuggestionIds] = useState<Record<string, boolean>>({});
+  const [validatingAllSuggestions, setValidatingAllSuggestions] = useState(false);
+  const [dailySuggestionsError, setDailySuggestionsError] = useState<string | null>(null);
+  const [pendingExpensesCount, setPendingExpensesCount] = useState(0);
+  const [agendaProposalCount, setAgendaProposalCount] = useState(0);
+  const [guideSignalsLoading, setGuideSignalsLoading] = useState(false);
+  const [guideModeActive, setGuideModeActive] = useState(true);
+  const [guideProgress, setGuideProgress] = useState<GuideProgress>({ day: dayKey(new Date()), doneStepIds: [] });
+  const [showcaseOpen, setShowcaseOpen] = useState(false);
+  const [showcaseLoading, setShowcaseLoading] = useState(false);
+  const [showcaseText, setShowcaseText] = useState('');
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [setupCompanyCount, setSetupCompanyCount] = useState(1);
+  const [setupCompanies, setSetupCompanies] = useState<SetupCompanyDraft[]>([{ name: '', paymentEmail: '', ndfEmail: '' }]);
+  const [setupSaving, setSetupSaving] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [setupSuccess, setSetupSuccess] = useState<string | null>(null);
+  const [autoLearnLoading, setAutoLearnLoading] = useState(false);
+  const [autoLearnStatus, setAutoLearnStatus] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const monthName =
@@ -104,6 +153,116 @@ export default function DashboardPage() {
 
     loadConversations();
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadDailySuggestions = async () => {
+      setDailySuggestionsLoading(true);
+      setDailySuggestionsError(null);
+
+      try {
+        const response = await fetch('/api/email/summary/daily', {
+          headers: await getAuthHeaders(false),
+        });
+
+        const json = (await response.json().catch(() => ({}))) as {
+          summary?: string;
+          actions?: DailySuggestion[];
+          error?: string;
+        };
+
+        if (!response.ok) {
+          setDailySuggestionsError(json.error || 'Impossible de charger les propositions IA.');
+          return;
+        }
+
+        const sorted = [...(json.actions || [])].sort((a, b) => priorityWeight(b.priority) - priorityWeight(a.priority));
+        setDailySuggestions(sorted);
+        setDailySuggestionsSummary(String(json.summary || ''));
+      } catch {
+        setDailySuggestionsError('Erreur reseau lors du chargement des propositions IA.');
+      } finally {
+        setDailySuggestionsLoading(false);
+      }
+    };
+
+    loadDailySuggestions();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadGuideSignals = async () => {
+      setGuideSignalsLoading(true);
+      try {
+        const now = new Date();
+        const month = now.getMonth() + 1;
+        const year = now.getFullYear();
+
+        const [expensesResponse, agendaResponse] = await Promise.all([
+          fetch(`/api/expenses/report?month=${month}&year=${year}`, {
+            headers: await getAuthHeaders(false),
+          }),
+          fetch('/api/calendar/proposals', {
+            headers: await getAuthHeaders(false),
+          }),
+        ]);
+
+        if (expensesResponse.ok) {
+          const expensesJson = (await expensesResponse.json().catch(() => ({}))) as {
+            rows?: Array<{ status?: string; payment_method?: 'cb_perso' | 'cb_pro'; email_sent?: boolean }>;
+          };
+
+          const pendingCount = (expensesJson.rows || []).filter((row) => {
+            const status = String(row.status || '').toLowerCase();
+            return status === 'pending' || status === 'pending_ndf' || (row.payment_method === 'cb_pro' && row.email_sent !== true);
+          }).length;
+
+          setPendingExpensesCount(pendingCount);
+        }
+
+        if (agendaResponse.ok) {
+          const agendaJson = (await agendaResponse.json().catch(() => ({}))) as {
+            proposals?: Array<{ workflow_status?: string }>;
+          };
+
+          const openProposals = (agendaJson.proposals || []).filter((proposal) => {
+            const workflow = String(proposal.workflow_status || '').toLowerCase();
+            return workflow === 'created' || workflow === 'sent' || workflow === 'relanced';
+          }).length;
+
+          setAgendaProposalCount(openProposals);
+        }
+      } catch {
+        // Non bloquant
+      } finally {
+        setGuideSignalsLoading(false);
+      }
+    };
+
+    loadGuideSignals();
+  }, [user]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem('dashboard-guide-progress-v1');
+    if (!stored) return;
+
+    try {
+      const parsed = JSON.parse(stored) as GuideProgress;
+      if (parsed?.day && Array.isArray(parsed.doneStepIds)) {
+        setGuideProgress(parsed);
+      }
+    } catch {
+      // ignore malformed local storage
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('dashboard-guide-progress-v1', JSON.stringify(guideProgress));
+  }, [guideProgress]);
 
   useEffect(() => {
     if (!user) return;
@@ -258,6 +417,11 @@ export default function DashboardPage() {
     const selected = DASHBOARD_MODULES.filter((module) => enabled.has(module.id));
     return selected.length > 0 ? selected : DASHBOARD_MODULES;
   }, [enabledModules]);
+
+  const isNewcomer = useMemo(
+    () => assistantConversations.length === 0 && tasks.length === 0 && activeMemoryCount === 0,
+    [assistantConversations.length, tasks.length, activeMemoryCount]
+  );
 
   const displayName = useMemo(() => {
     const mail = user?.email || "";
@@ -526,6 +690,243 @@ export default function DashboardPage() {
     setAssistantFlowStatus(null);
   };
 
+  const openAssistantWithVoice = () => {
+    openAssistantModal();
+    window.setTimeout(() => {
+      startVoiceInput();
+    }, 140);
+  };
+
+  const openOnboardingShowcase = async () => {
+    setShowcaseOpen(true);
+    setShowcaseLoading(true);
+    setShowcaseText('');
+
+    try {
+      const response = await fetch('/api/dashboard/assistant', {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ action: 'onboarding_showcase' }),
+      });
+
+      const json = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+      if (!response.ok) {
+        setShowcaseText(json.error || 'Impossible de lancer la presentation.');
+        return;
+      }
+
+      setShowcaseText(String(json.message || 'Presentation indisponible.'));
+      speakText(String(json.message || ''));
+    } catch {
+      setShowcaseText('Erreur reseau pendant la presentation.');
+    } finally {
+      setShowcaseLoading(false);
+    }
+  };
+
+  const resizeSetupCompanies = (count: number) => {
+    const safeCount = Math.min(8, Math.max(1, count));
+    setSetupCompanyCount(safeCount);
+    setSetupCompanies((prev) => {
+      const next = [...prev];
+      while (next.length < safeCount) {
+        next.push({ name: '', paymentEmail: '', ndfEmail: '' });
+      }
+      return next.slice(0, safeCount);
+    });
+  };
+
+  const updateSetupCompany = (index: number, field: keyof SetupCompanyDraft, value: string) => {
+    setSetupCompanies((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const runSetupWizard = async () => {
+    const companies = setupCompanies
+      .map((company) => ({
+        name: company.name.trim(),
+        paymentEmail: company.paymentEmail.trim(),
+        ndfEmail: company.ndfEmail.trim(),
+      }))
+      .filter((company) => company.name && company.paymentEmail && company.ndfEmail);
+
+    if (companies.length === 0) {
+      setSetupError('Ajoute au moins une societe complete (nom + justificatifs + NDF).');
+      return;
+    }
+
+    setSetupSaving(true);
+    setSetupError(null);
+    setSetupSuccess(null);
+
+    try {
+      const recipientIdsByPaymentEmail = new Map<string, string[]>();
+      const recipientIdsByNdfEmail = new Map<string, string[]>();
+      const allPaymentEmails: string[] = [];
+      const allNdfEmails: string[] = [];
+
+      for (const company of companies) {
+        const createRecipientResponse = await fetch('/api/settings/expense-recipients', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(await getAuthHeaders()),
+          },
+          body: JSON.stringify({ name: company.name, destination: company.paymentEmail }),
+        });
+
+        const recipientJson = (await createRecipientResponse.json().catch(() => ({}))) as {
+          error?: string;
+          recipient?: { id?: string };
+        };
+
+        if (!createRecipientResponse.ok || !recipientJson.recipient?.id) {
+          throw new Error(recipientJson.error || `Erreur creation societe ${company.name}`);
+        }
+
+        const recipientId = String(recipientJson.recipient.id);
+
+        const paymentKey = company.paymentEmail.toLowerCase();
+        const ndfKey = company.ndfEmail.toLowerCase();
+
+        allPaymentEmails.push(company.paymentEmail);
+        allNdfEmails.push(company.ndfEmail);
+
+        recipientIdsByPaymentEmail.set(paymentKey, [
+          ...(recipientIdsByPaymentEmail.get(paymentKey) || []),
+          recipientId,
+        ]);
+        recipientIdsByNdfEmail.set(ndfKey, [
+          ...(recipientIdsByNdfEmail.get(ndfKey) || []),
+          recipientId,
+        ]);
+      }
+
+      const paymentEmailList = uniqueNormalizedEmails(allPaymentEmails);
+      const ndfEmailList = uniqueNormalizedEmails(allNdfEmails);
+
+      const [saveFactureResponse, saveNdfResponse] = await Promise.all([
+        fetch('/api/settings/emails', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(await getAuthHeaders()),
+          },
+          body: JSON.stringify({ type: 'facture', email: paymentEmailList.join(', ') }),
+        }),
+        fetch('/api/settings/emails', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(await getAuthHeaders()),
+          },
+          body: JSON.stringify({ type: 'ndf', email: ndfEmailList.join(', ') }),
+        }),
+      ]);
+
+      const saveFactureJson = (await saveFactureResponse.json().catch(() => ({}))) as { error?: string };
+      const saveNdfJson = (await saveNdfResponse.json().catch(() => ({}))) as { error?: string };
+      if (!saveFactureResponse.ok) throw new Error(saveFactureJson.error || 'Erreur sauvegarde emails justificatifs');
+      if (!saveNdfResponse.ok) throw new Error(saveNdfJson.error || 'Erreur sauvegarde emails NDF');
+
+      const factureLinksPayload = paymentEmailList.map((email) => ({
+        email,
+        companyRecipientIds: uniqueNormalizedEmails(recipientIdsByPaymentEmail.get(email.toLowerCase()) || []),
+      }));
+
+      const ndfLinksPayload = ndfEmailList.map((email) => ({
+        email,
+        companyRecipientIds: uniqueNormalizedEmails(recipientIdsByNdfEmail.get(email.toLowerCase()) || []),
+      }));
+
+      const [saveFactureLinksResponse, saveNdfLinksResponse] = await Promise.all([
+        fetch('/api/settings/email-company-links', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(await getAuthHeaders()),
+          },
+          body: JSON.stringify({ type: 'facture', links: factureLinksPayload }),
+        }),
+        fetch('/api/settings/email-company-links', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(await getAuthHeaders()),
+          },
+          body: JSON.stringify({ type: 'ndf', links: ndfLinksPayload }),
+        }),
+      ]);
+
+      const saveFactureLinksJson = (await saveFactureLinksResponse.json().catch(() => ({}))) as { error?: string };
+      const saveNdfLinksJson = (await saveNdfLinksResponse.json().catch(() => ({}))) as { error?: string };
+      if (!saveFactureLinksResponse.ok) throw new Error(saveFactureLinksJson.error || 'Erreur liens societes justificatifs');
+      if (!saveNdfLinksResponse.ok) throw new Error(saveNdfLinksJson.error || 'Erreur liens societes NDF');
+
+      setSetupSuccess('Parametrage termine. L assistant est pret avec tes societes et tes destinataires.');
+      setSetupOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur parametrage guide.';
+      setSetupError(message);
+    } finally {
+      setSetupSaving(false);
+    }
+  };
+
+  const runAutoLearning = async (source: 'auto' | 'manual') => {
+    if (autoLearnLoading) return;
+
+    setAutoLearnLoading(true);
+    setAutoLearnStatus(null);
+
+    try {
+      const response = await fetch('/api/settings/email-ai-rules/learn', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(await getAuthHeaders()),
+        },
+        body: JSON.stringify({ apply: true, maxSamples: 80 }),
+      });
+
+      const json = (await response.json().catch(() => ({}))) as { summary?: string; error?: string; editedSamples?: number };
+
+      if (!response.ok) {
+        setAutoLearnStatus(json.error || 'Auto-apprentissage indisponible.');
+        return;
+      }
+
+      const summary = String(json.summary || 'Regles mises a jour.');
+      setAutoLearnStatus(
+        source === 'auto'
+          ? `Auto-apprentissage execute: ${summary}`
+          : `Apprentissage lance: ${summary}`
+      );
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('email-ai-auto-learn-last-day', dayKey(new Date()));
+      }
+    } catch {
+      setAutoLearnStatus('Erreur reseau auto-apprentissage.');
+    } finally {
+      setAutoLearnLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    if (typeof window === 'undefined') return;
+
+    const today = dayKey(new Date());
+    const alreadyDone = window.localStorage.getItem('email-ai-auto-learn-last-day');
+    if (alreadyDone === today) return;
+
+    runAutoLearning('auto');
+  }, [user]);
+
   const openConversation = (conversation: AssistantConversation) => {
     setAssistantConversationId(conversation.id);
     setAssistantAllowInternet(Boolean(conversation.allow_internet));
@@ -585,6 +986,74 @@ export default function DashboardPage() {
       setAssistantError("Erreur reseau assistant.");
     } finally {
       setAssistantLoading(false);
+    }
+  };
+
+  const validateSuggestion = async (suggestion: DailySuggestion) => {
+    const emailId = String(suggestion.email_message_id || '').trim();
+    if (!emailId) return;
+
+    setValidatingSuggestionIds((prev) => ({ ...prev, [emailId]: true }));
+    setDailySuggestionsError(null);
+
+    try {
+      const response = await fetch(`/api/email/messages/${emailId}/task`, {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+      });
+
+      const json = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        setDailySuggestionsError(json.error || 'Impossible de creer la tache depuis la proposition.');
+        return;
+      }
+
+      setDailySuggestions((prev) => prev.filter((entry) => entry.email_message_id !== emailId));
+      await fetchTasks();
+    } catch {
+      setDailySuggestionsError('Erreur reseau pendant la validation de la proposition.');
+    } finally {
+      setValidatingSuggestionIds((prev) => {
+        const clone = { ...prev };
+        delete clone[emailId];
+        return clone;
+      });
+    }
+  };
+
+  const validateAllSuggestions = async () => {
+    const priorities = Array.from(new Set(dailySuggestions.map((entry) => entry.priority))).filter(
+      (priority): priority is 'urgent' | 'high' | 'normal' | 'low' =>
+        ['urgent', 'high', 'normal', 'low'].includes(priority)
+    );
+
+    if (priorities.length === 0) return;
+
+    setValidatingAllSuggestions(true);
+    setDailySuggestionsError(null);
+
+    try {
+      const response = await fetch('/api/email/summary/daily', {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ priorities }),
+      });
+
+      const json = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        setDailySuggestionsError(json.error || 'Impossible de valider toutes les propositions.');
+        return;
+      }
+
+      setDailySuggestions([]);
+      await fetchTasks();
+    } catch {
+      setDailySuggestionsError('Erreur reseau pendant la validation globale.');
+    } finally {
+      setValidatingAllSuggestions(false);
     }
   };
 
@@ -724,6 +1193,92 @@ export default function DashboardPage() {
       .filter((entry): entry is { id: string; label: string; icon: string; link: string } => Boolean(entry));
   }, [cards]);
 
+  const guidedSteps = useMemo<GuideStep[]>(() => {
+    const steps: GuideStep[] = [];
+
+    if (dailySuggestions.length > 0) {
+      steps.push({
+        id: 'ia-suggestions',
+        title: `Maintenant fais ceci: valide ${dailySuggestions.length} proposition(s) IA`,
+        description: 'Ces actions sont deja preparees. Tu confirmes, la tache se cree automatiquement.',
+        href: '/dashboard',
+        actionLabel: 'Valider dans la section IA',
+      });
+    }
+
+    if (pendingExpensesCount > 0) {
+      steps.push({
+        id: 'expenses',
+        title: `Puis fais cela: traite ${pendingExpensesCount} depense(s) en attente`,
+        description: 'Le but est de finaliser les justificatifs et les envois email en retard.',
+        href: '/expenses/list',
+        actionLabel: 'Ouvrir Depenses',
+      });
+    }
+
+    if (agendaProposalCount > 0) {
+      steps.push({
+        id: 'agenda',
+        title: `Ensuite fais cela: confirme ${agendaProposalCount} proposition(s) agenda`,
+        description: 'Tu reduis les allers-retours en confirmant les propositions en attente.',
+        href: '/dashboard/agenda/propositions',
+        actionLabel: 'Ouvrir Propositions agenda',
+      });
+    }
+
+    if (steps.length === 0) {
+      steps.push({
+        id: 'assistant-chat',
+        title: 'Maintenant fais ceci: parle a ton assistant pour la prochaine action',
+        description: 'Demande-lui une priorisation de ta journee et execute etape par etape.',
+        href: '/dashboard',
+        actionLabel: 'Parler a l assistant',
+      });
+    }
+
+    return steps.slice(0, 3);
+  }, [dailySuggestions.length, pendingExpensesCount, agendaProposalCount]);
+
+  useEffect(() => {
+    const today = dayKey(new Date());
+    if (guideProgress.day !== today) {
+      setGuideProgress({ day: today, doneStepIds: [] });
+      return;
+    }
+
+    const validIds = new Set(guidedSteps.map((step) => step.id));
+    const filtered = guideProgress.doneStepIds.filter((id) => validIds.has(id));
+    if (filtered.length !== guideProgress.doneStepIds.length) {
+      setGuideProgress((prev) => ({ ...prev, doneStepIds: filtered }));
+    }
+  }, [guidedSteps, guideProgress.day, guideProgress.doneStepIds]);
+
+  const nextGuideStep = useMemo(
+    () => guidedSteps.find((step) => !guideProgress.doneStepIds.includes(step.id)) || null,
+    [guidedSteps, guideProgress.doneStepIds]
+  );
+
+  const completeGuideStep = (stepId: string) => {
+    setGuideProgress((prev) => {
+      if (prev.doneStepIds.includes(stepId)) return prev;
+      return {
+        ...prev,
+        doneStepIds: [...prev.doneStepIds, stepId],
+      };
+    });
+  };
+
+  const reopenGuideStep = (stepId: string) => {
+    setGuideProgress((prev) => ({
+      ...prev,
+      doneStepIds: prev.doneStepIds.filter((id) => id !== stepId),
+    }));
+  };
+
+  const resetGuideProgress = () => {
+    setGuideProgress({ day: dayKey(new Date()), doneStepIds: [] });
+  };
+
   return (
     <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-6">
       <div className="mx-auto w-full max-w-6xl space-y-5">
@@ -735,24 +1290,338 @@ export default function DashboardPage() {
               <p className="text-xs uppercase tracking-[0.16em] text-slate-300">Mon assistant</p>
               <p className="mt-1 truncate text-sm text-cyan-100">{assistantName} est pret a repondre a tes questions</p>
             </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={openAssistantModal}
+                className="group relative inline-flex min-h-16 items-center gap-3 overflow-hidden rounded-2xl border border-cyan-100/80 bg-[linear-gradient(130deg,#a5f3fc_0%,#7dd3fc_42%,#93c5fd_100%)] px-5 py-3 text-left text-slate-950 shadow-[0_24px_56px_-20px_rgba(56,189,248,0.95)] transition duration-300 hover:scale-[1.03]"
+              >
+                <span className="absolute -right-6 -top-8 h-28 w-28 rounded-full bg-white/35 blur-2xl transition group-hover:scale-110" />
+                <span className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-900/15 bg-slate-950/10 text-xl shadow-inner">
+                  🗣️
+                </span>
+                <span className="relative flex flex-col">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-900/80">Assistant IA</span>
+                  <span className="text-sm font-extrabold leading-tight">Discuter avec {assistantName}</span>
+                </span>
+                <span className="relative ml-2 rounded-full border border-slate-900/20 bg-white/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-900">
+                  Live
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={openAssistantWithVoice}
+                className="rounded-2xl border border-cyan-300/50 bg-cyan-500/15 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-500/25"
+              >
+                Parler
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {isNewcomer && (
+          <section className="rounded-3xl border border-cyan-300/30 bg-cyan-500/10 p-4 sm:p-5">
+            <p className="text-xs uppercase tracking-[0.18em] text-cyan-200">Nouveau ici</p>
+            <h2 className="mt-1 text-lg font-semibold text-white">Demarrage assiste</h2>
+            <p className="mt-1 text-sm text-slate-200">
+              En 2 minutes max, je t explique tout. Ensuite je configure l app avec toi (societes, justificatifs, NDF).
+            </p>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={openOnboardingShowcase}
+                className="rounded-lg border border-cyan-300/45 bg-cyan-500/20 px-3 py-2 text-xs font-semibold text-cyan-100"
+              >
+                Lancer Mission Flash 120
+              </button>
+              <button
+                type="button"
+                onClick={() => setSetupOpen((prev) => !prev)}
+                className="rounded-lg border border-emerald-300/45 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-100"
+              >
+                Parametrage guide
+              </button>
+            </div>
+
+            {showcaseOpen && (
+              <div className="mt-3 rounded-xl border border-cyan-300/30 bg-slate-950/45 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-cyan-200">Mission Flash 120</p>
+                {showcaseLoading ? (
+                  <p className="mt-2 text-sm text-slate-300">Preparation de la presentation...</p>
+                ) : (
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">{showcaseText}</p>
+                )}
+              </div>
+            )}
+
+            {setupOpen && (
+              <div className="mt-3 rounded-xl border border-emerald-300/30 bg-slate-950/45 p-3 space-y-3">
+                <div>
+                  <p className="text-xs font-semibold text-emerald-100">Etape 1 - Combien de societes as-tu ?</p>
+                  <p className="text-[11px] text-slate-400">Objectif: preparer les circuits d envoi des justificatifs et NDF.</p>
+                  <input
+                    type="number"
+                    min={1}
+                    max={8}
+                    value={setupCompanyCount}
+                    onChange={(event) => resizeSetupCompanies(Number(event.target.value || 1))}
+                    className="mt-2 w-24 rounded-lg border border-white/15 bg-slate-900/80 px-2 py-1 text-sm text-white"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  {setupCompanies.map((company, index) => (
+                    <div key={`setup-company-${index}`} className="rounded-lg border border-white/10 bg-slate-900/55 p-2">
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Societe {index + 1}</p>
+                      <div className="mt-2 grid gap-2 md:grid-cols-3">
+                        <input
+                          value={company.name}
+                          onChange={(event) => updateSetupCompany(index, 'name', event.target.value)}
+                          placeholder="Nom de la societe"
+                          className="rounded-lg border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white"
+                        />
+                        <input
+                          value={company.paymentEmail}
+                          onChange={(event) => updateSetupCompany(index, 'paymentEmail', event.target.value)}
+                          placeholder="Email justificatifs"
+                          className="rounded-lg border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white"
+                        />
+                        <input
+                          value={company.ndfEmail}
+                          onChange={(event) => updateSetupCompany(index, 'ndfEmail', event.target.value)}
+                          placeholder="Email NDF"
+                          className="rounded-lg border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {setupError && <p className="text-xs text-rose-300">{setupError}</p>}
+                {setupSuccess && <p className="text-xs text-emerald-300">{setupSuccess}</p>}
+
+                <button
+                  type="button"
+                  onClick={runSetupWizard}
+                  disabled={setupSaving}
+                  className="rounded-lg border border-emerald-300/45 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-50"
+                >
+                  {setupSaving ? 'Configuration...' : 'Appliquer le parametrage'}
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+
+        <section className="rounded-3xl border border-white/10 bg-slate-900/75 p-4 sm:p-5">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-cyan-200/80">Mode guide</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Maintenant fais ca, puis fais ca</h2>
+            </div>
+            <div className="flex items-center gap-2">
+              {guideSignalsLoading && <p className="text-xs text-slate-400">Analyse en cours...</p>}
+              <button
+                type="button"
+                onClick={() => setGuideModeActive((prev) => !prev)}
+                className="rounded-lg border border-white/15 px-2.5 py-1 text-[11px] text-slate-200"
+              >
+                {guideModeActive ? 'Pause guide' : 'Reprendre guide'}
+              </button>
+              <button
+                type="button"
+                onClick={resetGuideProgress}
+                className="rounded-lg border border-white/15 px-2.5 py-1 text-[11px] text-slate-300"
+              >
+                Reinitialiser
+              </button>
+            </div>
+          </div>
+
+          {guideModeActive && nextGuideStep && (
+            <div className="mt-3 rounded-2xl border border-emerald-300/30 bg-emerald-500/10 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-emerald-200">Prochaine action</p>
+              <p className="mt-1 text-sm font-semibold text-emerald-100">{nextGuideStep.title}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {nextGuideStep.href === '/dashboard' ? (
+                  <button
+                    type="button"
+                    onClick={openAssistantWithVoice}
+                    className="rounded-lg border border-emerald-300/45 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100"
+                  >
+                    {nextGuideStep.actionLabel}
+                  </button>
+                ) : (
+                  <Link
+                    href={nextGuideStep.href}
+                    className="inline-flex rounded-lg border border-emerald-300/45 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100"
+                  >
+                    {nextGuideStep.actionLabel}
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  onClick={() => completeGuideStep(nextGuideStep.id)}
+                  className="rounded-lg border border-emerald-300/45 bg-slate-900/40 px-3 py-1.5 text-xs font-semibold text-emerald-100"
+                >
+                  Termine
+                </button>
+              </div>
+            </div>
+          )}
+
+          {guideModeActive && !nextGuideStep && (
+            <div className="mt-3 rounded-2xl border border-cyan-300/30 bg-cyan-500/10 p-3">
+              <p className="text-sm text-cyan-100">Toutes les etapes du guide sont terminees pour aujourd hui.</p>
+            </div>
+          )}
+
+          <div className="mt-3 space-y-2">
+            {guidedSteps.map((step, index) => (
+              <div key={step.id} className="rounded-2xl border border-white/10 bg-slate-950/50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">Etape {index + 1}</p>
+                  {guideProgress.doneStepIds.includes(step.id) ? (
+                    <span className="rounded-full border border-emerald-300/40 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-100">
+                      Terminee
+                    </span>
+                  ) : (
+                    <span className="rounded-full border border-amber-300/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-100">
+                      A faire
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-sm font-semibold text-slate-100">{step.title}</p>
+                <p className="mt-1 text-xs text-slate-400">{step.description}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {step.href === '/dashboard' ? (
+                    <button
+                      type="button"
+                      onClick={openAssistantWithVoice}
+                      className="rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100"
+                    >
+                      {step.actionLabel}
+                    </button>
+                  ) : (
+                    <Link
+                      href={step.href}
+                      className="inline-flex rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100"
+                    >
+                      {step.actionLabel}
+                    </Link>
+                  )}
+                  {guideProgress.doneStepIds.includes(step.id) ? (
+                    <button
+                      type="button"
+                      onClick={() => reopenGuideStep(step.id)}
+                      className="rounded-lg border border-white/15 bg-slate-900/45 px-3 py-1.5 text-xs font-semibold text-slate-200"
+                    >
+                      Remettre a faire
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => completeGuideStep(step.id)}
+                      className="rounded-lg border border-emerald-300/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100"
+                    >
+                      Marquer terminee
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-slate-900/75 p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-cyan-200/80">Auto-apprentissage</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">L assistant s adapte a tes corrections</h2>
+              <p className="mt-1 text-xs text-slate-400">Les regles IA se mettent a jour automatiquement a partir de tes modifications.</p>
+            </div>
             <button
               type="button"
-              onClick={openAssistantModal}
-              className="group relative inline-flex min-h-16 items-center gap-3 overflow-hidden rounded-2xl border border-cyan-100/80 bg-[linear-gradient(130deg,#a5f3fc_0%,#7dd3fc_42%,#93c5fd_100%)] px-5 py-3 text-left text-slate-950 shadow-[0_24px_56px_-20px_rgba(56,189,248,0.95)] transition duration-300 hover:scale-[1.03]"
+              onClick={() => runAutoLearning('manual')}
+              disabled={autoLearnLoading}
+              className="rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 disabled:opacity-50"
             >
-              <span className="absolute -right-6 -top-8 h-28 w-28 rounded-full bg-white/35 blur-2xl transition group-hover:scale-110" />
-              <span className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-900/15 bg-slate-950/10 text-xl shadow-inner">
-                🗣️
-              </span>
-              <span className="relative flex flex-col">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-900/80">Assistant IA</span>
-                <span className="text-sm font-extrabold leading-tight">Discuter avec {assistantName}</span>
-              </span>
-              <span className="relative ml-2 rounded-full border border-slate-900/20 bg-white/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-900">
-                Live
-              </span>
+              {autoLearnLoading ? 'Apprentissage...' : 'Lancer maintenant'}
             </button>
           </div>
+          {autoLearnStatus && <p className="mt-2 text-xs text-emerald-200">{autoLearnStatus}</p>}
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-slate-900/75 p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-cyan-200/80">Assistant qui propose</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Propositions IA a valider</h2>
+              <p className="mt-1 text-xs text-slate-300">L IA prepare les actions. Tu valides en 1 clic.</p>
+            </div>
+            <button
+              type="button"
+              onClick={validateAllSuggestions}
+              disabled={dailySuggestions.length === 0 || validatingAllSuggestions || dailySuggestionsLoading}
+              className="rounded-xl border border-emerald-300/35 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-50"
+            >
+              {validatingAllSuggestions ? 'Validation...' : 'Valider toutes les propositions'}
+            </button>
+          </div>
+
+          {dailySuggestionsSummary && (
+            <p className="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
+              {dailySuggestionsSummary}
+            </p>
+          )}
+
+          {dailySuggestionsError && (
+            <p className="mt-3 rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+              {dailySuggestionsError}
+            </p>
+          )}
+
+          {dailySuggestionsLoading ? (
+            <p className="mt-4 text-sm text-slate-300">Chargement des propositions IA...</p>
+          ) : dailySuggestions.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-400">Aucune proposition prioritaire a valider pour le moment.</p>
+          ) : (
+            <div className="mt-4 space-y-2">
+              {dailySuggestions.map((suggestion, index) => {
+                const emailId = String(suggestion.email_message_id || '').trim();
+                const validating = Boolean(validatingSuggestionIds[emailId]);
+                return (
+                  <div
+                    key={`${emailId}-${index}`}
+                    className="rounded-2xl border border-white/10 bg-slate-950/45 p-3"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex items-center gap-2">
+                          <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${suggestionPriorityPill(suggestion.priority)}`}>
+                            {suggestion.priority}
+                          </span>
+                          <span className="truncate text-xs text-slate-400">{suggestion.sender || 'Expediteur'}</span>
+                        </div>
+                        <p className="text-sm font-medium text-slate-100">{suggestion.action}</p>
+                        <p className="mt-1 text-xs text-slate-400">{suggestion.why}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => validateSuggestion(suggestion)}
+                        disabled={!emailId || validating}
+                        className="rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 disabled:opacity-50"
+                      >
+                        {validating ? 'Creation...' : 'Valider'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         {assistantModalOpen && (
@@ -941,7 +1810,7 @@ export default function DashboardPage() {
                           : 'border border-cyan-300/30 bg-slate-800 text-cyan-100'
                       }`}
                     >
-                      {assistantListening ? 'Stop micro' : 'Micro'}
+                      {assistantListening ? 'Stop' : 'Parler'}
                     </button>
                     <button
                       type="button"
@@ -1047,4 +1916,25 @@ export default function DashboardPage() {
       </div>
     </div>
   );
+}
+
+function priorityWeight(priority: 'urgent' | 'high' | 'normal' | 'low'): number {
+  if (priority === 'urgent') return 4;
+  if (priority === 'high') return 3;
+  if (priority === 'normal') return 2;
+  return 1;
+}
+
+function suggestionPriorityPill(priority: 'urgent' | 'high' | 'normal' | 'low'): string {
+  if (priority === 'urgent') return 'border-rose-300/45 bg-rose-500/20 text-rose-100';
+  if (priority === 'high') return 'border-amber-300/45 bg-amber-500/20 text-amber-100';
+  if (priority === 'normal') return 'border-cyan-300/40 bg-cyan-500/20 text-cyan-100';
+  return 'border-slate-300/35 bg-slate-500/20 text-slate-200';
+}
+
+function dayKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
