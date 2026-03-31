@@ -1,13 +1,25 @@
 import * as webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
 
-webpush.setVapidDetails(
-  "mailto:fred@controlcenter.com",
-  process.env.VAPID_PUBLIC_KEY!,
-  process.env.VAPID_PRIVATE_KEY!
-);
+let vapidConfigured = false;
+
+function ensureVapidConfigured() {
+  if (vapidConfigured) return;
+
+  const publicKey = String(process.env.VAPID_PUBLIC_KEY || "").trim();
+  const privateKey = String(process.env.VAPID_PRIVATE_KEY || "").trim();
+
+  if (!publicKey || !privateKey) {
+    throw new Error("VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY manquantes");
+  }
+
+  webpush.setVapidDetails("mailto:fred@controlcenter.com", publicKey, privateKey);
+  vapidConfigured = true;
+}
 
 export async function sendPushToUser(userId: string, payload: any) {
+  ensureVapidConfigured();
+
   const supabase = createClient(
     process.env.SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!

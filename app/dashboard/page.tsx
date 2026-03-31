@@ -1932,6 +1932,22 @@ function suggestionPriorityPill(priority: 'urgent' | 'high' | 'normal' | 'low'):
   return 'border-slate-300/35 bg-slate-500/20 text-slate-200';
 }
 
+function uniqueNormalizedEmails(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const raw = String(value || '').trim();
+    if (!raw) continue;
+    const key = raw.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(raw);
+  }
+
+  return result;
+}
+
 function dayKey(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
