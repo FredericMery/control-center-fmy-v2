@@ -301,10 +301,17 @@ function buildFallbackSynthesis(
 
 function buildIaMailTaskTitle(action: DailyAction): string {
   const marker = '[IA-MAIL]';
+  const priorityMarker = getPriorityTitleMarker(action.priority);
   const actionText = truncate(normalizeText(action.action) || 'Action email', 140);
   const sender = truncate(normalizeText(action.sender) || 'expediteur inconnu', 60);
   const sourceToken = `[email:${normalizeText(action.email_message_id)}]`;
-  return truncate(`${marker} ${actionText} - ${sender} ${sourceToken}`, 240);
+  return truncate(`${priorityMarker}${marker} ${actionText} - ${sender} ${sourceToken}`, 240);
+}
+
+function getPriorityTitleMarker(priority: DailyAction['priority']): string {
+  if (priority === 'urgent') return '[URGENT] ';
+  if (priority === 'high') return '[HIGH] ';
+  return '';
 }
 
 function buildDeadlineFromPriority(priority: DailyAction['priority']): string {

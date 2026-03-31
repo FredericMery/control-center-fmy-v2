@@ -265,7 +265,8 @@ export default function TasksPage() {
             {filteredTasks.map((task) => {
               const transferInfo = parseTaskTransferInfo(task.title);
               const taskLink = parseLinkedEmailFromTaskTitle(transferInfo.cleanTitle);
-              const displayTaskTitle = taskLink.cleanTitle || transferInfo.cleanTitle || task.title;
+              const taskPriorityInfo = parseTaskPriorityMarker(taskLink.cleanTitle);
+              const displayTaskTitle = taskPriorityInfo.cleanTitle || taskLink.cleanTitle || transferInfo.cleanTitle || task.title;
 
               const deadlinePassed = isDeadlinePassed(task.deadline);
               const contactSource = `${displayTaskTitle}`;
@@ -292,9 +293,16 @@ export default function TasksPage() {
                     <div className="flex-1 min-w-0">
                       <div className="mb-3 flex items-start gap-2.5 sm:gap-3">
                         <span className="text-2xl flex-shrink-0">{statusEmojis[task.status]}</span>
-                        <h3 className="whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-white sm:text-[15px]">
-                          {displayTaskTitle}
-                        </h3>
+                        <div className="min-w-0">
+                          {taskPriorityInfo.priority && (
+                            <div className={`mb-1 inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${priorityPillClass(taskPriorityInfo.priority)}`}>
+                              {taskPriorityInfo.priority === 'urgent' ? 'URGENT' : 'HIGH'}
+                            </div>
+                          )}
+                          <h3 className="whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-white sm:text-[15px]">
+                            {displayTaskTitle}
+                          </h3>
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-3 flex-wrap">
@@ -594,6 +602,38 @@ function parseTaskTransferInfo(rawTitle: string): {
     recipientEmail: String(match[1] || '').trim(),
     transferredAt: String(match[2] || '').trim(),
   };
+}
+
+function parseTaskPriorityMarker(rawTitle: string): {
+  cleanTitle: string;
+  priority: 'urgent' | 'high' | null;
+} {
+  const raw = String(rawTitle || '');
+  const match = raw.match(/^\[(urgent|high)\]\s*/i);
+
+  if (!match?.[1]) {
+    return {
+      cleanTitle: raw,
+      priority: null,
+    };
+  }
+
+  const priorityRaw = String(match[1]).toLowerCase();
+  const priority = priorityRaw === 'urgent' ? 'urgent' : 'high';
+  const cleanTitle = raw.replace(/^\[(urgent|high)\]\s*/i, '').trim();
+
+  return {
+    cleanTitle,
+    priority,
+  };
+}
+
+function priorityPillClass(priority: 'urgent' | 'high'): string {
+  if (priority === 'urgent') {
+    return 'border-rose-300/50 bg-rose-500/20 text-rose-100';
+  }
+
+  return 'border-amber-300/50 bg-amber-500/20 text-amber-100';
 }
 
 function formatTransferDate(value: string, language: string): string {
