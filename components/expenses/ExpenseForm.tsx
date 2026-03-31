@@ -17,6 +17,11 @@ type ExpenseRecipient = {
   created_at: string;
 };
 
+type FactureRecipientsPreview = {
+  recipients: string[];
+  source: 'company_links' | 'global' | 'none';
+};
+
 const PERSONAL_REASONS = [
   'Repas',
   'Transport',
@@ -68,6 +73,10 @@ export default function ExpenseForm() {
   const [newRecipientDestination, setNewRecipientDestination] = useState('');
   const [recipientsLoading, setRecipientsLoading] = useState(false);
   const [savingRecipient, setSavingRecipient] = useState(false);
+  const [facturePreview, setFacturePreview] = useState<FactureRecipientsPreview | null>(null);
+  const [facturePreviewLoading, setFacturePreviewLoading] = useState(false);
+  const [facturePreviewError, setFacturePreviewError] = useState<string | null>(null);
+  const [factureRecipientsValidated, setFactureRecipientsValidated] = useState(false);
   const [formData, setFormData] = useState({
     vendor: '',
     category: '',
@@ -79,6 +88,7 @@ export default function ExpenseForm() {
   });
 
   const reasonOptions = paymentMethod === 'cb_pro' ? PRO_REASONS : PERSONAL_REASONS;
+  const selectedRecipient = recipients.find((recipient) => recipient.id === selectedRecipientId);
 
   // Récupérer le token Supabase au chargement
   useEffect(() => {
@@ -104,13 +114,49 @@ export default function ExpenseForm() {
     loadRecipients(authToken);
   }, [authToken]);
 
+  useEffect(() => {
+    if (!authToken || paymentMethod !== 'cb_pro') return;
+    if (!selectedRecipientId) {
+      setFacturePreview(null);
+      setFacturePreviewError(null);
+      return;
+    }
+
+    const run = async () => {
+      try {
+        setFacturePreviewLoading(true);
+        setFacturePreviewError(null);
+
+        const preview = await fetchFactureRecipientsPreview({
+          token: authToken,
+          recipientId: selectedRecipientId,
+          recipientName: selectedRecipient?.name || '',
+          recipientDestination: selectedRecipient?.destination || '',
+        });
+
+        setFacturePreview(preview);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Erreur chargement destinataires facture';
+        setFacturePreview(null);
+        setFacturePreviewError(message);
+      } finally {
+        setFacturePreviewLoading(false);
+      }
+    };
+
+    run();
+  }, [authToken, paymentMethod, selectedRecipientId, selectedRecipient?.name, selectedRecipient?.destination]);
+
   const handleMethodSelect = (method: PaymentMethod) => {
     setPaymentMethod(method);
     setReason('');
     setSelectedRecipientId('');
     setShowAddRecipient(false);
     setError(null);
-    setStep(method === 'cb_perso' ? 'recipient' : 'reason');
+    setFacturePreview(null);
+    setFacturePreviewError(null);
+    setFactureRecipientsValidated(false);
+    setStep('recipient');
   };
 
   const handleReasonSelect = (selectedReason: string) => {
@@ -193,8 +239,6 @@ export default function ExpenseForm() {
       });
     }, 320);
 
-    const selectedRecipient = recipients.find((recipient) => recipient.id === selectedRecipientId);
-
     try {
       console.log('🚀 Envoi de la facture à l\'API...');
       const payload = new FormData();
@@ -202,6 +246,7 @@ export default function ExpenseForm() {
       payload.append('paymentMethod', String(paymentMethod || ''));
       payload.append('validationCode', validationCode);
       payload.append('reason', reason || '');
+      payload.append('recipientId', selectedRecipient?.id || '');
       payload.append('recipientName', selectedRecipient?.name || '');
       payload.append('recipientDestination', selectedRecipient?.destination || '');
       if (sourceMime) {
@@ -358,6 +403,7 @@ export default function ExpenseForm() {
 
       setRecipients((prev) => [json.recipient!, ...prev]);
       setSelectedRecipientId(json.recipient.id);
+      setFactureRecipientsValidated(false);
       setNewRecipientName('');
       setNewRecipientDestination('');
       setShowAddRecipient(false);
@@ -454,7 +500,7 @@ export default function ExpenseForm() {
 
             <button
               type="button"
-              onClick={() => setStep(paymentMethod === 'cb_perso' ? 'recipient' : 'method')}
+              onClick={() => setStep('recipient')}
               className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-medium text-slate-900 hover:bg-slate-50"
             >
               {t('expenses.back')}
@@ -462,13 +508,15 @@ export default function ExpenseForm() {
           </div>
         )}
 
-        {/* ETAPE 2 BIS : DESTINATAIRE NOTE DE FRAIS */}
-        {step === 'recipient' && paymentMethod === 'cb_perso' && (
+        {/* ETAPE 2 BIS : DESTINATAIRE */}
+        {step === 'recipient' && paymentMethod && (
           <div className="space-y-4">
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
               <h3 className="text-lg font-semibold text-slate-900">Destinataire de la depense</h3>
               <p className="mt-1 text-sm text-slate-600">
-                Selectionnez l entreprise destinataire avant de scanner la facture.
+                {paymentMethod === 'cb_perso'
+                  ? 'Selectionnez l entreprise destinataire avant de scanner la facture.'
+                  : 'Verifiez les adresses de destination du justificatif, puis validez avant de continuer.'}
               </p>
             </div>
 
@@ -488,7 +536,10 @@ export default function ExpenseForm() {
                     <button
                       key={recipient.id}
                       type="button"
-                      onClick={() => setSelectedRecipientId(recipient.id)}
+                      onClick={() => {
+                        setSelectedRecipientId(recipient.id);
+                        setFactureRecipientsValidated(false);
+                      }}
                       className={`rounded-xl border px-4 py-4 text-left text-sm transition ${
                         selected
                           ? 'border-blue-400 bg-blue-50 text-blue-900'
@@ -546,6 +597,63 @@ export default function ExpenseForm() {
               </div>
             )}
 
+            {paymentMethod === 'cb_pro' && selectedRecipientId && (
+              <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                <p className="text-sm font-medium text-slate-900">
+                  Les justificatifs seront envoyes a:
+                </p>
+
+                {facturePreviewLoading ? (
+                  <p className="text-sm text-slate-600">Chargement des adresses...</p>
+                ) : facturePreviewError ? (
+                  <p className="text-sm text-red-700">{facturePreviewError}</p>
+                ) : facturePreview?.recipients?.length ? (
+                  <>
+                    <ul className="space-y-1 text-sm text-slate-800">
+                      {facturePreview.recipients.map((email) => (
+                        <li key={email}>• {email}</li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-slate-500">
+                      {facturePreview.source === 'company_links'
+                        ? 'Source: adresses liees a la societe selectionnee.'
+                        : 'Source: adresse globale de justificatif (parametres).'}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-amber-700">
+                    Aucune adresse de destination trouvee pour cette societe.
+                  </p>
+                )}
+
+                <div className="flex gap-3">
+                  {!factureRecipientsValidated ? (
+                    <button
+                      type="button"
+                      disabled={facturePreviewLoading || !facturePreview?.recipients?.length}
+                      onClick={() => setFactureRecipientsValidated(true)}
+                      className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                    >
+                      Valider les destinataires
+                    </button>
+                  ) : (
+                    <>
+                      <span className="inline-flex items-center rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 border border-emerald-200">
+                        Destinataires valides
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setFactureRecipientsValidated(false)}
+                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50"
+                      >
+                        Modifier
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button
                 type="button"
@@ -557,7 +665,10 @@ export default function ExpenseForm() {
               <button
                 type="button"
                 onClick={() => setStep('reason')}
-                disabled={!selectedRecipientId}
+                disabled={
+                  !selectedRecipientId ||
+                  (paymentMethod === 'cb_pro' && !factureRecipientsValidated)
+                }
                 className="flex-1 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
               >
                 Continuer
@@ -583,6 +694,21 @@ export default function ExpenseForm() {
                 <p className="mt-1 text-xs text-blue-800">
                   Destinataire: <strong>{recipients.find((r) => r.id === selectedRecipientId)?.name || '-'}</strong>
                 </p>
+              )}
+              {paymentMethod === 'cb_pro' && selectedRecipientId && (
+                <>
+                  <p className="mt-1 text-xs text-blue-800">
+                    Societe: <strong>{recipients.find((r) => r.id === selectedRecipientId)?.name || '-'}</strong>
+                  </p>
+                  <p className="mt-1 text-xs text-blue-800">
+                    Envoi vers:{' '}
+                    <strong>
+                      {facturePreview?.recipients?.length
+                        ? facturePreview.recipients.join(', ')
+                        : 'non determine'}
+                    </strong>
+                  </p>
+                </>
               )}
             </div>
 
@@ -812,6 +938,39 @@ async function fetchRecipients(token: string): Promise<ExpenseRecipient[]> {
   }
 
   return json.recipients || [];
+}
+
+async function fetchFactureRecipientsPreview(args: {
+  token: string;
+  recipientId: string;
+  recipientName: string;
+  recipientDestination: string;
+}): Promise<FactureRecipientsPreview> {
+  const params = new URLSearchParams();
+  if (args.recipientId) params.set('recipientId', args.recipientId);
+  if (args.recipientName) params.set('recipientName', args.recipientName);
+  if (args.recipientDestination) params.set('recipientDestination', args.recipientDestination);
+
+  const response = await fetch(`/api/expenses/facture-recipients?${params.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${args.token}`,
+    },
+  });
+
+  const json = (await response.json()) as {
+    recipients?: string[];
+    source?: 'company_links' | 'global' | 'none';
+    error?: string;
+  };
+
+  if (!response.ok) {
+    throw new Error(json.error || 'Erreur chargement destinataires facture');
+  }
+
+  return {
+    recipients: Array.isArray(json.recipients) ? json.recipients : [],
+    source: json.source === 'company_links' || json.source === 'global' ? json.source : 'none',
+  };
 }
 
 

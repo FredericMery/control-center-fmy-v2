@@ -164,28 +164,17 @@ export async function POST(request: NextRequest) {
 
     if (payload.paymentMethod === 'cb_pro') {
       try {
-        // Recuperer l email de destination facture avec fallback sur destinataire selectionne.
-        const { data: settings, error: settingsError } = await supabase
-          .from('email_settings')
-          .select('email')
-          .eq('type', 'facture')
-          .eq('user_id', userId)
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const recipientEmails = await resolveFactureRecipientEmails({
+          userId,
+          recipientId: payload.recipientId,
+          recipientName: payload.recipientName,
+          recipientDestination: payload.recipientDestination,
+        });
 
-        const destinationFromSettings = String(settings?.email || '').trim();
-        const destinationFromPayload = String(payload.recipientDestination || '').trim();
-        const recipientEmail = destinationFromSettings || destinationFromPayload;
-
-        if (settingsError) {
-          throw new Error(settingsError.message);
-        }
-
-        if (recipientEmail) {
+        if (recipientEmails.length > 0) {
           await sendExpenseEmail({
             userId,
-            to: recipientEmail,
+            to: recipientEmails.join(', '),
             vendor: invoiceData.vendor || 'Fournisseur',
             amountHt: normalizedAmounts.amountHt || 0,
             amountTax: normalizedAmounts.amountTva || 0,
@@ -197,7 +186,7 @@ export async function POST(request: NextRequest) {
           });
           emailSent = true;
         } else {
-          emailErrorMessage = 'Aucun destinataire facture configure (settings ou formulaire).';
+          emailErrorMessage = 'Aucun destinataire facture configure (societe ou reglage global).';
         }
       } catch (emailError) {
         console.error('Erreur envoi email:', emailError);
@@ -304,6 +293,7 @@ type ParsedUploadPayload = {
   paymentMethod: string;
   validationCode: string;
   reason: string;
+  recipientId: string;
   recipientName: string;
   recipientDestination: string;
 };
@@ -338,6 +328,7 @@ async function parseUploadPayload(request: NextRequest): Promise<ParsedUploadPay
       paymentMethod: String(formData.get('paymentMethod') || '').trim(),
       validationCode: String(formData.get('validationCode') || '').trim(),
       reason: String(formData.get('reason') || '').trim(),
+      recipientId: String(formData.get('recipientId') || '').trim(),
       recipientName: String(formData.get('recipientName') || '').trim(),
       recipientDestination: String(formData.get('recipientDestination') || '').trim(),
     };
@@ -369,6 +360,7 @@ async function parseUploadPayload(request: NextRequest): Promise<ParsedUploadPay
     paymentMethod: String(legacy?.paymentMethod || '').trim(),
     validationCode: String(legacy?.validationCode || '').trim(),
     reason: String(legacy?.reason || '').trim(),
+    recipientId: String(legacy?.recipientId || '').trim(),
     recipientName: String(legacy?.recipientName || '').trim(),
     recipientDestination: String(legacy?.recipientDestination || '').trim(),
   };
@@ -493,6 +485,116 @@ function getExtensionForMime(mime: string): string {
   if (mime === 'image/heic') return 'heic';
   if (mime === 'image/heif') return 'heif';
   return 'jpg';
+}
+
+async function resolveFactureRecipientEmails(args: {
+  userId: string;
+  recipientId: string;
+  recipientName: string;
+  recipientDestination: string;
+}): Promise<string[]> {
+  const companyRecipientId = await resolveCompanyRecipientId({
+    userId: args.userId,
+    recipientId: args.recipientId,
+    recipientName: args.recipientName,
+    recipientDestination: args.recipientDestination,
+  });
+
+  if (companyRecipientId) {
+    const { data: links, error: linksError } = await supabase
+      .from('email_company_links')
+      .select('email')
+      .eq('user_id', args.userId)
+      .eq('type', 'facture')
+      .eq('company_recipient_id', companyRecipientId);
+
+    if (linksError) {
+      throw new Error(linksError.message);
+    }
+
+    const linkedEmails = normalizeEmailList((links || []).map((link) => String(link.email || '')).join(', '));
+    if (linkedEmails.length > 0) {
+      return linkedEmails;
+    }
+  }
+
+  const { data: settings, error: settingsError } = await supabase
+    .from('email_settings')
+    .select('email')
+    .eq('type', 'facture')
+    .eq('user_id', args.userId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (settingsError) {
+    throw new Error(settingsError.message);
+  }
+
+  const globalEmails = normalizeEmailList(String(settings?.email || '').trim());
+  if (globalEmails.length > 0) {
+    return globalEmails;
+  }
+
+  return normalizeEmailList(String(args.recipientDestination || '').trim());
+}
+
+async function resolveCompanyRecipientId(args: {
+  userId: string;
+  recipientId: string;
+  recipientName: string;
+  recipientDestination: string;
+}): Promise<string | null> {
+  const directId = String(args.recipientId || '').trim();
+  if (directId) {
+    const { data: row } = await supabase
+      .from('expense_recipients')
+      .select('id')
+      .eq('user_id', args.userId)
+      .eq('id', directId)
+      .maybeSingle();
+
+    if (row?.id) {
+      return String(row.id);
+    }
+  }
+
+  const name = String(args.recipientName || '').trim();
+  if (!name) return null;
+
+  let query = supabase
+    .from('expense_recipients')
+    .select('id, name, destination')
+    .eq('user_id', args.userId)
+    .ilike('name', name)
+    .limit(5);
+
+  const destination = String(args.recipientDestination || '').trim();
+  if (destination) {
+    query = query.ilike('destination', destination);
+  }
+
+  const { data: rows } = await query;
+  if (!rows || rows.length === 0) return null;
+
+  const exact = rows.find((row) => {
+    const sameName = String(row.name || '').trim().toLowerCase() === name.toLowerCase();
+    const rowDestination = String(row.destination || '').trim().toLowerCase();
+    if (!destination) return sameName;
+    return sameName && rowDestination === destination.toLowerCase();
+  });
+
+  return String((exact || rows[0]).id || '') || null;
+}
+
+function normalizeEmailList(raw: string): string[] {
+  const entries = String(raw || '')
+    .split(/[;,]/)
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean)
+    .filter((entry) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry));
+
+  return Array.from(new Set(entries));
 }
 
 async function syncCurrentMonthReport(userId: string) {
