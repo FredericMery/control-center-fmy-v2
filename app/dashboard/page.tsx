@@ -109,6 +109,7 @@ export default function DashboardPage() {
   const [assistantFlowStatus, setAssistantFlowStatus] = useState<string | null>(null);
   const [assistantListening, setAssistantListening] = useState(false);
   const [assistantModalOpen, setAssistantModalOpen] = useState(false);
+  const [assistantSidebarOpen, setAssistantSidebarOpen] = useState(false);
   const [assistantName, setAssistantName] = useState('Assistant');
   const [assistantSummaryModalOpen, setAssistantSummaryModalOpen] = useState(false);
   const [assistantSummaryPreview, setAssistantSummaryPreview] = useState<string | null>(null);
@@ -468,6 +469,31 @@ export default function DashboardPage() {
     return new Intl.DateTimeFormat(language, { day: '2-digit', month: 'short' }).format(date);
   };
 
+  const formatChatDayLabel = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+    const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+    const yesterdayKey = `${yesterday.getFullYear()}-${yesterday.getMonth()}-${yesterday.getDate()}`;
+    if (key === todayKey) return 'Aujourd hui';
+    if (key === yesterdayKey) return 'Hier';
+    return new Intl.DateTimeFormat(language, { weekday: 'short', day: '2-digit', month: 'short' }).format(date);
+  };
+
+  const assistantQuickPrompts = useMemo(
+    () => [
+      'Priorise ma journee en 3 actions.',
+      'Que dois-je traiter en premier ?',
+      'Resume mes urgences de ce matin.',
+      'Prepare un plan d execution simple.',
+    ],
+    []
+  );
+
   const getModuleBadge = (moduleId: DashboardModuleId) => {
     if (moduleId === 'pro') return { value: proTodoCount, label: t('dashboard.proToLaunch') };
     if (moduleId === 'perso') return { value: persoTodoCount, label: t('dashboard.persoToLaunch') };
@@ -691,6 +717,7 @@ export default function DashboardPage() {
   const closeAssistantModal = () => {
     stopVoiceInput();
     setAssistantModalOpen(false);
+    setAssistantSidebarOpen(false);
     setAssistantSummaryModalOpen(false);
     setAssistantSummaryPreview(null);
     setAssistantShowFeedback(false);
@@ -700,6 +727,7 @@ export default function DashboardPage() {
 
   const openAssistantModal = () => {
     setAssistantModalOpen(true);
+    setAssistantSidebarOpen(false);
     setAssistantConversationId(null);
     setAssistantMessages([]);
     setAssistantQuestion('');
@@ -925,6 +953,7 @@ export default function DashboardPage() {
 
   const openConversation = (conversation: AssistantConversation) => {
     setAssistantConversationId(conversation.id);
+    setAssistantSidebarOpen(false);
     setAssistantAllowInternet(Boolean(conversation.allow_internet));
     setAssistantError(null);
     if (conversation.summary) {
@@ -1651,38 +1680,44 @@ export default function DashboardPage() {
         )}
 
         {assistantModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/70 p-3 sm:p-6" onClick={closeAssistantModal}>
+          <div className="fixed inset-0 z-50 bg-black/75 p-2 sm:p-5" onClick={closeAssistantModal}>
             <div
-              className="relative mx-auto flex h-[96vh] w-full max-w-3xl flex-col rounded-2xl border border-white/10 bg-slate-900 shadow-2xl shadow-black/40"
+              className="relative mx-auto flex h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-cyan-200/20 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 shadow-[0_40px_120px_-40px_rgba(34,211,238,0.55)]"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="flex items-center justify-between border-b border-white/10 px-3 py-3 sm:px-4">
+              <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                 <div>
-                  <p className="text-sm font-semibold text-cyan-100">{assistantName}</p>
-                  <p className="text-[11px] text-slate-400">Assistant conversationnel</p>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-200/75">Assistant IA</p>
+                  <h2 className="text-base font-semibold text-white">Discuter avec {assistantName}</h2>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    onClick={() => setAssistantSidebarOpen((prev) => !prev)}
+                    className="rounded-xl border border-cyan-300/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 lg:hidden"
+                  >
+                    {assistantSidebarOpen ? 'Masquer conversations' : 'Conversations'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startNewConversation}
+                    className="rounded-xl border border-emerald-300/35 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/25"
+                  >
+                    Nouvelle discussion
+                  </button>
+                  <button
+                    type="button"
                     onClick={closeAssistantModal}
-                    className="rounded-lg border border-white/15 px-2.5 py-1.5 text-xs text-slate-200"
+                    className="rounded-xl border border-white/15 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-800"
                   >
                     Fermer
                   </button>
                 </div>
-              </div>
+              </header>
 
-              <div className="border-b border-white/10 px-3 py-2 sm:px-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={startNewConversation}
-                    className="rounded-full border border-emerald-300/30 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/25"
-                  >
-                    Nouvelle discussion
-                  </button>
-
-                  <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/65 px-3 py-1.5 text-xs text-slate-300">
+              <div className="grid flex-1 grid-cols-1 lg:grid-cols-[320px_1fr]">
+                <aside className={`${assistantSidebarOpen ? 'block' : 'hidden'} border-b border-white/10 bg-slate-950/35 p-3 lg:block lg:border-b-0 lg:border-r`}>
+                  <label className="mb-3 inline-flex w-full items-center gap-2 rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-xs text-slate-300">
                     <input
                       type="checkbox"
                       checked={assistantAllowInternet}
@@ -1691,164 +1726,194 @@ export default function DashboardPage() {
                     />
                     Autoriser recherche internet
                   </label>
-                </div>
 
-                <div className="mt-2 overflow-hidden rounded-xl border border-white/10">
-                  <div className="grid grid-cols-[76px_1fr_1.2fr_96px] bg-slate-950/70 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400">
-                    <span>Date</span>
-                    <span>Sujet</span>
-                    <span>Resume</span>
-                    <span className="text-right">Conversation</span>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-[11px] uppercase tracking-wide text-slate-400">Conversations</p>
+                    <span className="text-[11px] text-slate-500">{assistantConversations.length}</span>
                   </div>
-                  <div className="max-h-40 overflow-y-auto bg-slate-900/35">
+
+                  <div className="max-h-[28vh] space-y-1 overflow-y-auto lg:max-h-[62vh]">
                     {assistantConversations.length === 0 ? (
-                      <p className="px-3 py-2 text-xs text-slate-400">Aucune conversation pour le moment.</p>
+                      <p className="rounded-xl border border-white/10 bg-slate-900/40 p-3 text-xs text-slate-400">
+                        Aucune conversation pour le moment.
+                      </p>
                     ) : (
                       assistantConversations.map((conversation) => (
-                        <div
+                        <button
                           key={conversation.id}
-                          className={`grid grid-cols-[76px_1fr_1.2fr_96px] items-center gap-2 border-t border-white/10 px-2 py-1.5 text-xs ${
-                            assistantConversationId === conversation.id ? 'bg-cyan-500/10' : 'bg-transparent'
+                          type="button"
+                          onClick={() => openConversation(conversation)}
+                          className={`w-full rounded-xl border p-2.5 text-left transition ${
+                            assistantConversationId === conversation.id
+                              ? 'border-cyan-300/35 bg-cyan-500/12'
+                              : 'border-white/10 bg-slate-900/45 hover:border-white/25'
                           }`}
                         >
-                          <span className="text-slate-400">{formatRelativeDate(conversation.last_message_at)}</span>
-                          <button
-                            type="button"
-                            onClick={() => openConversation(conversation)}
-                            className="truncate text-left text-slate-100 hover:text-cyan-100"
-                            title={conversation.title || 'Discussion'}
-                          >
-                            {conversation.title || 'Discussion'}
-                          </button>
-                          <span className="truncate text-slate-400" title={conversation.summary || 'Aucun resume'}>
-                            {conversation.summary || '-'}
-                          </span>
-                          <div className="text-right">
-                            <button
-                              type="button"
-                              onClick={() => openConversation(conversation)}
-                              className="rounded-md border border-cyan-300/30 px-2 py-1 text-[11px] text-cyan-100"
-                            >
-                              Ouvrir
-                            </button>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-xs font-semibold text-slate-100">{conversation.title || 'Discussion'}</p>
+                            <span className="text-[10px] text-slate-500">{formatRelativeDate(conversation.last_message_at)}</span>
                           </div>
-                        </div>
+                          <p className="mt-1 line-clamp-2 text-[11px] text-slate-400">{conversation.summary || 'Sans resume'}</p>
+                        </button>
                       ))
                     )}
                   </div>
-                </div>
-              </div>
+                </aside>
 
-              <div className="flex-1 space-y-2 overflow-y-auto bg-slate-950/35 px-3 py-3 sm:px-4">
-                {assistantMessages.length === 0 ? (
-                  <p className="text-sm text-slate-300">Selectionne une conversation ou commence une nouvelle discussion.</p>
-                ) : (
-                  assistantMessages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`max-w-[92%] rounded-2xl px-3 py-2 text-sm ${
-                        message.role === 'assistant'
-                          ? 'mr-auto border border-cyan-300/20 bg-cyan-500/10 text-cyan-50'
-                          : 'ml-auto border border-white/10 bg-slate-800/95 text-slate-100'
-                      }`}
-                    >
-                      <p className="mb-1 text-[10px] uppercase tracking-wide opacity-70">
-                        {message.role === 'assistant' ? assistantName : userLabel}
-                      </p>
-                      <p className="whitespace-pre-wrap">{message.content}</p>
-                      {message.role === 'assistant' && (
+                <section className={`${assistantSidebarOpen ? 'hidden' : 'flex'} min-h-0 flex-col lg:flex`}>
+                  <div className="flex-1 space-y-3 overflow-y-auto bg-slate-950/20 px-4 py-4">
+                    {assistantMessages.length === 0 ? (
+                      <div className="mx-auto mt-8 max-w-xl rounded-2xl border border-white/10 bg-slate-900/45 p-5 text-center">
+                        <p className="text-sm font-semibold text-cyan-100">Commence une discussion avec Noa</p>
+                        <p className="mt-2 text-xs text-slate-400">
+                          1. Choisis une conversation a gauche ou cree-en une nouvelle.
+                          2. Pose ta question en bas.
+                          3. Utilise le micro si tu preferes parler.
+                        </p>
+                      </div>
+                    ) : (
+                      assistantMessages.map((message, index) => {
+                        const previous = index > 0 ? assistantMessages[index - 1] : null;
+                        const dayKey = new Date(message.created_at).toDateString();
+                        const previousDayKey = previous ? new Date(previous.created_at).toDateString() : null;
+                        const showDaySeparator = !previous || dayKey !== previousDayKey;
+
+                        return (
+                          <div key={message.id}>
+                            {showDaySeparator && (
+                              <div className="my-2 flex items-center gap-2">
+                                <div className="h-px flex-1 bg-white/10" />
+                                <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                                  {formatChatDayLabel(message.created_at)}
+                                </p>
+                                <div className="h-px flex-1 bg-white/10" />
+                              </div>
+                            )}
+                            <div
+                              className={`max-w-[92%] rounded-2xl border px-3 py-2.5 text-sm ${
+                                message.role === 'assistant'
+                                  ? 'mr-auto border-cyan-300/25 bg-cyan-500/10 text-cyan-50'
+                                  : 'ml-auto border-white/10 bg-slate-800/95 text-slate-100'
+                              }`}
+                            >
+                              <p className="mb-1 text-[10px] uppercase tracking-wide opacity-70">
+                                {message.role === 'assistant' ? assistantName : userLabel}
+                              </p>
+                              <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                              {message.role === 'assistant' && (
+                                <button
+                                  type="button"
+                                  onClick={() => speakText(message.content)}
+                                  className="mt-2 rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-100 transition hover:bg-cyan-500/20"
+                                >
+                                  Lire
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+
+                    {assistantConversationId && assistantMessages.length > 0 && !assistantShowFeedback && (
+                      <div className="pt-1">
                         <button
                           type="button"
-                          onClick={() => speakText(message.content)}
-                          className="mt-2 rounded-md border border-cyan-300/30 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-100"
+                          onClick={closeConversation}
+                          disabled={assistantFinalizing || selectedConversation?.status === 'closed'}
+                          className="rounded-xl border border-cyan-300/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-100 transition hover:bg-cyan-500/20 disabled:opacity-60"
                         >
-                          Lire
+                          {assistantFinalizing ? 'Cloture...' : 'Fin de conversation'}
                         </button>
-                      )}
-                    </div>
-                  ))
-                )}
-
-                {assistantConversationId && assistantMessages.length > 0 && !assistantShowFeedback && (
-                  <div className="pt-1">
-                    <button
-                      type="button"
-                      onClick={closeConversation}
-                      disabled={assistantFinalizing || selectedConversation?.status === 'closed'}
-                      className="rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-60"
-                    >
-                      {assistantFinalizing ? 'Cloture...' : 'Fin de conversation'}
-                    </button>
+                      </div>
+                    )}
+                    <div ref={messagesEndRef} />
                   </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
 
-              <div className="border-t border-white/10 bg-slate-900/95 px-3 py-3 sm:px-4">
-                {assistantConversationId && assistantShowFeedback && (
-                  <div className="mb-2 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => rateConversation(true)}
-                      disabled={assistantRatingLoading}
-                      className="rounded-lg border border-emerald-300/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 disabled:opacity-60"
-                    >
-                      Pouce haut (memoriser)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => rateConversation(false)}
-                      disabled={assistantRatingLoading}
-                      className="rounded-lg border border-rose-300/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-100 disabled:opacity-60"
-                    >
-                      Pouce bas (ne pas memoriser)
-                    </button>
-                  </div>
-                )}
-                {assistantFlowStatus && <p className="mb-2 text-xs text-emerald-300">{assistantFlowStatus}</p>}
-                {assistantRatingLoading && assistantSaveProgress > 0 && (
-                  <div className="mb-2">
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-800">
-                      <div
-                        className="h-full rounded-full bg-emerald-400 transition-all duration-200"
-                        style={{ width: `${assistantSaveProgress}%` }}
+                  <div className="border-t border-white/10 bg-slate-900/90 px-4 py-3">
+                    {assistantConversationId && assistantShowFeedback && (
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => rateConversation(true)}
+                          disabled={assistantRatingLoading}
+                          className="rounded-lg border border-emerald-300/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 disabled:opacity-60"
+                        >
+                          Pouce haut (memoriser)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => rateConversation(false)}
+                          disabled={assistantRatingLoading}
+                          className="rounded-lg border border-rose-300/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-100 disabled:opacity-60"
+                        >
+                          Pouce bas (ne pas memoriser)
+                        </button>
+                      </div>
+                    )}
+
+                    {assistantFlowStatus && <p className="mb-2 text-xs text-emerald-300">{assistantFlowStatus}</p>}
+                    {assistantRatingLoading && assistantSaveProgress > 0 && (
+                      <div className="mb-2">
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+                          <div
+                            className="h-full rounded-full bg-emerald-400 transition-all duration-200"
+                            style={{ width: `${assistantSaveProgress}%` }}
+                          />
+                        </div>
+                        <p className="mt-1 text-[11px] text-emerald-200">Enregistrement du resume... {assistantSaveProgress}%</p>
+                      </div>
+                    )}
+
+                    {!assistantShowFeedback && (
+                      <div className="mb-2 flex flex-wrap gap-1.5">
+                        {assistantQuickPrompts.map((prompt) => (
+                          <button
+                            key={prompt}
+                            type="button"
+                            onClick={() => setAssistantQuestion(prompt)}
+                            className="rounded-full border border-white/15 bg-slate-800/65 px-3 py-1 text-[11px] text-slate-300 transition hover:border-cyan-300/40 hover:text-cyan-100"
+                          >
+                            {prompt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <input
+                        value={assistantQuestion}
+                        onChange={(event) => setAssistantQuestion(event.target.value)}
+                        placeholder={displayName}
+                        disabled={assistantShowFeedback}
+                        className="min-h-12 flex-1 rounded-xl border border-white/10 bg-slate-950 px-3 text-sm text-white outline-none focus:border-cyan-300"
                       />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={assistantListening ? stopVoiceInput : startVoiceInput}
+                          disabled={assistantShowFeedback}
+                          className={`min-h-12 rounded-xl px-3 text-xs font-semibold ${
+                            assistantListening
+                              ? 'bg-rose-500 text-white'
+                              : 'border border-cyan-300/30 bg-slate-800 text-cyan-100'
+                          }`}
+                        >
+                          {assistantListening ? 'Stop' : 'Parler'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={askAssistant}
+                          disabled={assistantLoading || assistantShowFeedback || !assistantQuestion.trim()}
+                          className="min-h-12 rounded-xl bg-cyan-400 px-4 text-sm font-semibold text-slate-950 disabled:opacity-50"
+                        >
+                          {assistantLoading ? 'Analyse...' : 'Envoyer'}
+                        </button>
+                      </div>
                     </div>
-                    <p className="mt-1 text-[11px] text-emerald-200">Enregistrement du resume... {assistantSaveProgress}%</p>
+                    {assistantError && <p className="mt-2 text-xs text-rose-300">{assistantError}</p>}
                   </div>
-                )}
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <input
-                    value={assistantQuestion}
-                    onChange={(event) => setAssistantQuestion(event.target.value)}
-                    placeholder={displayName}
-                    disabled={assistantShowFeedback}
-                    className="min-h-11 flex-1 rounded-xl border border-white/10 bg-slate-900 px-3 text-sm text-white outline-none focus:border-cyan-300"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={assistantListening ? stopVoiceInput : startVoiceInput}
-                      disabled={assistantShowFeedback}
-                      className={`min-h-11 rounded-xl px-3 text-xs font-semibold ${
-                        assistantListening
-                          ? 'bg-rose-500 text-white'
-                          : 'border border-cyan-300/30 bg-slate-800 text-cyan-100'
-                      }`}
-                    >
-                      {assistantListening ? 'Stop' : 'Parler'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={askAssistant}
-                      disabled={assistantLoading || assistantShowFeedback || !assistantQuestion.trim()}
-                      className="min-h-11 rounded-xl bg-cyan-400 px-4 text-sm font-semibold text-slate-950 disabled:opacity-50"
-                    >
-                      {assistantLoading ? 'Analyse...' : 'Envoyer'}
-                    </button>
-                  </div>
-                </div>
-                {assistantError && <p className="mt-2 text-xs text-rose-300">{assistantError}</p>}
+                </section>
               </div>
 
               {assistantSummaryModalOpen && assistantSummaryPreview && (
