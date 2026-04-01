@@ -60,6 +60,16 @@ type SourceEventData = {
   body_text: string | null;
   received_at: string | null;
   ai_summary: string | null;
+  status?: string | null;
+  archived?: boolean | null;
+};
+
+type SourceMarker = {
+  id: string;
+  action_type: string;
+  action_label: string;
+  action_comment: string;
+  created_at: string;
 };
 
 type SetupCompanyDraft = {
@@ -132,6 +142,8 @@ export default function DashboardPage() {
   const [sourceEventOpen, setSourceEventOpen] = useState(false);
   const [sourceEventData, setSourceEventData] = useState<SourceEventData | null>(null);
   const [sourceEventLoading, setSourceEventLoading] = useState(false);
+  const [sourceEventMarkers, setSourceEventMarkers] = useState<SourceMarker[]>([]);
+  const [processedEmailsCount, setProcessedEmailsCount] = useState(0);
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupCompanyCount, setSetupCompanyCount] = useState(1);
   const [setupCompanies, setSetupCompanies] = useState<SetupCompanyDraft[]>([{ name: '', paymentEmail: '', ndfEmail: '' }]);
@@ -269,6 +281,23 @@ export default function DashboardPage() {
     };
 
     loadAssistantName();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const loadProcessedEmailKpi = async () => {
+      const { count } = await supabase
+        .from('email_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('archived', true)
+        .is('deleted_at', null);
+
+      setProcessedEmailsCount(count || 0);
+    };
+
+    loadProcessedEmailKpi();
   }, [user]);
 
   useEffect(() => {
@@ -494,6 +523,7 @@ export default function DashboardPage() {
         stats: [
           { label: `Vision (${monthName})`, value: String(visionCountMonth) },
           { label: 'Conversations IA', value: String(assistantConversations.length) },
+          { label: 'Emails traites', value: String(processedEmailsCount) },
           {
             label: 'Conversations ouvertes',
             value: String(assistantConversations.filter((entry) => entry.status !== 'closed').length),
@@ -533,6 +563,7 @@ export default function DashboardPage() {
     recentMemoryItems,
     visionCountMonth,
     assistantConversations,
+    processedEmailsCount,
     monthName,
   ]);
 
@@ -973,9 +1004,20 @@ export default function DashboardPage() {
         return;
       }
 
+      await fetch('/api/email/proposals', {
+        method: 'PATCH',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({
+          proposalId: proposal.id,
+          decision: 'validate',
+          comment: 'Validation utilisateur',
+        }),
+      });
+
       // Retire la proposition validée de la liste
       setProposals((prev) => prev.filter((p) => p.id !== proposal.id));
       await fetchTasks();
+      setProcessedEmailsCount((prev) => prev + 1);
     } catch {
       setProposalsError('Erreur reseau pendant la validation.');
     } finally {
@@ -1026,6 +1068,9 @@ export default function DashboardPage() {
       setProposalActionOpen(false);
       setProposalActionTarget(null);
       await fetchTasks();
+      if (proposalActionType === 'classify') {
+        setProcessedEmailsCount((prev) => prev + 1);
+      }
     } catch {
       setProposalsError('Erreur reseau pendant l enregistrement du retour.');
     } finally {
@@ -1116,18 +1161,55 @@ export default function DashboardPage() {
   };
 
   // Charge et affiche l'événement source d'une proposition
-  const openSourceEvent = async (emailId: string) => {
-    if (!emailId) return;
+  const openSourceEvent = async (sourceId: string, sourceType: string) => {
+    if (!sourceId) return;
     setSourceEventLoading(true);
     setSourceEventData(null);
+    setSourceEventMarkers([]);
     setSourceEventOpen(true);
     try {
-      const res = await fetch(`/api/email/messages/${emailId}`, {
-        headers: await getAuthHeaders(false),
-      });
+      if (sourceType === 'mail' || sourceType === 'courrier') {
+        const [sourceRes, markerRes] = await Promise.all([
+          fetch(`/api/mail/${sourceId}`, { headers: await getAuthHeaders(false) }),
+          fetch(`/api/source-markers?source_type=${encodeURIComponent(sourceType)}&source_id=${encodeURIComponent(sourceId)}`, {
+            headers: await getAuthHeaders(false),
+          }),
+        ]);
+
+        const sourceJson = (await sourceRes.json().catch(() => ({}))) as { item?: any };
+        const markerJson = (await markerRes.json().catch(() => ({}))) as { markers?: SourceMarker[] };
+
+        if (sourceRes.ok && sourceJson.item) {
+          setSourceEventData({
+            subject: String(sourceJson.item.subject || ''),
+            sender_name: String(sourceJson.item.sender_name || ''),
+            sender_email: String(sourceJson.item.sender_email || ''),
+            body_text: String(sourceJson.item.full_text || ''),
+            received_at: String(sourceJson.item.received_at || ''),
+            ai_summary: String(sourceJson.item.summary || ''),
+            status: String(sourceJson.item.status || ''),
+          });
+        }
+
+        if (markerRes.ok) {
+          setSourceEventMarkers(markerJson.markers || []);
+        }
+        return;
+      }
+
+      const [res, markerRes] = await Promise.all([
+        fetch(`/api/email/messages/${sourceId}`, {
+          headers: await getAuthHeaders(false),
+        }),
+        fetch(`/api/source-markers?source_type=${encodeURIComponent(sourceType || 'email')}&source_id=${encodeURIComponent(sourceId)}`, {
+          headers: await getAuthHeaders(false),
+        }),
+      ]);
+
       const json = (await res.json().catch(() => ({}))) as { item?: SourceEventData; error?: string };
-      if (!res.ok || !json.item) return;
-      setSourceEventData(json.item);
+      const markerJson = (await markerRes.json().catch(() => ({}))) as { markers?: SourceMarker[] };
+      if (res.ok && json.item) setSourceEventData(json.item);
+      if (markerRes.ok) setSourceEventMarkers(markerJson.markers || []);
     } catch {
       // Silencieux
     } finally {
@@ -1523,7 +1605,7 @@ export default function DashboardPage() {
                         {proposal.email_message_id && (
                           <button
                             type="button"
-                            onClick={() => openSourceEvent(proposal.email_message_id)}
+                            onClick={() => openSourceEvent(proposal.email_message_id, proposal.source_type || 'email')}
                             className="rounded-lg border border-slate-300/20 bg-slate-800/60 px-2.5 py-1 text-[11px] text-slate-300 transition hover:border-slate-300/40 hover:text-slate-100"
                             title="Voir l evenement source"
                           >
@@ -1967,11 +2049,29 @@ export default function DashboardPage() {
                 <p className="text-sm text-slate-400">Email source introuvable.</p>
               ) : (
                 <div className="space-y-3">
+                  {sourceEventMarkers.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {sourceEventMarkers.map((marker) => (
+                        <span
+                          key={marker.id}
+                          className="inline-flex rounded-full border border-cyan-300/30 bg-cyan-500/12 px-2.5 py-1 text-[11px] font-medium text-cyan-100"
+                          title={marker.action_comment || marker.action_label}
+                        >
+                          {marker.action_label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
                     <p className="text-sm font-semibold text-white">{sourceEventData.subject || '(sans objet)'}</p>
                     <p className="mt-1 text-xs text-slate-400">
                       De : {sourceEventData.sender_name || sourceEventData.sender_email || '—'} · {sourceEventData.received_at ? new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(sourceEventData.received_at)) : ''}
                     </p>
+                    {(sourceEventData.status || typeof sourceEventData.archived === 'boolean') && (
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Statut source: {sourceEventData.status || (sourceEventData.archived ? 'traitee' : 'active')}
+                      </p>
+                    )}
                   </div>
                   {sourceEventData.ai_summary && (
                     <div className="rounded-xl border border-indigo-300/15 bg-indigo-500/5 p-3">

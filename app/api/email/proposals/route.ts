@@ -29,7 +29,7 @@ type DailyRow = {
   received_at: string;
 };
 
-type ProposalFeedbackDecision = 'correct' | 'cancel' | 'classify';
+type ProposalFeedbackDecision = 'validate' | 'correct' | 'cancel' | 'classify';
 
 // GET — Retourne le dernier batch de propositions stockées
 export async function GET(request: NextRequest) {
@@ -205,13 +205,13 @@ export async function PATCH(request: NextRequest) {
   if (!decision) {
     return NextResponse.json({ error: 'decision invalide' }, { status: 400 });
   }
-  if (!comment || comment.length < 6) {
+  if (decision !== 'validate' && (!comment || comment.length < 6)) {
     return NextResponse.json({ error: 'Commentaire obligatoire (min 6 caracteres).' }, { status: 400 });
   }
 
   const { data: proposal, error: proposalError } = await supabase
     .from('ai_action_proposals')
-    .select('id,user_id,email_message_id,action,status')
+    .select('id,user_id,email_message_id,source_type,action,status')
     .eq('id', proposalId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -220,22 +220,30 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Proposition introuvable.' }, { status: 404 });
   }
 
-  const { error: feedbackError } = await supabase
-    .from('ai_action_proposal_feedback')
-    .insert({
-      proposal_id: proposalId,
-      user_id: userId,
-      decision,
-      comment: truncate(comment, 1200),
-      corrected_action: correctedAction,
-    });
+  if (decision !== 'validate') {
+    const { error: feedbackError } = await supabase
+      .from('ai_action_proposal_feedback')
+      .insert({
+        proposal_id: proposalId,
+        user_id: userId,
+        decision,
+        comment: truncate(comment, 1200),
+        corrected_action: correctedAction,
+      });
 
-  if (feedbackError) {
-    return NextResponse.json({ error: feedbackError.message }, { status: 500 });
+    if (feedbackError) {
+      return NextResponse.json({ error: feedbackError.message }, { status: 500 });
+    }
   }
 
   const nextStatus =
-    decision === 'correct' ? 'corrected' : decision === 'cancel' ? 'cancelled' : 'classified';
+    decision === 'validate'
+      ? 'validated'
+      : decision === 'correct'
+        ? 'corrected'
+        : decision === 'cancel'
+          ? 'cancelled'
+          : 'classified';
 
   const { error: updateProposalError } = await supabase
     .from('ai_action_proposals')
@@ -250,31 +258,47 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: updateProposalError.message }, { status: 500 });
   }
 
-  if (decision === 'classify') {
-    const emailMessageId = normalizeText(proposal.email_message_id);
-    if (emailMessageId) {
-      await supabase
-        .from('email_messages')
-        .update({
-          archived: true,
-          ai_action: 'classer',
-          response_required: false,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', emailMessageId)
-        .eq('user_id', userId)
-        .is('deleted_at', null);
+  const sourceType = normalizeText(proposal.source_type) || 'email';
+  const sourceId = normalizeText(proposal.email_message_id);
+
+  if (sourceId) {
+    await applySourceTreatment({
+      supabase,
+      userId,
+      sourceType,
+      sourceId,
+      decision,
+    });
+  }
+
+  if (sourceId) {
+    const markerInsert = await supabase
+      .from('source_action_markers')
+      .insert({
+        user_id: userId,
+        source_type: sourceType,
+        source_id: sourceId,
+        proposal_id: proposalId,
+        action_type: markerActionType(decision),
+        action_label: markerActionLabel(decision),
+        action_comment: truncate(comment, 800),
+      });
+
+    if (markerInsert.error) {
+      return NextResponse.json({ error: markerInsert.error.message }, { status: 500 });
     }
   }
 
-  await applyFeedbackLearningToSettings({
-    supabase,
-    userId,
-    decision,
-    comment,
-    oldAction: normalizeText(proposal.action),
-    correctedAction,
-  });
+  if (decision !== 'validate') {
+    await applyFeedbackLearningToSettings({
+      supabase,
+      userId,
+      decision,
+      comment,
+      oldAction: normalizeText(proposal.action),
+      correctedAction,
+    });
+  }
 
   return NextResponse.json({ ok: true, status: nextStatus });
 }
@@ -419,10 +443,65 @@ function priorityWeight(value: unknown): number {
 
 function normalizeDecision(value: unknown): ProposalFeedbackDecision | null {
   const raw = normalizeText(value).toLowerCase();
+  if (raw === 'validate') return 'validate';
   if (raw === 'correct') return 'correct';
   if (raw === 'cancel') return 'cancel';
   if (raw === 'classify') return 'classify';
   return null;
+}
+
+function markerActionType(decision: ProposalFeedbackDecision): string {
+  if (decision === 'validate') return 'validated';
+  if (decision === 'correct') return 'corrected';
+  if (decision === 'cancel') return 'cancelled';
+  return 'classified';
+}
+
+function markerActionLabel(decision: ProposalFeedbackDecision): string {
+  if (decision === 'validate') return 'Action validee';
+  if (decision === 'correct') return 'Action corrigee';
+  if (decision === 'cancel') return 'Action annulee';
+  return 'Demande classee';
+}
+
+async function applySourceTreatment(args: {
+  supabase: ReturnType<typeof getSupabaseAdminClient>;
+  userId: string;
+  sourceType: string;
+  sourceId: string;
+  decision: ProposalFeedbackDecision;
+}) {
+  if (args.decision !== 'classify') return;
+
+  if (args.sourceType === 'email') {
+    await args.supabase
+      .from('email_messages')
+      .update({
+        archived: true,
+        ai_action: 'classer',
+        response_required: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', args.sourceId)
+      .eq('user_id', args.userId)
+      .is('deleted_at', null);
+    return;
+  }
+
+  if (args.sourceType === 'mail' || args.sourceType === 'courrier') {
+    await args.supabase
+      .from('mail_items')
+      .update({
+        status: 'traite',
+        action_required: false,
+        closed_at: new Date().toISOString(),
+      })
+      .eq('id', args.sourceId)
+      .eq('user_id', args.userId);
+    return;
+  }
+
+  // Fallback: autres types de source -> pastille seulement.
 }
 
 async function verifyManualSecurityCode(
