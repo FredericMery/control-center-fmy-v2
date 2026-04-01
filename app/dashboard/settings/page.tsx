@@ -656,6 +656,13 @@ export default function SettingsPage() {
     ...(FULL_ACCESS_USER_IDS.has(user.id) ? [{ id: 'admin', icon: '🔧', label: 'Admin' }] : []),
   ];
 
+  const maskedProposalSecurityCode = (() => {
+    const code = proposalSecurityCodeDraft.trim();
+    if (!code) return 'Non configure';
+    if (code.length <= 2) return code;
+    return `${code[0]}${'*'.repeat(Math.max(0, code.length - 2))}${code[code.length - 1]}`;
+  })();
+
   return (
     <div className="mx-auto max-w-2xl px-3 pb-24 text-slate-100 sm:px-0">
       {/* Header */}
@@ -798,9 +805,13 @@ export default function SettingsPage() {
                   value={proposalSecurityCodeDraft}
                   onChange={(e) => setProposalSecurityCodeDraft(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
                   placeholder="Ex: 123456"
+                  type="tel"
                   inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="one-time-code"
                   className="min-h-11 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-sm text-white outline-none focus:border-cyan-400/60"
                 />
+                <p className="text-xs text-slate-400">Affichage securise: <span className="font-mono text-cyan-200">{maskedProposalSecurityCode}</span></p>
                 <p className="text-[11px] text-slate-500">Ce code est demande pour le bouton "Mettre a jour" des propositions IA.</p>
               </div>
               <p className="mt-2 text-xs text-slate-400">

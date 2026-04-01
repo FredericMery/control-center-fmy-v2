@@ -1509,60 +1509,56 @@ export default function DashboardPage() {
                   const isValidating = validatingProposalId === proposal.id;
                   return (
                     <div key={proposal.id} className="rounded-2xl border border-white/10 bg-slate-950/45 p-3">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-1 flex items-center gap-2">
-                            <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${suggestionPriorityPill(proposal.priority)}`}>
-                              {proposal.priority}
-                            </span>
-                            <span className="truncate text-xs text-slate-400">{proposal.sender || 'Expediteur'}</span>
-                          </div>
-                          <p className="text-sm font-medium text-slate-100">{proposal.action}</p>
-                          <p className="mt-1 text-xs text-slate-400">{proposal.why}</p>
+                      <div className="min-w-0">
+                        <div className="mb-1 flex items-center gap-2">
+                          <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${suggestionPriorityPill(proposal.priority)}`}>
+                            {proposal.priority}
+                          </span>
+                          <span className="truncate text-xs text-slate-400">{proposal.sender || 'Expediteur'}</span>
                         </div>
-                        <div className="flex flex-col items-end gap-1.5">
-                          {proposal.email_message_id && (
-                            <button
-                              type="button"
-                              onClick={() => openSourceEvent(proposal.email_message_id)}
-                              className="rounded-lg border border-slate-300/20 bg-slate-800/60 px-2.5 py-1 text-[11px] text-slate-300 transition hover:border-slate-300/40 hover:text-slate-100"
-                              title="Voir l evenement source"
-                            >
-                              Origine 🔍
-                            </button>
-                          )}
-                          <div className="flex flex-wrap justify-end gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openProposalActionModal(proposal, 'correct')}
-                              className="rounded-lg border border-indigo-300/30 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-semibold text-indigo-100 transition hover:bg-indigo-500/20"
-                            >
-                              Corriger
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openProposalActionModal(proposal, 'cancel')}
-                              className="rounded-lg border border-rose-300/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-100 transition hover:bg-rose-500/20"
-                            >
-                              Annuler
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openProposalActionModal(proposal, 'classify')}
-                              className="rounded-lg border border-amber-300/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-500/20"
-                            >
-                              Classer
-                            </button>
-                          </div>
+                        <p className="text-sm font-medium text-slate-100">{proposal.action}</p>
+                        <p className="mt-1 text-xs text-slate-400">{proposal.why}</p>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {proposal.email_message_id && (
                           <button
                             type="button"
-                            onClick={() => validateProposal(proposal)}
-                            disabled={!proposal.email_message_id || isValidating}
-                            className="rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:opacity-50"
+                            onClick={() => openSourceEvent(proposal.email_message_id)}
+                            className="rounded-lg border border-slate-300/20 bg-slate-800/60 px-2.5 py-1 text-[11px] text-slate-300 transition hover:border-slate-300/40 hover:text-slate-100"
+                            title="Voir l evenement source"
                           >
-                            {isValidating ? 'Creation...' : 'Valider'}
+                            Origine 🔍
                           </button>
-                        </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => openProposalActionModal(proposal, 'correct')}
+                          className="rounded-lg border border-indigo-300/30 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-semibold text-indigo-100 transition hover:bg-indigo-500/20"
+                        >
+                          Corriger
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openProposalActionModal(proposal, 'cancel')}
+                          className="rounded-lg border border-rose-300/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-100 transition hover:bg-rose-500/20"
+                        >
+                          Annuler
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openProposalActionModal(proposal, 'classify')}
+                          className="rounded-lg border border-amber-300/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-500/20"
+                        >
+                          Classer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => validateProposal(proposal)}
+                          disabled={!proposal.email_message_id || isValidating}
+                          className="rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:opacity-50"
+                        >
+                          {isValidating ? 'Creation...' : 'Valider'}
+                        </button>
                       </div>
                     </div>
                   );
@@ -1852,11 +1848,15 @@ export default function DashboardPage() {
                 Saisis ton code de securite configure dans Parametres &gt; Mon IA.
               </p>
               <input
-                type="text"
+                type="tel"
                 value={updateCodeInput}
-                onChange={(e) => setUpdateCodeInput(e.target.value)}
+                onChange={(e) => setUpdateCodeInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
                 placeholder="Entrez votre code"
                 maxLength={10}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="one-time-code"
+                enterKeyHint="done"
                 className="w-full rounded-xl border border-white/15 bg-slate-800 px-4 py-3 text-center text-xl font-mono tracking-[0.3em] text-white outline-none focus:border-cyan-300"
                 autoFocus
                 onKeyDown={(e) => { if (e.key === 'Enter') confirmUpdateCode(); }}
