@@ -1412,39 +1412,61 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-6">
       <div className="mx-auto w-full max-w-6xl space-y-5">
-        <section className="overflow-hidden rounded-2xl border border-cyan-200/10 bg-gradient-to-r from-slate-900/80 via-slate-900/70 to-cyan-950/50 p-4 shadow-[0_30px_70px_-40px_rgba(8,145,178,0.9)] sm:rounded-3xl sm:p-5">
-          <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/80">{t('dashboard.overview')}</p>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">Control Center</h1>
-          <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/45 p-3 sm:p-4">
-            <div className="min-w-0">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-300">Mon assistant</p>
-              <p className="mt-1 truncate text-sm text-cyan-100">{assistantName} est pret a repondre a tes questions</p>
+        <section className="relative overflow-hidden rounded-2xl border border-cyan-200/15 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.22),transparent_48%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(15,23,42,0.82)_45%,rgba(8,47,73,0.7))] p-4 shadow-[0_35px_80px_-40px_rgba(14,116,144,0.95)] sm:rounded-3xl sm:p-5">
+          <div className="pointer-events-none absolute -right-14 -top-14 h-44 w-44 rounded-full bg-cyan-300/20 blur-3xl" />
+          <div className="pointer-events-none absolute -left-10 bottom-0 h-28 w-28 rounded-full bg-sky-400/10 blur-2xl" />
+
+          <div className="relative flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-100/80">{t('dashboard.overview')}</p>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">Control Center</h1>
+              <p className="mt-1 text-sm text-slate-300">Vue operationnelle centralisee pour piloter tes actions critiques.</p>
             </div>
-            <div className="flex items-center gap-2">
+
+            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/45 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" />
+              Systeme actif
+            </div>
+          </div>
+
+          <div className="relative mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-3 sm:p-4">
+              <p className="text-xs uppercase tracking-[0.16em] text-slate-300">Mon assistant</p>
+              <p className="mt-1 text-base font-semibold text-cyan-100">{assistantName} te guide sur les emails, taches et priorites du jour.</p>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-medium text-slate-200">
+                <span className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2.5 py-1">Contexte temps reel</span>
+                <span className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2.5 py-1">Synthese immediate</span>
+                <span className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2.5 py-1">Actions recommandees</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:min-w-72">
               <button
                 type="button"
                 onClick={openAssistantModal}
-                className="group relative inline-flex min-h-16 items-center gap-3 overflow-hidden rounded-2xl border border-cyan-100/80 bg-[linear-gradient(130deg,#a5f3fc_0%,#7dd3fc_42%,#93c5fd_100%)] px-5 py-3 text-left text-slate-950 shadow-[0_24px_56px_-20px_rgba(56,189,248,0.95)] transition duration-300 hover:scale-[1.03]"
+                className="group relative inline-flex min-h-16 items-center justify-between gap-3 overflow-hidden rounded-2xl border border-cyan-100/80 bg-[linear-gradient(125deg,#cffafe_0%,#93c5fd_50%,#67e8f9_100%)] px-5 py-3 text-left text-slate-950 shadow-[0_28px_62px_-26px_rgba(56,189,248,0.95)] transition duration-300 hover:-translate-y-0.5"
               >
                 <span className="absolute -right-6 -top-8 h-28 w-28 rounded-full bg-white/35 blur-2xl transition group-hover:scale-110" />
-                <span className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-900/15 bg-slate-950/10 text-xl shadow-inner">
-                  🗣️
+                <span className="relative flex items-center gap-3">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-900/15 bg-slate-950/10 text-xl shadow-inner">
+                    🗣️
+                  </span>
+                  <span className="flex flex-col">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-900/80">Assistant IA</span>
+                    <span className="text-sm font-extrabold leading-tight">Discuter avec {assistantName}</span>
+                  </span>
                 </span>
-                <span className="relative flex flex-col">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-900/80">Assistant IA</span>
-                  <span className="text-sm font-extrabold leading-tight">Discuter avec {assistantName}</span>
-                </span>
-                <span className="relative ml-2 rounded-full border border-slate-900/20 bg-white/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-900">
-                  Live
+                <span className="relative rounded-full border border-slate-900/20 bg-white/45 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-900">
+                  Prioritaire
                 </span>
               </button>
 
               <button
                 type="button"
                 onClick={openAssistantWithVoice}
-                className="rounded-2xl border border-cyan-300/50 bg-cyan-500/15 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-500/25"
+                className="rounded-2xl border border-cyan-300/55 bg-cyan-500/15 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-100 transition hover:bg-cyan-500/25"
               >
-                Parler
+                Demarrer en vocal
               </button>
             </div>
           </div>
