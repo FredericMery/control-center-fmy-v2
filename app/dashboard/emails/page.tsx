@@ -9,6 +9,13 @@ import EmailComposeModal from '@/components/email/EmailComposeModal';
 type MessageWithDrafts = EmailMessage & {
   email_reply_drafts?: EmailReplyDraft[];
 };
+type SourceMarker = {
+  id: string;
+  action_type: string;
+  action_label: string;
+  action_comment: string;
+  created_at: string;
+};
 
 type StatsPayload = {
   stats: {
@@ -98,6 +105,7 @@ export default function EmailAssistantPage() {
   const [professionalEmail, setProfessionalEmail] = useState('');
   const [composeOpen, setComposeOpen] = useState(false);
   const [replySenderType, setReplySenderType] = useState<'personal' | 'professional'>('personal');
+  const [markerBySourceId, setMarkerBySourceId] = useState<Record<string, SourceMarker[]>>({});
 
   const selected = useMemo(
     () => items.find((entry) => entry.id === selectedId) || null,
@@ -216,6 +224,43 @@ export default function EmailAssistantPage() {
     loadMessages();
     loadStats();
   }, [user, loadMessages, loadStats]);
+  useEffect(() => {
+    if (!user) return;
+    if (items.length === 0) {
+      setMarkerBySourceId({});
+      return;
+    }
+
+    const sourceIds = Array.from(new Set(items.map((entry) => String(entry.id || '').trim()).filter(Boolean)));
+    if (sourceIds.length === 0) {
+      setMarkerBySourceId({});
+      return;
+    }
+
+    let cancelled = false;
+    const loadMarkers = async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set('source_type', 'email');
+        params.set('source_ids', sourceIds.join(','));
+        const res = await fetch(`/api/source-markers?${params.toString()}`, {
+          headers: await getAuthHeaders(false),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          markersBySource?: Record<string, SourceMarker[]>;
+        };
+        if (!res.ok || cancelled) return;
+        setMarkerBySourceId(json.markersBySource || {});
+      } catch {
+        if (!cancelled) setMarkerBySourceId({});
+      }
+    };
+
+    loadMarkers();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, items]);
 
   useEffect(() => {
     if (!user) return;
@@ -696,6 +741,7 @@ export default function EmailAssistantPage() {
               const isSelected = selectedId === item.id;
               const offset = swipeOffsets[item.id] || 0;
               const revealOpacity = clamp(Math.abs(offset) / 92, 0, 1);
+              const markers = markerBySourceId[item.id] || [];
               return (
                 <div key={item.id} className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950">
                   <div
@@ -739,6 +785,24 @@ export default function EmailAssistantPage() {
                       </span>
                     </div>
                     <p className="mt-1 truncate text-sm text-slate-300">{item.sender_name || item.sender_email || 'expediteur inconnu'}</p>
+                    {markers.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {markers.slice(0, 3).map((marker) => (
+                          <span
+                            key={marker.id}
+                            className="inline-flex rounded-full border border-cyan-300/35 bg-cyan-500/15 px-1.5 py-0.5 text-[10px] font-medium text-cyan-100"
+                            title={marker.action_comment || marker.action_label}
+                          >
+                            {marker.action_label}
+                          </span>
+                        ))}
+                        {markers.length > 3 && (
+                          <span className="inline-flex rounded-full border border-white/15 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-300">
+                            +{markers.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
                       <span>{formatDate(item.received_at)}</span>
                       <span className="rounded-full border border-white/10 px-1.5 py-0.5">{item.response_status}</span>
@@ -794,6 +858,19 @@ export default function EmailAssistantPage() {
                     <p className="mt-1">Priorite: {priorityLabel[selected.ai_priority || 'normal'] || 'Normale'}</p>
                   </div>
                 </div>
+                {(markerBySourceId[selected.id] || []).length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(markerBySourceId[selected.id] || []).map((marker) => (
+                      <span
+                        key={marker.id}
+                        className="inline-flex rounded-full border border-cyan-300/35 bg-cyan-500/12 px-2 py-0.5 text-[10px] font-medium text-cyan-100"
+                        title={marker.action_comment || marker.action_label}
+                      >
+                        {marker.action_label}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <p className="mt-3 break-words text-sm text-slate-200">{selected.ai_summary || 'Aucun resume IA.'}</p>
                 <p className="mt-2 text-xs text-slate-500">Decision IA: <span className="text-slate-200">{actionLabel[selected.ai_action] || selected.ai_action}</span> · Confiance: {selected.ai_confidence ?? 0}</p>
               </div>
