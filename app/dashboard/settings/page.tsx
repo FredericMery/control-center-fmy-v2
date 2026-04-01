@@ -84,6 +84,7 @@ export default function SettingsPage() {
   const [enabledModules, setEnabledModules] = useState<DashboardModuleId[]>([]);
   const [assistantName, setAssistantName] = useState('Assistant');
   const [assistantNameDraft, setAssistantNameDraft] = useState('Assistant');
+  const [proposalSecurityCodeDraft, setProposalSecurityCodeDraft] = useState('');
   const [assistantNameStatus, setAssistantNameStatus] = useState<string | null>(null);
   const [emailReplyScope, setEmailReplyScope] = useState<EmailReplyScope>('to_only');
   const [emailGlobalInstructionsDraft, setEmailGlobalInstructionsDraft] = useState('');
@@ -226,7 +227,7 @@ export default function SettingsPage() {
     const loadAssistantSettings = async () => {
       const { data, error } = await supabase
         .from('user_ai_settings')
-        .select('assistant_name,email_reply_scope,email_global_instructions,email_do_rules,email_dont_rules,email_signature')
+        .select('assistant_name,proposal_security_code,email_reply_scope,email_global_instructions,email_do_rules,email_dont_rules,email_signature')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -238,6 +239,7 @@ export default function SettingsPage() {
       const name = String(data?.assistant_name || 'Assistant').trim();
       setAssistantName(name || 'Assistant');
       setAssistantNameDraft(name || 'Assistant');
+      setProposalSecurityCodeDraft(String(data?.proposal_security_code || '').trim());
 
       const scopeRaw = String(data?.email_reply_scope || 'to_only');
       const scope: EmailReplyScope = scopeRaw === 'all' || scopeRaw === 'none' ? scopeRaw : 'to_only';
@@ -506,13 +508,20 @@ export default function SettingsPage() {
     if (!user) return;
 
     const name = assistantNameDraft.trim() || 'Assistant';
+    const securityCode = proposalSecurityCodeDraft.trim();
     setAssistantNameStatus(null);
+
+    if (securityCode && !/^\d{4,10}$/.test(securityCode)) {
+      setAssistantNameStatus('Code securite invalide: 4 a 10 chiffres.');
+      return;
+    }
 
     const { error } = await supabase
       .from('user_ai_settings')
       .upsert({
         user_id: user.id,
         assistant_name: name,
+        proposal_security_code: securityCode,
         updated_at: new Date().toISOString(),
       });
 
@@ -782,6 +791,17 @@ export default function SettingsPage() {
                 >
                   {t('common.save')}
                 </button>
+              </div>
+              <div className="mt-3 space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-slate-400">Code securite propositions IA (4-10 chiffres)</label>
+                <input
+                  value={proposalSecurityCodeDraft}
+                  onChange={(e) => setProposalSecurityCodeDraft(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+                  placeholder="Ex: 123456"
+                  inputMode="numeric"
+                  className="min-h-11 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-sm text-white outline-none focus:border-cyan-400/60"
+                />
+                <p className="text-[11px] text-slate-500">Ce code est demande pour le bouton "Mettre a jour" des propositions IA.</p>
               </div>
               <p className="mt-2 text-xs text-slate-400">
                 {t('settings.myAi.currentName')} : <span className="font-semibold text-cyan-100">{assistantName}</span>

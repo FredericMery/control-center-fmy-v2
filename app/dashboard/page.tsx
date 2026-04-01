@@ -116,8 +116,14 @@ export default function DashboardPage() {
   // — Code mise à jour IA
   const [updateCodeOpen, setUpdateCodeOpen] = useState(false);
   const [updateCodeInput, setUpdateCodeInput] = useState('');
-  const [updateCodeChallenge, setUpdateCodeChallenge] = useState('');
   const [updateCodeLoading, setUpdateCodeLoading] = useState(false);
+  // — Feedback proposition (corriger / annuler / classer)
+  const [proposalActionOpen, setProposalActionOpen] = useState(false);
+  const [proposalActionType, setProposalActionType] = useState<'correct' | 'cancel' | 'classify'>('correct');
+  const [proposalActionComment, setProposalActionComment] = useState('');
+  const [proposalActionCorrected, setProposalActionCorrected] = useState('');
+  const [proposalActionTarget, setProposalActionTarget] = useState<AiProposal | null>(null);
+  const [proposalActionLoading, setProposalActionLoading] = useState(false);
   // — Guide animation
   const [guideOpen, setGuideOpen] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
@@ -209,6 +215,7 @@ export default function DashboardPage() {
         const res = await fetch('/api/email/proposals', {
           method: 'POST',
           headers: await getAuthHeaders(),
+          body: JSON.stringify({ mode: 'auto' }),
         });
         const json = (await res.json().catch(() => ({}))) as {
           proposals?: AiProposal[];
@@ -976,6 +983,56 @@ export default function DashboardPage() {
     }
   };
 
+  const openProposalActionModal = (
+    proposal: AiProposal,
+    decision: 'correct' | 'cancel' | 'classify'
+  ) => {
+    setProposalActionTarget(proposal);
+    setProposalActionType(decision);
+    setProposalActionComment('');
+    setProposalActionCorrected(decision === 'correct' ? proposal.action : '');
+    setProposalActionOpen(true);
+  };
+
+  const submitProposalActionFeedback = async () => {
+    if (!proposalActionTarget?.id) return;
+    const comment = proposalActionComment.trim();
+    if (comment.length < 6) {
+      setProposalsError('Ajoute un commentaire (minimum 6 caracteres).');
+      return;
+    }
+
+    setProposalActionLoading(true);
+    setProposalsError(null);
+    try {
+      const response = await fetch('/api/email/proposals', {
+        method: 'PATCH',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({
+          proposalId: proposalActionTarget.id,
+          decision: proposalActionType,
+          comment,
+          correctedAction: proposalActionType === 'correct' ? proposalActionCorrected.trim() : '',
+        }),
+      });
+
+      const json = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        setProposalsError(json.error || 'Impossible d enregistrer ton retour.');
+        return;
+      }
+
+      setProposals((prev) => prev.filter((p) => p.id !== proposalActionTarget.id));
+      setProposalActionOpen(false);
+      setProposalActionTarget(null);
+      await fetchTasks();
+    } catch {
+      setProposalsError('Erreur reseau pendant l enregistrement du retour.');
+    } finally {
+      setProposalActionLoading(false);
+    }
+  };
+
   // Valide toutes les propositions en une fois
   const validateAllProposals = async () => {
     const pending = proposals.filter((p) => p.status === 'pending');
@@ -1009,21 +1066,15 @@ export default function DashboardPage() {
     }
   };
 
-  // Génère un code challenge 6 chiffres et ouvre la modale
+  // Ouvre la modale de saisie du code securite configure dans Parametres > Mon IA
   const openUpdateCodeModal = () => {
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    setUpdateCodeChallenge(code);
     setUpdateCodeInput('');
     setUpdateCodeOpen(true);
   };
 
-  // Vérifie le code et lance la génération
+  // Verifie le code securite utilisateur et lance la generation manuelle
   const confirmUpdateCode = async () => {
-    if (updateCodeInput.trim() !== updateCodeChallenge) {
-      setProposalsError('Code incorrect. Génération annulée.');
-      setUpdateCodeOpen(false);
-      return;
-    }
+    if (!updateCodeInput.trim()) return;
     setUpdateCodeOpen(false);
     setUpdateCodeLoading(true);
     setProposalsError(null);
@@ -1032,6 +1083,10 @@ export default function DashboardPage() {
       const res = await fetch('/api/email/proposals', {
         method: 'POST',
         headers: await getAuthHeaders(),
+        body: JSON.stringify({
+          mode: 'manual',
+          securityCode: updateCodeInput.trim(),
+        }),
       });
       const json = (await res.json().catch(() => ({}))) as {
         proposals?: AiProposal[];
@@ -1053,7 +1108,7 @@ export default function DashboardPage() {
         window.localStorage.setItem('ai-proposals-last-gen', new Date().toISOString());
       }
     } catch {
-      setProposalsError('Erreur reseau lors de la génération.');
+      setProposalsError('Erreur reseau lors de la generation.');
     } finally {
       setUpdateCodeLoading(false);
       setProposalsLoading(false);
@@ -1476,6 +1531,29 @@ export default function DashboardPage() {
                               Origine 🔍
                             </button>
                           )}
+                          <div className="flex flex-wrap justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openProposalActionModal(proposal, 'correct')}
+                              className="rounded-lg border border-indigo-300/30 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-semibold text-indigo-100 transition hover:bg-indigo-500/20"
+                            >
+                              Corriger
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openProposalActionModal(proposal, 'cancel')}
+                              className="rounded-lg border border-rose-300/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-100 transition hover:bg-rose-500/20"
+                            >
+                              Annuler
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openProposalActionModal(proposal, 'classify')}
+                              className="rounded-lg border border-amber-300/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-500/20"
+                            >
+                              Classer
+                            </button>
+                          </div>
                           <button
                             type="button"
                             onClick={() => validateProposal(proposal)}
@@ -1768,20 +1846,17 @@ export default function DashboardPage() {
         {updateCodeOpen && (
           <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
             <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
-              <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/80">Code de confirmation</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/80">Code securite</p>
               <h2 className="mt-1 text-lg font-bold text-white">Mise a jour des propositions</h2>
               <p className="mt-2 text-sm text-slate-300">
-                Pour confirmer la generation, recopie le code ci-dessous :
+                Saisis ton code de securite configure dans Parametres &gt; Mon IA.
               </p>
-              <div className="my-4 flex items-center justify-center rounded-2xl border border-cyan-300/30 bg-slate-950/60 py-4">
-                <span className="text-3xl font-mono font-extrabold tracking-[0.3em] text-cyan-300">{updateCodeChallenge}</span>
-              </div>
               <input
                 type="text"
                 value={updateCodeInput}
                 onChange={(e) => setUpdateCodeInput(e.target.value)}
-                placeholder="Entrez le code"
-                maxLength={6}
+                placeholder="Entrez votre code"
+                maxLength={10}
                 className="w-full rounded-xl border border-white/15 bg-slate-800 px-4 py-3 text-center text-xl font-mono tracking-[0.3em] text-white outline-none focus:border-cyan-300"
                 autoFocus
                 onKeyDown={(e) => { if (e.key === 'Enter') confirmUpdateCode(); }}
@@ -1797,10 +1872,73 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={confirmUpdateCode}
-                  disabled={updateCodeInput.trim().length !== 6}
+                  disabled={updateCodeInput.trim().length < 4}
                   className="flex-1 rounded-xl bg-cyan-400 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-50"
                 >
                   Confirmer
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* — Modale feedback proposition — */}
+        {proposalActionOpen && proposalActionTarget && (
+          <div className="fixed inset-0 z-[66] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={() => !proposalActionLoading && setProposalActionOpen(false)}>
+            <div
+              className="w-full max-w-xl rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/80">Retour utilisateur</p>
+              <h2 className="mt-1 text-lg font-bold text-white">
+                {proposalActionType === 'correct' ? 'Corriger la proposition' : proposalActionType === 'cancel' ? 'Annuler la proposition' : 'Classer la demande'}
+              </h2>
+              <p className="mt-2 text-sm text-slate-300">Ton commentaire est obligatoire et sert a ajuster le prompt IA.</p>
+
+              <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/50 p-3">
+                <p className="text-xs text-slate-400">Action proposee</p>
+                <p className="mt-1 text-sm text-slate-100">{proposalActionTarget.action}</p>
+              </div>
+
+              {proposalActionType === 'correct' && (
+                <div className="mt-3 space-y-1.5">
+                  <label className="text-xs font-medium uppercase tracking-wide text-slate-400">Action corrigee</label>
+                  <input
+                    value={proposalActionCorrected}
+                    onChange={(e) => setProposalActionCorrected(e.target.value)}
+                    placeholder="Ex: Repondre avec proposition de rendez-vous jeudi 14h"
+                    className="min-h-11 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-sm text-white outline-none focus:border-cyan-400/60"
+                  />
+                </div>
+              )}
+
+              <div className="mt-3 space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-slate-400">Commentaire (obligatoire)</label>
+                <textarea
+                  value={proposalActionComment}
+                  onChange={(e) => setProposalActionComment(e.target.value)}
+                  rows={4}
+                  placeholder="Explique l erreur IA pour ameliorer les prochaines propositions..."
+                  className="w-full resize-y rounded-xl border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/60"
+                />
+              </div>
+
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setProposalActionOpen(false)}
+                  disabled={proposalActionLoading}
+                  className="flex-1 rounded-xl border border-white/15 py-2.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+                >
+                  Fermer
+                </button>
+                <button
+                  type="button"
+                  onClick={submitProposalActionFeedback}
+                  disabled={proposalActionLoading || proposalActionComment.trim().length < 6 || (proposalActionType === 'correct' && !proposalActionCorrected.trim())}
+                  className="flex-1 rounded-xl bg-cyan-400 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-50"
+                >
+                  {proposalActionLoading ? 'Enregistrement...' : 'Confirmer'}
                 </button>
               </div>
             </div>
