@@ -111,6 +111,11 @@ export default function DashboardPage() {
   const [assistantModalOpen, setAssistantModalOpen] = useState(false);
   const [assistantSidebarOpen, setAssistantSidebarOpen] = useState(false);
   const [assistantName, setAssistantName] = useState('Assistant');
+  const [assistantVoices, setAssistantVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [assistantVoiceName, setAssistantVoiceName] = useState('');
+  const [assistantVoiceRate, setAssistantVoiceRate] = useState(1);
+  const [assistantVoicePitch, setAssistantVoicePitch] = useState(1);
+  const [assistantVoiceVolume, setAssistantVoiceVolume] = useState(1);
   const [assistantSummaryModalOpen, setAssistantSummaryModalOpen] = useState(false);
   const [assistantSummaryPreview, setAssistantSummaryPreview] = useState<string | null>(null);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
@@ -169,6 +174,32 @@ export default function DashboardPage() {
   useEffect(() => {
     setEnabledModules(loadEnabledDashboardModules());
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    const synth = window.speechSynthesis;
+    const preferredLang = language === 'en' ? 'en' : language === 'es' ? 'es' : 'fr';
+
+    const loadVoices = () => {
+      const voices = synth.getVoices();
+      setAssistantVoices(voices);
+
+      setAssistantVoiceName((prev) => {
+        if (prev && voices.some((voice) => voice.name === prev)) return prev;
+
+        const preferred = voices.find((voice) => voice.lang.toLowerCase().startsWith(preferredLang));
+        return preferred?.name || voices[0]?.name || '';
+      });
+    };
+
+    loadVoices();
+    synth.addEventListener?.('voiceschanged', loadVoices);
+
+    return () => {
+      synth.removeEventListener?.('voiceschanged', loadVoices);
+    };
+  }, [language]);
 
   useEffect(() => {
     if (!user) return;
@@ -270,18 +301,25 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!user) return;
 
-    const loadAssistantName = async () => {
+    const loadAssistantSettings = async () => {
       const { data } = await supabase
         .from('user_ai_settings')
-        .select('assistant_name')
+        .select('assistant_name,assistant_voice_name,assistant_voice_rate,assistant_voice_pitch,assistant_voice_volume')
         .eq('user_id', user.id)
         .maybeSingle();
 
       const name = String(data?.assistant_name || 'Assistant').trim();
       setAssistantName(name || 'Assistant');
+      const persistedVoiceName = String(data?.assistant_voice_name || '').trim();
+      if (persistedVoiceName) {
+        setAssistantVoiceName(persistedVoiceName);
+      }
+      setAssistantVoiceRate(Number.isFinite(Number(data?.assistant_voice_rate)) ? Number(data?.assistant_voice_rate) : 1);
+      setAssistantVoicePitch(Number.isFinite(Number(data?.assistant_voice_pitch)) ? Number(data?.assistant_voice_pitch) : 1);
+      setAssistantVoiceVolume(Number.isFinite(Number(data?.assistant_voice_volume)) ? Number(data?.assistant_voice_volume) : 1);
     };
 
-    loadAssistantName();
+    loadAssistantSettings();
   }, [user]);
 
   useEffect(() => {
@@ -646,8 +684,14 @@ export default function DashboardPage() {
   const speakText = (text: string) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = language === "en" ? "en-US" : language === "es" ? "es-ES" : "fr-FR";
-    utterance.rate = 1;
+    const selectedVoice = assistantVoices.find((voice) => voice.name === assistantVoiceName);
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    }
+    utterance.lang = selectedVoice?.lang || (language === "en" ? "en-US" : language === "es" ? "es-ES" : "fr-FR");
+    utterance.rate = Math.min(2, Math.max(0.5, assistantVoiceRate));
+    utterance.pitch = Math.min(2, Math.max(0, assistantVoicePitch));
+    utterance.volume = Math.min(1, Math.max(0, assistantVoiceVolume));
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   };
@@ -1504,7 +1548,7 @@ export default function DashboardPage() {
             <p className="text-xs uppercase tracking-[0.18em] text-cyan-200">Nouveau ici</p>
             <h2 className="mt-1 text-lg font-semibold text-white">Demarrage assiste</h2>
             <p className="mt-1 text-sm text-slate-200">
-              En 2 minutes max, je t explique tout. Ensuite je configure l app avec toi (societes, justificatifs, NDF).
+              En 2 minutes max, je t explique tout. Ensuite, on configure l app ensemble (societes, justificatifs, NDF).
             </p>
 
             <div className="mt-3 flex flex-wrap gap-2">
@@ -1748,6 +1792,23 @@ export default function DashboardPage() {
                     />
                     Autoriser recherche internet
                   </label>
+
+                  {assistantVoices.length > 0 && (
+                    <label className="mb-3 block rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-xs text-slate-300">
+                      <span className="mb-1 block text-[11px] uppercase tracking-wide text-slate-400">Voix de {assistantName}</span>
+                      <select
+                        value={assistantVoiceName}
+                        onChange={(event) => setAssistantVoiceName(event.target.value)}
+                        className="w-full rounded-lg border border-white/15 bg-slate-950 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-300"
+                      >
+                        {assistantVoices.map((voice) => (
+                          <option key={`${voice.name}-${voice.lang}`} value={voice.name}>
+                            {voice.name} ({voice.lang}){voice.default ? ' - defaut' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
 
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-[11px] uppercase tracking-wide text-slate-400">Conversations</p>

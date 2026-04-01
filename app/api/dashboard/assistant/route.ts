@@ -169,17 +169,17 @@ function buildOnboardingShowcase(assistantName: string): string {
     '',
     `Salut, je suis ${assistantName}. En moins de 2 minutes, je te montre comment je peux te faire gagner du temps chaque jour.`,
     '',
-    'Maintenant fais ceci: pense a moi comme un chef d orchestre. Je detecte les priorites, je te propose des actions prêtes, et tu valides en un clic.',
+    'Maintenant fais ceci: pense a moi comme a un chef d orchestre. Je detecte les priorites, je te propose des actions pretes, et tu valides en un clic.',
     '',
-    'Puis fais cela: utilise-moi pour tes emails et courriers. Je peux te proposer une reponse, creer une tache de suivi, classer le message, et apprendre de tes corrections.',
+    'Puis fais cela: utilise-moi pour tes emails et courriers. Je peux te proposer une reponse, creer une tache de suivi, classer le message et apprendre de tes corrections.',
     '',
-    'Ensuite fais cela: pour les depenses, je t aide a OCRiser, preparer les justificatifs, proposer les destinataires et te guider jusqu a la validation.',
+    'Ensuite fais cela: pour les depenses, je t aide a faire l OCR, preparer les justificatifs, proposer les destinataires et aller jusqu a la validation.',
     '',
-    'Puis fais cela: pour l agenda, je peux te proposer des creneaux, relancer les participants et centraliser les confirmations.',
+    'Puis fais cela: pour l agenda, je peux proposer des creneaux, relancer les participants et centraliser les confirmations.',
     '',
-    'Enfin verifie: dans le dashboard, suis les etapes guidees "Maintenant fais ca". Mon role est simple: je propose, tu disposes.',
+    'Enfin verifie: dans le dashboard, suis les etapes guidees "Maintenant fais ceci". Mon role est simple: je propose, tu disposes.',
     '',
-    'Quand tu veux, on commence par ton parametrage initial pour que tout soit preconfigure selon ton organisation.',
+    'Quand tu veux, on commence ton parametrage initial pour que tout soit preconfigure selon ton organisation.',
   ].join('\n');
 }
 

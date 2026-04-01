@@ -86,6 +86,13 @@ export default function SettingsPage() {
   const [assistantNameDraft, setAssistantNameDraft] = useState('Assistant');
   const [proposalSecurityCodeDraft, setProposalSecurityCodeDraft] = useState('');
   const [assistantNameStatus, setAssistantNameStatus] = useState<string | null>(null);
+  const [voiceNameDraft, setVoiceNameDraft] = useState('');
+  const [voiceRateDraft, setVoiceRateDraft] = useState(1);
+  const [voicePitchDraft, setVoicePitchDraft] = useState(1);
+  const [voiceVolumeDraft, setVoiceVolumeDraft] = useState(1);
+  const [voiceTestText, setVoiceTestText] = useState('Bonjour, je suis Noa. Regle ma voix avec les potentiometres.');
+  const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [emailReplyScope, setEmailReplyScope] = useState<EmailReplyScope>('to_only');
   const [emailGlobalInstructionsDraft, setEmailGlobalInstructionsDraft] = useState('');
   const [emailDoRulesDraft, setEmailDoRulesDraft] = useState('');
@@ -222,12 +229,37 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    const synth = window.speechSynthesis;
+    const loadVoices = () => {
+      const voices = synth.getVoices();
+      setAvailableVoices(voices);
+      setVoiceNameDraft((prev) => {
+        if (prev && voices.some((voice) => voice.name === prev)) return prev;
+
+        const preferredLang = language === 'en' ? 'en' : language === 'es' ? 'es' : 'fr';
+        const preferredVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith(preferredLang));
+        return preferredVoice?.name || voices[0]?.name || '';
+      });
+    };
+
+    loadVoices();
+    synth.addEventListener?.('voiceschanged', loadVoices);
+
+    return () => {
+      synth.removeEventListener?.('voiceschanged', loadVoices);
+      synth.cancel();
+    };
+  }, [language]);
+
+  useEffect(() => {
     if (!user) return;
 
     const loadAssistantSettings = async () => {
       const { data, error } = await supabase
         .from('user_ai_settings')
-        .select('assistant_name,proposal_security_code,email_reply_scope,email_global_instructions,email_do_rules,email_dont_rules,email_signature')
+        .select('assistant_name,proposal_security_code,email_reply_scope,email_global_instructions,email_do_rules,email_dont_rules,email_signature,assistant_voice_name,assistant_voice_rate,assistant_voice_pitch,assistant_voice_volume')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -240,6 +272,10 @@ export default function SettingsPage() {
       setAssistantName(name || 'Assistant');
       setAssistantNameDraft(name || 'Assistant');
       setProposalSecurityCodeDraft(String(data?.proposal_security_code || '').trim());
+      setVoiceNameDraft(String(data?.assistant_voice_name || '').trim());
+      setVoiceRateDraft(Number.isFinite(Number(data?.assistant_voice_rate)) ? Number(data?.assistant_voice_rate) : 1);
+      setVoicePitchDraft(Number.isFinite(Number(data?.assistant_voice_pitch)) ? Number(data?.assistant_voice_pitch) : 1);
+      setVoiceVolumeDraft(Number.isFinite(Number(data?.assistant_voice_volume)) ? Number(data?.assistant_voice_volume) : 1);
 
       const scopeRaw = String(data?.email_reply_scope || 'to_only');
       const scope: EmailReplyScope = scopeRaw === 'all' || scopeRaw === 'none' ? scopeRaw : 'to_only';
@@ -576,6 +612,60 @@ export default function SettingsPage() {
     setEmailAiRulesStatus('Regles IA email sauvegardees');
   };
 
+  const testAssistantVoice = () => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      setVoiceStatus('Synthese vocale non disponible sur cet appareil.');
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(voiceTestText.trim() || 'Test de la voix de Noa.');
+    const selectedVoice = availableVoices.find((voice) => voice.name === voiceNameDraft);
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      utterance.lang = selectedVoice.lang;
+    } else {
+      utterance.lang = language === 'en' ? 'en-US' : language === 'es' ? 'es-ES' : 'fr-FR';
+    }
+
+    utterance.rate = Math.min(2, Math.max(0.5, voiceRateDraft));
+    utterance.pitch = Math.min(2, Math.max(0, voicePitchDraft));
+    utterance.volume = Math.min(1, Math.max(0, voiceVolumeDraft));
+
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+    setVoiceStatus('Lecture test en cours...');
+  };
+
+  const stopAssistantVoice = () => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    setVoiceStatus('Lecture arretee.');
+  };
+
+  const saveAssistantVoiceSettings = async () => {
+    if (!user) return;
+
+    setVoiceStatus(null);
+
+    const { error } = await supabase
+      .from('user_ai_settings')
+      .upsert({
+        user_id: user.id,
+        assistant_voice_name: voiceNameDraft.trim() || null,
+        assistant_voice_rate: Math.min(2, Math.max(0.5, voiceRateDraft)),
+        assistant_voice_pitch: Math.min(2, Math.max(0, voicePitchDraft)),
+        assistant_voice_volume: Math.min(1, Math.max(0, voiceVolumeDraft)),
+        updated_at: new Date().toISOString(),
+      });
+
+    if (error) {
+      setVoiceStatus('Erreur sauvegarde parametrage voix IA');
+      return;
+    }
+
+    setVoiceStatus('Parametrage voix IA sauvegarde');
+  };
+
   const learnEmailAiRulesFromCorrections = async () => {
     if (!user) return;
 
@@ -649,6 +739,7 @@ export default function SettingsPage() {
   const tabs = [
     { id: 'profil', icon: '👤', label: 'Profil' },
     { id: 'ia', icon: '🤖', label: 'Mon IA' },
+    { id: 'voice', icon: '🎛️', label: 'Parametrage voix IA' },
     { id: 'modules', icon: '🧩', label: 'Modules' },
     { id: 'email', icon: '✉️', label: 'Email' },
     { id: 'abonnement', icon: '💳', label: 'Abonnement' },
@@ -910,6 +1001,100 @@ export default function SettingsPage() {
               {emailLearningStatus && <p className="text-xs text-slate-300">{emailLearningStatus}</p>}
             </div>
 
+          </div>
+        )}
+
+        {/* ── PARAMETRAGE VOIX IA ── */}
+        {activeTab === 'voice' && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-5 shadow-xl shadow-slate-950/40 backdrop-blur space-y-4">
+              <div>
+                <h2 className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">Parametrage voix de l IA</h2>
+                <p className="text-sm text-slate-400">Regle la voix de lecture de Noa avec des potentiometres puis sauvegarde.</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-slate-400">Voix</label>
+                <select
+                  value={voiceNameDraft}
+                  onChange={(e) => setVoiceNameDraft(e.target.value)}
+                  className="min-h-11 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-sm text-white outline-none focus:border-cyan-400/60"
+                >
+                  {availableVoices.length === 0 ? (
+                    <option value="">Chargement des voix...</option>
+                  ) : (
+                    availableVoices.map((voice) => (
+                      <option key={`${voice.name}-${voice.lang}`} value={voice.name}>
+                        {voice.name} ({voice.lang}){voice.default ? ' - defaut' : ''}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs text-slate-300">
+                    <span>Vitesse</span>
+                    <span className="font-mono">{voiceRateDraft.toFixed(2)}</span>
+                  </div>
+                  <input type="range" min={0.5} max={2} step={0.05} value={voiceRateDraft} onChange={(e) => setVoiceRateDraft(Number(e.target.value))} className="w-full accent-cyan-400" />
+                </div>
+
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs text-slate-300">
+                    <span>Tonalite</span>
+                    <span className="font-mono">{voicePitchDraft.toFixed(2)}</span>
+                  </div>
+                  <input type="range" min={0} max={2} step={0.05} value={voicePitchDraft} onChange={(e) => setVoicePitchDraft(Number(e.target.value))} className="w-full accent-cyan-400" />
+                </div>
+
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs text-slate-300">
+                    <span>Volume</span>
+                    <span className="font-mono">{voiceVolumeDraft.toFixed(2)}</span>
+                  </div>
+                  <input type="range" min={0} max={1} step={0.01} value={voiceVolumeDraft} onChange={(e) => setVoiceVolumeDraft(Number(e.target.value))} className="w-full accent-cyan-400" />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-slate-400">Texte de test</label>
+                <textarea
+                  rows={3}
+                  value={voiceTestText}
+                  onChange={(e) => setVoiceTestText(e.target.value)}
+                  className="w-full resize-y rounded-xl border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/60"
+                  placeholder="Ecris ici le texte de test de la voix"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={testAssistantVoice}
+                  className="rounded-xl border border-cyan-300/30 bg-cyan-500/10 px-4 py-2.5 text-sm font-medium text-cyan-200 hover:bg-cyan-500/20 transition"
+                >
+                  Tester la voix
+                </button>
+                <button
+                  type="button"
+                  onClick={stopAssistantVoice}
+                  className="rounded-xl border border-white/15 bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-slate-700 transition"
+                >
+                  Stop
+                </button>
+                <button
+                  type="button"
+                  onClick={saveAssistantVoiceSettings}
+                  className="rounded-xl bg-cyan-400 px-4 py-2.5 text-sm font-semibold text-slate-950"
+                >
+                  Sauvegarder
+                </button>
+              </div>
+
+              {voiceStatus && <p className="text-xs text-emerald-400">{voiceStatus}</p>}
+            </div>
           </div>
         )}
 
