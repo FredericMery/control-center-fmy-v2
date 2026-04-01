@@ -813,7 +813,7 @@ export default function EmailAssistantPage() {
                           <span>{formatDate(msg.received_at)}</span>
                         </div>
                         <p className="mt-1 text-sm font-medium text-white">{msg.subject || '(sans objet)'}</p>
-                        <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-200">{msg.body_text || msg.body_html || '(contenu vide)'}</p>
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-200">{msg.body_text ? msg.body_text.slice(0, 2000) : stripHtml(msg.body_html || '')}</p>
                       </div>
                     ))}
                   </div>
@@ -1119,4 +1119,26 @@ function StatCard(props: { label: string; value: string; color: string; onClick?
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+// Nettoie le HTML pour n'afficher que le texte lisible
+function stripHtml(html: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }

@@ -40,17 +40,26 @@ type DailySuggestion = {
   email_message_id: string;
 };
 
-type GuideStep = {
+type AiProposal = {
   id: string;
-  title: string;
-  description: string;
-  href: string;
-  actionLabel: string;
+  priority: 'urgent' | 'high' | 'normal' | 'low';
+  action: string;
+  why: string;
+  sender: string;
+  email_message_id: string;
+  source_type: string;
+  status: string;
+  generated_at: string;
+  batch_id: string;
 };
 
-type GuideProgress = {
-  day: string;
-  doneStepIds: string[];
+type SourceEventData = {
+  subject: string | null;
+  sender_name: string | null;
+  sender_email: string | null;
+  body_text: string | null;
+  received_at: string | null;
+  ai_summary: string | null;
 };
 
 type SetupCompanyDraft = {
@@ -94,20 +103,29 @@ export default function DashboardPage() {
   const [assistantSummaryModalOpen, setAssistantSummaryModalOpen] = useState(false);
   const [assistantSummaryPreview, setAssistantSummaryPreview] = useState<string | null>(null);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
-  const [dailySuggestions, setDailySuggestions] = useState<DailySuggestion[]>([]);
-  const [dailySuggestionsSummary, setDailySuggestionsSummary] = useState('');
-  const [dailySuggestionsLoading, setDailySuggestionsLoading] = useState(false);
-  const [validatingSuggestionIds, setValidatingSuggestionIds] = useState<Record<string, boolean>>({});
-  const [validatingAllSuggestions, setValidatingAllSuggestions] = useState(false);
-  const [dailySuggestionsError, setDailySuggestionsError] = useState<string | null>(null);
-  const [pendingExpensesCount, setPendingExpensesCount] = useState(0);
-  const [agendaProposalCount, setAgendaProposalCount] = useState(0);
-  const [guideSignalsLoading, setGuideSignalsLoading] = useState(false);
-  const [guideModeActive, setGuideModeActive] = useState(true);
-  const [guideProgress, setGuideProgress] = useState<GuideProgress>({ day: dayKey(new Date()), doneStepIds: [] });
-  const [showcaseOpen, setShowcaseOpen] = useState(false);
-  const [showcaseLoading, setShowcaseLoading] = useState(false);
-  const [showcaseText, setShowcaseText] = useState('');
+
+  // — Propositions IA
+  const [proposals, setProposals] = useState<AiProposal[]>([]);
+  const [proposalsLoading, setProposalsLoading] = useState(false);
+  const [proposalsGeneratedAt, setProposalsGeneratedAt] = useState<string | null>(null);
+  const [proposalsSummary, setProposalsSummary] = useState('');
+  const [proposalsError, setProposalsError] = useState<string | null>(null);
+  const [validatingProposalId, setValidatingProposalId] = useState<string | null>(null);
+  const [validatingAllProposals, setValidatingAllProposals] = useState(false);
+  const [propositionsOpen, setPropositionsOpen] = useState(false);
+  // — Code mise à jour IA
+  const [updateCodeOpen, setUpdateCodeOpen] = useState(false);
+  const [updateCodeInput, setUpdateCodeInput] = useState('');
+  const [updateCodeChallenge, setUpdateCodeChallenge] = useState('');
+  const [updateCodeLoading, setUpdateCodeLoading] = useState(false);
+  // — Guide animation
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideLoading, setGuideLoading] = useState(false);
+  const [guideText, setGuideText] = useState('');
+  // — Événement source d'une proposition
+  const [sourceEventOpen, setSourceEventOpen] = useState(false);
+  const [sourceEventData, setSourceEventData] = useState<SourceEventData | null>(null);
+  const [sourceEventLoading, setSourceEventLoading] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupCompanyCount, setSetupCompanyCount] = useState(1);
   const [setupCompanies, setSetupCompanies] = useState<SetupCompanyDraft[]>([{ name: '', paymentEmail: '', ndfEmail: '' }]);
@@ -154,115 +172,80 @@ export default function DashboardPage() {
     loadConversations();
   }, [user]);
 
+  // Charge les propositions depuis la DB et auto-génère si besoin (toutes les 2h, 8h-18h)
   useEffect(() => {
     if (!user) return;
 
-    const loadDailySuggestions = async () => {
-      setDailySuggestionsLoading(true);
-      setDailySuggestionsError(null);
-
+    const loadProposals = async () => {
+      setProposalsLoading(true);
+      setProposalsError(null);
       try {
-        const response = await fetch('/api/email/summary/daily', {
+        const res = await fetch('/api/email/proposals', {
           headers: await getAuthHeaders(false),
         });
-
-        const json = (await response.json().catch(() => ({}))) as {
-          summary?: string;
-          actions?: DailySuggestion[];
+        const json = (await res.json().catch(() => ({}))) as {
+          proposals?: AiProposal[];
+          generated_at?: string;
           error?: string;
         };
-
-        if (!response.ok) {
-          setDailySuggestionsError(json.error || 'Impossible de charger les propositions IA.');
+        if (!res.ok) {
+          setProposalsError(json.error || 'Impossible de charger les propositions.');
           return;
         }
-
-        const sorted = [...(json.actions || [])].sort((a, b) => priorityWeight(b.priority) - priorityWeight(a.priority));
-        setDailySuggestions(sorted);
-        setDailySuggestionsSummary(String(json.summary || ''));
+        const sorted = [...(json.proposals || [])].sort(
+          (a, b) => proposalPriorityWeight(b.priority) - proposalPriorityWeight(a.priority)
+        );
+        setProposals(sorted.filter((p) => p.status === 'pending'));
+        setProposalsGeneratedAt(json.generated_at || null);
       } catch {
-        setDailySuggestionsError('Erreur reseau lors du chargement des propositions IA.');
+        setProposalsError('Erreur reseau lors du chargement des propositions.');
       } finally {
-        setDailySuggestionsLoading(false);
+        setProposalsLoading(false);
       }
     };
 
-    loadDailySuggestions();
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-
-    const loadGuideSignals = async () => {
-      setGuideSignalsLoading(true);
+    const autoGenerate = async () => {
       try {
-        const now = new Date();
-        const month = now.getMonth() + 1;
-        const year = now.getFullYear();
-
-        const [expensesResponse, agendaResponse] = await Promise.all([
-          fetch(`/api/expenses/report?month=${month}&year=${year}`, {
-            headers: await getAuthHeaders(false),
-          }),
-          fetch('/api/calendar/proposals', {
-            headers: await getAuthHeaders(false),
-          }),
-        ]);
-
-        if (expensesResponse.ok) {
-          const expensesJson = (await expensesResponse.json().catch(() => ({}))) as {
-            rows?: Array<{ status?: string; payment_method?: 'cb_perso' | 'cb_pro'; email_sent?: boolean }>;
-          };
-
-          const pendingCount = (expensesJson.rows || []).filter((row) => {
-            const status = String(row.status || '').toLowerCase();
-            return status === 'pending' || status === 'pending_ndf' || (row.payment_method === 'cb_pro' && row.email_sent !== true);
-          }).length;
-
-          setPendingExpensesCount(pendingCount);
-        }
-
-        if (agendaResponse.ok) {
-          const agendaJson = (await agendaResponse.json().catch(() => ({}))) as {
-            proposals?: Array<{ workflow_status?: string }>;
-          };
-
-          const openProposals = (agendaJson.proposals || []).filter((proposal) => {
-            const workflow = String(proposal.workflow_status || '').toLowerCase();
-            return workflow === 'created' || workflow === 'sent' || workflow === 'relanced';
-          }).length;
-
-          setAgendaProposalCount(openProposals);
+        const res = await fetch('/api/email/proposals', {
+          method: 'POST',
+          headers: await getAuthHeaders(),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          proposals?: AiProposal[];
+          summary?: string;
+          generated_at?: string;
+          error?: string;
+        };
+        if (!res.ok) return;
+        const sorted = [...(json.proposals || [])].sort(
+          (a, b) => proposalPriorityWeight(b.priority) - proposalPriorityWeight(a.priority)
+        );
+        setProposals(sorted.filter((p) => p.status === 'pending'));
+        setProposalsSummary(String(json.summary || ''));
+        setProposalsGeneratedAt(json.generated_at || null);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('ai-proposals-last-gen', new Date().toISOString());
         }
       } catch {
-        // Non bloquant
-      } finally {
-        setGuideSignalsLoading(false);
+        // Silencieux
       }
     };
 
-    loadGuideSignals();
-  }, [user]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const stored = window.localStorage.getItem('dashboard-guide-progress-v1');
-    if (!stored) return;
-
-    try {
-      const parsed = JSON.parse(stored) as GuideProgress;
-      if (parsed?.day && Array.isArray(parsed.doneStepIds)) {
-        setGuideProgress(parsed);
+    // Charge d'abord les données existantes
+    loadProposals().then(() => {
+      if (typeof window === 'undefined') return;
+      const now = new Date();
+      const hour = now.getHours();
+      if (hour < 8 || hour >= 18) return;
+      const lastGenStr = window.localStorage.getItem('ai-proposals-last-gen');
+      if (!lastGenStr) {
+        autoGenerate();
+        return;
       }
-    } catch {
-      // ignore malformed local storage
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem('dashboard-guide-progress-v1', JSON.stringify(guideProgress));
-  }, [guideProgress]);
+      const diffHours = (now.getTime() - new Date(lastGenStr).getTime()) / (1000 * 60 * 60);
+      if (diffHours >= 2) autoGenerate();
+    });
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -697,32 +680,7 @@ export default function DashboardPage() {
     }, 140);
   };
 
-  const openOnboardingShowcase = async () => {
-    setShowcaseOpen(true);
-    setShowcaseLoading(true);
-    setShowcaseText('');
-
-    try {
-      const response = await fetch('/api/dashboard/assistant', {
-        method: 'POST',
-        headers: await getAuthHeaders(),
-        body: JSON.stringify({ action: 'onboarding_showcase' }),
-      });
-
-      const json = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
-      if (!response.ok) {
-        setShowcaseText(json.error || 'Impossible de lancer la presentation.');
-        return;
-      }
-
-      setShowcaseText(String(json.message || 'Presentation indisponible.'));
-      speakText(String(json.message || ''));
-    } catch {
-      setShowcaseText('Erreur reseau pendant la presentation.');
-    } finally {
-      setShowcaseLoading(false);
-    }
-  };
+  // openOnboardingShowcase est défini plus bas comme alias de openGuide
 
   const resizeSetupCompanies = (count: number) => {
     const safeCount = Math.min(8, Math.max(1, count));
@@ -989,48 +947,47 @@ export default function DashboardPage() {
     }
   };
 
-  const validateSuggestion = async (suggestion: DailySuggestion) => {
-    const emailId = String(suggestion.email_message_id || '').trim();
-    if (!emailId) return;
+  // Valide une proposition en créant une tâche pro
+  const validateProposal = async (proposal: AiProposal) => {
+    const emailId = String(proposal.email_message_id || '').trim();
+    if (!emailId || validatingProposalId === proposal.id) return;
 
-    setValidatingSuggestionIds((prev) => ({ ...prev, [emailId]: true }));
-    setDailySuggestionsError(null);
+    setValidatingProposalId(proposal.id);
+    setProposalsError(null);
 
     try {
       const response = await fetch(`/api/email/messages/${emailId}/task`, {
         method: 'POST',
         headers: await getAuthHeaders(),
       });
-
       const json = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        setDailySuggestionsError(json.error || 'Impossible de creer la tache depuis la proposition.');
+        setProposalsError(json.error || 'Impossible de creer la tache depuis la proposition.');
         return;
       }
 
-      setDailySuggestions((prev) => prev.filter((entry) => entry.email_message_id !== emailId));
+      // Retire la proposition validée de la liste
+      setProposals((prev) => prev.filter((p) => p.id !== proposal.id));
       await fetchTasks();
     } catch {
-      setDailySuggestionsError('Erreur reseau pendant la validation de la proposition.');
+      setProposalsError('Erreur reseau pendant la validation.');
     } finally {
-      setValidatingSuggestionIds((prev) => {
-        const clone = { ...prev };
-        delete clone[emailId];
-        return clone;
-      });
+      setValidatingProposalId(null);
     }
   };
 
-  const validateAllSuggestions = async () => {
-    const priorities = Array.from(new Set(dailySuggestions.map((entry) => entry.priority))).filter(
+  // Valide toutes les propositions en une fois
+  const validateAllProposals = async () => {
+    const pending = proposals.filter((p) => p.status === 'pending');
+    if (pending.length === 0 || validatingAllProposals) return;
+
+    setValidatingAllProposals(true);
+    setProposalsError(null);
+
+    const priorities = Array.from(new Set(pending.map((p) => p.priority))).filter(
       (priority): priority is 'urgent' | 'high' | 'normal' | 'low' =>
         ['urgent', 'high', 'normal', 'low'].includes(priority)
     );
-
-    if (priorities.length === 0) return;
-
-    setValidatingAllSuggestions(true);
-    setDailySuggestionsError(null);
 
     try {
       const response = await fetch('/api/email/summary/daily', {
@@ -1038,22 +995,113 @@ export default function DashboardPage() {
         headers: await getAuthHeaders(),
         body: JSON.stringify({ priorities }),
       });
-
-      const json = (await response.json().catch(() => ({}))) as {
-        error?: string;
-      };
-
+      const json = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        setDailySuggestionsError(json.error || 'Impossible de valider toutes les propositions.');
+        setProposalsError(json.error || 'Impossible de valider toutes les propositions.');
         return;
       }
-
-      setDailySuggestions([]);
+      setProposals([]);
       await fetchTasks();
     } catch {
-      setDailySuggestionsError('Erreur reseau pendant la validation globale.');
+      setProposalsError('Erreur reseau pendant la validation globale.');
     } finally {
-      setValidatingAllSuggestions(false);
+      setValidatingAllProposals(false);
+    }
+  };
+
+  // Génère un code challenge 6 chiffres et ouvre la modale
+  const openUpdateCodeModal = () => {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    setUpdateCodeChallenge(code);
+    setUpdateCodeInput('');
+    setUpdateCodeOpen(true);
+  };
+
+  // Vérifie le code et lance la génération
+  const confirmUpdateCode = async () => {
+    if (updateCodeInput.trim() !== updateCodeChallenge) {
+      setProposalsError('Code incorrect. Génération annulée.');
+      setUpdateCodeOpen(false);
+      return;
+    }
+    setUpdateCodeOpen(false);
+    setUpdateCodeLoading(true);
+    setProposalsError(null);
+    setProposalsLoading(true);
+    try {
+      const res = await fetch('/api/email/proposals', {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        proposals?: AiProposal[];
+        summary?: string;
+        generated_at?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        setProposalsError(json.error || 'Erreur lors de la génération.');
+        return;
+      }
+      const sorted = [...(json.proposals || [])].sort(
+        (a, b) => proposalPriorityWeight(b.priority) - proposalPriorityWeight(a.priority)
+      );
+      setProposals(sorted.filter((p) => p.status === 'pending'));
+      setProposalsSummary(String(json.summary || ''));
+      setProposalsGeneratedAt(json.generated_at || null);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('ai-proposals-last-gen', new Date().toISOString());
+      }
+    } catch {
+      setProposalsError('Erreur reseau lors de la génération.');
+    } finally {
+      setUpdateCodeLoading(false);
+      setProposalsLoading(false);
+    }
+  };
+
+  // Charge et affiche l'événement source d'une proposition
+  const openSourceEvent = async (emailId: string) => {
+    if (!emailId) return;
+    setSourceEventLoading(true);
+    setSourceEventData(null);
+    setSourceEventOpen(true);
+    try {
+      const res = await fetch(`/api/email/messages/${emailId}`, {
+        headers: await getAuthHeaders(false),
+      });
+      const json = (await res.json().catch(() => ({}))) as { item?: SourceEventData; error?: string };
+      if (!res.ok || !json.item) return;
+      setSourceEventData(json.item);
+    } catch {
+      // Silencieux
+    } finally {
+      setSourceEventLoading(false);
+    }
+  };
+
+  // Lance l'animation Guide (présentation de l'app)
+  const openGuide = async () => {
+    setGuideOpen(true);
+    setGuideLoading(true);
+    setGuideText('');
+    try {
+      const response = await fetch('/api/dashboard/assistant', {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ action: 'onboarding_showcase' }),
+      });
+      const json = (await response.json().catch(() => ({}))) as { message?: string; error?: string };
+      if (!response.ok) {
+        setGuideText(json.error || 'Impossible de lancer la presentation.');
+        return;
+      }
+      setGuideText(String(json.message || 'Presentation indisponible.'));
+      speakText(String(json.message || ''));
+    } catch {
+      setGuideText('Erreur reseau pendant la presentation.');
+    } finally {
+      setGuideLoading(false);
     }
   };
 
@@ -1193,91 +1241,7 @@ export default function DashboardPage() {
       .filter((entry): entry is { id: string; label: string; icon: string; link: string } => Boolean(entry));
   }, [cards]);
 
-  const guidedSteps = useMemo<GuideStep[]>(() => {
-    const steps: GuideStep[] = [];
-
-    if (dailySuggestions.length > 0) {
-      steps.push({
-        id: 'ia-suggestions',
-        title: `Maintenant fais ceci: valide ${dailySuggestions.length} proposition(s) IA`,
-        description: 'Ces actions sont deja preparees. Tu confirmes, la tache se cree automatiquement.',
-        href: '/dashboard',
-        actionLabel: 'Valider dans la section IA',
-      });
-    }
-
-    if (pendingExpensesCount > 0) {
-      steps.push({
-        id: 'expenses',
-        title: `Puis fais cela: traite ${pendingExpensesCount} depense(s) en attente`,
-        description: 'Le but est de finaliser les justificatifs et les envois email en retard.',
-        href: '/expenses/list',
-        actionLabel: 'Ouvrir Depenses',
-      });
-    }
-
-    if (agendaProposalCount > 0) {
-      steps.push({
-        id: 'agenda',
-        title: `Ensuite fais cela: confirme ${agendaProposalCount} proposition(s) agenda`,
-        description: 'Tu reduis les allers-retours en confirmant les propositions en attente.',
-        href: '/dashboard/agenda/propositions',
-        actionLabel: 'Ouvrir Propositions agenda',
-      });
-    }
-
-    if (steps.length === 0) {
-      steps.push({
-        id: 'assistant-chat',
-        title: 'Maintenant fais ceci: parle a ton assistant pour la prochaine action',
-        description: 'Demande-lui une priorisation de ta journee et execute etape par etape.',
-        href: '/dashboard',
-        actionLabel: 'Parler a l assistant',
-      });
-    }
-
-    return steps.slice(0, 3);
-  }, [dailySuggestions.length, pendingExpensesCount, agendaProposalCount]);
-
-  useEffect(() => {
-    const today = dayKey(new Date());
-    if (guideProgress.day !== today) {
-      setGuideProgress({ day: today, doneStepIds: [] });
-      return;
-    }
-
-    const validIds = new Set(guidedSteps.map((step) => step.id));
-    const filtered = guideProgress.doneStepIds.filter((id) => validIds.has(id));
-    if (filtered.length !== guideProgress.doneStepIds.length) {
-      setGuideProgress((prev) => ({ ...prev, doneStepIds: filtered }));
-    }
-  }, [guidedSteps, guideProgress.day, guideProgress.doneStepIds]);
-
-  const nextGuideStep = useMemo(
-    () => guidedSteps.find((step) => !guideProgress.doneStepIds.includes(step.id)) || null,
-    [guidedSteps, guideProgress.doneStepIds]
-  );
-
-  const completeGuideStep = (stepId: string) => {
-    setGuideProgress((prev) => {
-      if (prev.doneStepIds.includes(stepId)) return prev;
-      return {
-        ...prev,
-        doneStepIds: [...prev.doneStepIds, stepId],
-      };
-    });
-  };
-
-  const reopenGuideStep = (stepId: string) => {
-    setGuideProgress((prev) => ({
-      ...prev,
-      doneStepIds: prev.doneStepIds.filter((id) => id !== stepId),
-    }));
-  };
-
-  const resetGuideProgress = () => {
-    setGuideProgress({ day: dayKey(new Date()), doneStepIds: [] });
-  };
+  const openOnboardingShowcase = openGuide; // alias conservé pour la section newcomer
 
   return (
     <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-6">
@@ -1320,6 +1284,33 @@ export default function DashboardPage() {
           </div>
         </section>
 
+        {/* — Boutons Guide + Proposition IA — */}
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={openGuide}
+            className="flex-1 rounded-2xl border border-indigo-300/30 bg-indigo-500/10 py-3 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/20 active:scale-95"
+          >
+            🎬 Guide
+          </button>
+          <button
+            type="button"
+            onClick={() => setPropositionsOpen((prev) => !prev)}
+            className={`relative flex-1 rounded-2xl border py-3 text-sm font-semibold transition active:scale-95 ${
+              propositionsOpen
+                ? 'border-cyan-300/40 bg-cyan-500/15 text-cyan-100'
+                : 'border-white/15 bg-slate-900/60 text-slate-200 hover:border-white/25'
+            }`}
+          >
+            🤖 Proposition IA
+            {proposals.length > 0 && (
+              <span className="ml-2 rounded-full border border-cyan-300/50 bg-cyan-500/25 px-1.5 py-0.5 text-[11px] font-bold text-cyan-100">
+                {proposals.length}
+              </span>
+            )}
+          </button>
+        </div>
+
         {isNewcomer && (
           <section className="rounded-3xl border border-cyan-300/30 bg-cyan-500/10 p-4 sm:p-5">
             <p className="text-xs uppercase tracking-[0.18em] text-cyan-200">Nouveau ici</p>
@@ -1344,17 +1335,6 @@ export default function DashboardPage() {
                 Parametrage guide
               </button>
             </div>
-
-            {showcaseOpen && (
-              <div className="mt-3 rounded-xl border border-cyan-300/30 bg-slate-950/45 p-3">
-                <p className="text-[11px] uppercase tracking-wide text-cyan-200">Mission Flash 120</p>
-                {showcaseLoading ? (
-                  <p className="mt-2 text-sm text-slate-300">Preparation de la presentation...</p>
-                ) : (
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">{showcaseText}</p>
-                )}
-              </div>
-            )}
 
             {setupOpen && (
               <div className="mt-3 rounded-xl border border-emerald-300/30 bg-slate-950/45 p-3 space-y-3">
@@ -1415,214 +1395,104 @@ export default function DashboardPage() {
           </section>
         )}
 
-        <section className="rounded-3xl border border-white/10 bg-slate-900/75 p-4 sm:p-5">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-cyan-200/80">Mode guide</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">Maintenant fais ca, puis fais ca</h2>
-            </div>
-            <div className="flex items-center gap-2">
-              {guideSignalsLoading && <p className="text-xs text-slate-400">Analyse en cours...</p>}
-              <button
-                type="button"
-                onClick={() => setGuideModeActive((prev) => !prev)}
-                className="rounded-lg border border-white/15 px-2.5 py-1 text-[11px] text-slate-200"
-              >
-                {guideModeActive ? 'Pause guide' : 'Reprendre guide'}
-              </button>
-              <button
-                type="button"
-                onClick={resetGuideProgress}
-                className="rounded-lg border border-white/15 px-2.5 py-1 text-[11px] text-slate-300"
-              >
-                Reinitialiser
-              </button>
-            </div>
-          </div>
-
-          {guideModeActive && nextGuideStep && (
-            <div className="mt-3 rounded-2xl border border-emerald-300/30 bg-emerald-500/10 p-3">
-              <p className="text-[11px] uppercase tracking-wide text-emerald-200">Prochaine action</p>
-              <p className="mt-1 text-sm font-semibold text-emerald-100">{nextGuideStep.title}</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {nextGuideStep.href === '/dashboard' ? (
-                  <button
-                    type="button"
-                    onClick={openAssistantWithVoice}
-                    className="rounded-lg border border-emerald-300/45 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100"
-                  >
-                    {nextGuideStep.actionLabel}
-                  </button>
-                ) : (
-                  <Link
-                    href={nextGuideStep.href}
-                    className="inline-flex rounded-lg border border-emerald-300/45 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100"
-                  >
-                    {nextGuideStep.actionLabel}
-                  </Link>
+        {/* — Panneau Propositions IA — */}
+        {propositionsOpen && (
+          <section className="rounded-3xl border border-white/10 bg-slate-900/75 p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-cyan-200/80">Assistant IA</p>
+                <h2 className="mt-1 text-lg font-semibold text-white">Propositions d actions a valider</h2>
+                <p className="mt-1 text-xs text-slate-300">
+                  Generees automatiquement toutes les 2h de 8h a 18h et stockees.
+                </p>
+                {proposalsGeneratedAt && (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Derniere generation : {new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(proposalsGeneratedAt))}
+                  </p>
                 )}
+              </div>
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => completeGuideStep(nextGuideStep.id)}
-                  className="rounded-lg border border-emerald-300/45 bg-slate-900/40 px-3 py-1.5 text-xs font-semibold text-emerald-100"
+                  onClick={openUpdateCodeModal}
+                  disabled={updateCodeLoading || proposalsLoading}
+                  className="rounded-xl border border-indigo-300/35 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:bg-indigo-500/20 disabled:opacity-50"
                 >
-                  Termine
+                  {updateCodeLoading ? 'Generation...' : '🔄 Mettre a jour'}
+                </button>
+                <button
+                  type="button"
+                  onClick={validateAllProposals}
+                  disabled={proposals.length === 0 || validatingAllProposals || proposalsLoading}
+                  className="rounded-xl border border-emerald-300/35 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-50"
+                >
+                  {validatingAllProposals ? 'Validation...' : 'Valider tout'}
                 </button>
               </div>
             </div>
-          )}
 
-          {guideModeActive && !nextGuideStep && (
-            <div className="mt-3 rounded-2xl border border-cyan-300/30 bg-cyan-500/10 p-3">
-              <p className="text-sm text-cyan-100">Toutes les etapes du guide sont terminees pour aujourd hui.</p>
-            </div>
-          )}
+            {proposalsSummary && (
+              <p className="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
+                {proposalsSummary}
+              </p>
+            )}
+            {proposalsError && (
+              <p className="mt-3 rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                {proposalsError}
+              </p>
+            )}
 
-          <div className="mt-3 space-y-2">
-            {guidedSteps.map((step, index) => (
-              <div key={step.id} className="rounded-2xl border border-white/10 bg-slate-950/50 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-400">Etape {index + 1}</p>
-                  {guideProgress.doneStepIds.includes(step.id) ? (
-                    <span className="rounded-full border border-emerald-300/40 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-100">
-                      Terminee
-                    </span>
-                  ) : (
-                    <span className="rounded-full border border-amber-300/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-100">
-                      A faire
-                    </span>
-                  )}
-                </div>
-                <p className="mt-1 text-sm font-semibold text-slate-100">{step.title}</p>
-                <p className="mt-1 text-xs text-slate-400">{step.description}</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {step.href === '/dashboard' ? (
-                    <button
-                      type="button"
-                      onClick={openAssistantWithVoice}
-                      className="rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100"
-                    >
-                      {step.actionLabel}
-                    </button>
-                  ) : (
-                    <Link
-                      href={step.href}
-                      className="inline-flex rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100"
-                    >
-                      {step.actionLabel}
-                    </Link>
-                  )}
-                  {guideProgress.doneStepIds.includes(step.id) ? (
-                    <button
-                      type="button"
-                      onClick={() => reopenGuideStep(step.id)}
-                      className="rounded-lg border border-white/15 bg-slate-900/45 px-3 py-1.5 text-xs font-semibold text-slate-200"
-                    >
-                      Remettre a faire
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => completeGuideStep(step.id)}
-                      className="rounded-lg border border-emerald-300/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100"
-                    >
-                      Marquer terminee
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-white/10 bg-slate-900/75 p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-cyan-200/80">Auto-apprentissage</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">L assistant s adapte a tes corrections</h2>
-              <p className="mt-1 text-xs text-slate-400">Les regles IA se mettent a jour automatiquement a partir de tes modifications.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => runAutoLearning('manual')}
-              disabled={autoLearnLoading}
-              className="rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 disabled:opacity-50"
-            >
-              {autoLearnLoading ? 'Apprentissage...' : 'Lancer maintenant'}
-            </button>
-          </div>
-          {autoLearnStatus && <p className="mt-2 text-xs text-emerald-200">{autoLearnStatus}</p>}
-        </section>
-
-        <section className="rounded-3xl border border-white/10 bg-slate-900/75 p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-cyan-200/80">Assistant qui propose</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">Propositions IA a valider</h2>
-              <p className="mt-1 text-xs text-slate-300">L IA prepare les actions. Tu valides en 1 clic.</p>
-            </div>
-            <button
-              type="button"
-              onClick={validateAllSuggestions}
-              disabled={dailySuggestions.length === 0 || validatingAllSuggestions || dailySuggestionsLoading}
-              className="rounded-xl border border-emerald-300/35 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-100 disabled:opacity-50"
-            >
-              {validatingAllSuggestions ? 'Validation...' : 'Valider toutes les propositions'}
-            </button>
-          </div>
-
-          {dailySuggestionsSummary && (
-            <p className="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
-              {dailySuggestionsSummary}
-            </p>
-          )}
-
-          {dailySuggestionsError && (
-            <p className="mt-3 rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-              {dailySuggestionsError}
-            </p>
-          )}
-
-          {dailySuggestionsLoading ? (
-            <p className="mt-4 text-sm text-slate-300">Chargement des propositions IA...</p>
-          ) : dailySuggestions.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-400">Aucune proposition prioritaire a valider pour le moment.</p>
-          ) : (
-            <div className="mt-4 space-y-2">
-              {dailySuggestions.map((suggestion, index) => {
-                const emailId = String(suggestion.email_message_id || '').trim();
-                const validating = Boolean(validatingSuggestionIds[emailId]);
-                return (
-                  <div
-                    key={`${emailId}-${index}`}
-                    className="rounded-2xl border border-white/10 bg-slate-950/45 p-3"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-1 flex items-center gap-2">
-                          <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${suggestionPriorityPill(suggestion.priority)}`}>
-                            {suggestion.priority}
-                          </span>
-                          <span className="truncate text-xs text-slate-400">{suggestion.sender || 'Expediteur'}</span>
+            {proposalsLoading ? (
+              <p className="mt-4 text-sm text-slate-300">Chargement des propositions...</p>
+            ) : proposals.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-400">
+                Aucune proposition en attente. Utilise "Mettre a jour" pour en generer.
+              </p>
+            ) : (
+              <div className="mt-4 space-y-2">
+                {proposals.map((proposal) => {
+                  const isValidating = validatingProposalId === proposal.id;
+                  return (
+                    <div key={proposal.id} className="rounded-2xl border border-white/10 bg-slate-950/45 p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 flex items-center gap-2">
+                            <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${suggestionPriorityPill(proposal.priority)}`}>
+                              {proposal.priority}
+                            </span>
+                            <span className="truncate text-xs text-slate-400">{proposal.sender || 'Expediteur'}</span>
+                          </div>
+                          <p className="text-sm font-medium text-slate-100">{proposal.action}</p>
+                          <p className="mt-1 text-xs text-slate-400">{proposal.why}</p>
                         </div>
-                        <p className="text-sm font-medium text-slate-100">{suggestion.action}</p>
-                        <p className="mt-1 text-xs text-slate-400">{suggestion.why}</p>
+                        <div className="flex flex-col items-end gap-1.5">
+                          {proposal.email_message_id && (
+                            <button
+                              type="button"
+                              onClick={() => openSourceEvent(proposal.email_message_id)}
+                              className="rounded-lg border border-slate-300/20 bg-slate-800/60 px-2.5 py-1 text-[11px] text-slate-300 transition hover:border-slate-300/40 hover:text-slate-100"
+                              title="Voir l evenement source"
+                            >
+                              Origine 🔍
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => validateProposal(proposal)}
+                            disabled={!proposal.email_message_id || isValidating}
+                            className="rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:opacity-50"
+                          >
+                            {isValidating ? 'Creation...' : 'Valider'}
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => validateSuggestion(suggestion)}
-                        disabled={!emailId || validating}
-                        className="rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 disabled:opacity-50"
-                      >
-                        {validating ? 'Creation...' : 'Valider'}
-                      </button>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
 
         {assistantModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/70 p-3 sm:p-6" onClick={closeAssistantModal}>
@@ -1849,6 +1719,140 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* — Modale Guide : animation de presentation — */}
+        {guideOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={() => setGuideOpen(false)}>
+            <div
+              className="relative w-full max-w-2xl rounded-3xl border border-indigo-300/20 bg-gradient-to-br from-slate-900 via-indigo-950/60 to-slate-900 p-6 shadow-[0_40px_80px_-30px_rgba(99,102,241,0.5)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-300/80">Presentation interactive</p>
+                  <h2 className="mt-1 text-xl font-bold text-white">Guide Control Center</h2>
+                </div>
+                <button type="button" onClick={() => setGuideOpen(false)} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800">
+                  Fermer
+                </button>
+              </div>
+              {guideLoading ? (
+                <div className="space-y-3 py-6">
+                  <div className="flex items-center justify-center gap-3">
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-indigo-400 [animation-delay:-0.3s]" />
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-indigo-400 [animation-delay:-0.15s]" />
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-indigo-400" />
+                  </div>
+                  <p className="text-center text-sm text-slate-300">Preparation de la presentation...</p>
+                </div>
+              ) : (
+                <div className="max-h-[60vh] overflow-y-auto">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-100">{guideText}</p>
+                </div>
+              )}
+              {!guideLoading && guideText && (
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => speakText(guideText)}
+                    className="rounded-lg border border-indigo-300/30 bg-indigo-500/10 px-3 py-1.5 text-xs text-indigo-100 hover:bg-indigo-500/20"
+                  >
+                    Ecouter
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* — Modale code IA pour mise a jour — */}
+        {updateCodeOpen && (
+          <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
+              <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/80">Code de confirmation</p>
+              <h2 className="mt-1 text-lg font-bold text-white">Mise a jour des propositions</h2>
+              <p className="mt-2 text-sm text-slate-300">
+                Pour confirmer la generation, recopie le code ci-dessous :
+              </p>
+              <div className="my-4 flex items-center justify-center rounded-2xl border border-cyan-300/30 bg-slate-950/60 py-4">
+                <span className="text-3xl font-mono font-extrabold tracking-[0.3em] text-cyan-300">{updateCodeChallenge}</span>
+              </div>
+              <input
+                type="text"
+                value={updateCodeInput}
+                onChange={(e) => setUpdateCodeInput(e.target.value)}
+                placeholder="Entrez le code"
+                maxLength={6}
+                className="w-full rounded-xl border border-white/15 bg-slate-800 px-4 py-3 text-center text-xl font-mono tracking-[0.3em] text-white outline-none focus:border-cyan-300"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') confirmUpdateCode(); }}
+              />
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setUpdateCodeOpen(false)}
+                  className="flex-1 rounded-xl border border-white/15 py-2.5 text-sm text-slate-300 hover:bg-slate-800"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmUpdateCode}
+                  disabled={updateCodeInput.trim().length !== 6}
+                  className="flex-1 rounded-xl bg-cyan-400 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-50"
+                >
+                  Confirmer
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* — Modale evenement source d'une proposition — */}
+        {sourceEventOpen && (
+          <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={() => setSourceEventOpen(false)}>
+            <div
+              className="w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-900 p-5 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Email source</p>
+                  <h2 className="mt-1 text-lg font-semibold text-white">Origine de la proposition</h2>
+                </div>
+                <button type="button" onClick={() => setSourceEventOpen(false)} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800">
+                  Fermer
+                </button>
+              </div>
+              {sourceEventLoading ? (
+                <p className="text-sm text-slate-300">Chargement de l email source...</p>
+              ) : !sourceEventData ? (
+                <p className="text-sm text-slate-400">Email source introuvable.</p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
+                    <p className="text-sm font-semibold text-white">{sourceEventData.subject || '(sans objet)'}</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      De : {sourceEventData.sender_name || sourceEventData.sender_email || '—'} · {sourceEventData.received_at ? new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(sourceEventData.received_at)) : ''}
+                    </p>
+                  </div>
+                  {sourceEventData.ai_summary && (
+                    <div className="rounded-xl border border-indigo-300/15 bg-indigo-500/5 p-3">
+                      <p className="text-[11px] uppercase tracking-wide text-indigo-300">Resume IA</p>
+                      <p className="mt-1 text-sm text-slate-200">{sourceEventData.ai_summary}</p>
+                    </div>
+                  )}
+                  {sourceEventData.body_text && (
+                    <div className="max-h-48 overflow-y-auto rounded-xl border border-white/10 bg-slate-950/60 p-3">
+                      <p className="text-[11px] uppercase tracking-wide text-slate-500">Contenu</p>
+                      <p className="mt-1 whitespace-pre-wrap text-xs text-slate-300">{sourceEventData.body_text.slice(0, 1200)}{sourceEventData.body_text.length > 1200 ? '...' : ''}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/85 via-slate-900/75 to-slate-950/90 p-4 sm:p-6">
           <div className="flex flex-col items-center justify-center py-4 sm:py-8">
             <p className="mb-3 text-xs uppercase tracking-[0.2em] text-slate-400">Ajout rapide</p>
@@ -1919,6 +1923,14 @@ export default function DashboardPage() {
 }
 
 function priorityWeight(priority: 'urgent' | 'high' | 'normal' | 'low'): number {
+  if (priority === 'urgent') return 4;
+  if (priority === 'high') return 3;
+  if (priority === 'normal') return 2;
+  return 1;
+}
+
+// Alias utilisé pour les propositions stockées en DB
+function proposalPriorityWeight(priority: string): number {
   if (priority === 'urgent') return 4;
   if (priority === 'high') return 3;
   if (priority === 'normal') return 2;
