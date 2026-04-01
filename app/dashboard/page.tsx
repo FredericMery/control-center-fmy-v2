@@ -1702,9 +1702,9 @@ export default function DashboardPage() {
         )}
 
         {assistantModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/75 p-2 sm:p-5" onClick={closeAssistantModal}>
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 p-2 sm:p-5" onClick={closeAssistantModal}>
             <div
-              className="relative mx-auto flex h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-cyan-200/20 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 shadow-[0_40px_120px_-40px_rgba(34,211,238,0.55)]"
+              className="relative mx-auto flex h-[95dvh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-cyan-200/20 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 shadow-[0_40px_120px_-40px_rgba(34,211,238,0.55)] sm:h-[95vh]"
               onClick={(event) => event.stopPropagation()}
             >
               <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
@@ -1737,8 +1737,8 @@ export default function DashboardPage() {
                 </div>
               </header>
 
-              <div className="grid flex-1 grid-cols-1 lg:grid-cols-[320px_1fr]">
-                <aside className={`${assistantSidebarOpen ? 'block' : 'hidden'} border-b border-white/10 bg-slate-950/35 p-3 lg:block lg:border-b-0 lg:border-r`}>
+              <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[320px_1fr]">
+                <aside className={`${assistantSidebarOpen ? 'block' : 'hidden'} min-h-0 border-b border-white/10 bg-slate-950/35 p-3 lg:block lg:border-b-0 lg:border-r`}>
                   <label className="mb-3 inline-flex w-full items-center gap-2 rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-xs text-slate-300">
                     <input
                       type="checkbox"
@@ -1783,7 +1783,7 @@ export default function DashboardPage() {
                 </aside>
 
                 <section className={`${assistantSidebarOpen ? 'hidden' : 'flex'} min-h-0 flex-col lg:flex`}>
-                  <div className="flex-1 space-y-3 overflow-y-auto bg-slate-950/20 px-4 py-4">
+                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-950/20 px-4 py-4">
                     {assistantMessages.length === 0 ? (
                       <div className="mx-auto mt-8 max-w-xl rounded-2xl border border-white/10 bg-slate-900/45 p-5 text-center">
                         <p className="text-sm font-semibold text-cyan-100">Commence une discussion avec Noa</p>
