@@ -116,6 +116,8 @@ export default function DashboardPage() {
   const [assistantVoiceRate, setAssistantVoiceRate] = useState(1);
   const [assistantVoicePitch, setAssistantVoicePitch] = useState(1);
   const [assistantVoiceVolume, setAssistantVoiceVolume] = useState(1);
+  const [assistantVoiceLang, setAssistantVoiceLang] = useState<'auto' | 'fr-FR' | 'en-US' | 'es-ES'>('auto');
+  const [assistantAutoRead, setAssistantAutoRead] = useState(false);
   const [assistantSummaryModalOpen, setAssistantSummaryModalOpen] = useState(false);
   const [assistantSummaryPreview, setAssistantSummaryPreview] = useState<string | null>(null);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
@@ -159,6 +161,7 @@ export default function DashboardPage() {
   const [autoLearnLoading, setAutoLearnLoading] = useState(false);
   const [autoLearnStatus, setAutoLearnStatus] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const lastAutoReadMessageIdRef = useRef<string | null>(null);
   const recognitionRef = useRef<any>(null);
   const monthName =
     language === "fr"
@@ -302,9 +305,27 @@ export default function DashboardPage() {
     if (!user) return;
 
     const loadAssistantSettings = async () => {
+      const readLocalVoiceSettings = () => {
+        if (typeof window === 'undefined') return null;
+        try {
+          const raw = window.localStorage.getItem('assistant_voice_settings');
+          if (!raw) return null;
+          return JSON.parse(raw) as {
+            voiceName?: string;
+            rate?: number;
+            pitch?: number;
+            volume?: number;
+            lang?: 'auto' | 'fr-FR' | 'en-US' | 'es-ES';
+            autoRead?: boolean;
+          };
+        } catch {
+          return null;
+        }
+      };
+
       const { data } = await supabase
         .from('user_ai_settings')
-        .select('assistant_name,assistant_voice_name,assistant_voice_rate,assistant_voice_pitch,assistant_voice_volume')
+        .select('assistant_name,assistant_voice_name,assistant_voice_rate,assistant_voice_pitch,assistant_voice_volume,assistant_voice_lang,assistant_auto_read')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -317,6 +338,22 @@ export default function DashboardPage() {
       setAssistantVoiceRate(Number.isFinite(Number(data?.assistant_voice_rate)) ? Number(data?.assistant_voice_rate) : 1);
       setAssistantVoicePitch(Number.isFinite(Number(data?.assistant_voice_pitch)) ? Number(data?.assistant_voice_pitch) : 1);
       setAssistantVoiceVolume(Number.isFinite(Number(data?.assistant_voice_volume)) ? Number(data?.assistant_voice_volume) : 1);
+      const dbVoiceLang = String(data?.assistant_voice_lang || 'auto');
+      setAssistantVoiceLang(dbVoiceLang === 'fr-FR' || dbVoiceLang === 'en-US' || dbVoiceLang === 'es-ES' ? dbVoiceLang : 'auto');
+      setAssistantAutoRead(Boolean(data?.assistant_auto_read));
+
+      if (!data?.assistant_voice_name && !data?.assistant_voice_rate && !data?.assistant_voice_pitch && !data?.assistant_voice_volume) {
+        const local = readLocalVoiceSettings();
+        if (local) {
+          setAssistantVoiceName(String(local.voiceName || '').trim());
+          setAssistantVoiceRate(Number.isFinite(Number(local.rate)) ? Number(local.rate) : 1);
+          setAssistantVoicePitch(Number.isFinite(Number(local.pitch)) ? Number(local.pitch) : 1);
+          setAssistantVoiceVolume(Number.isFinite(Number(local.volume)) ? Number(local.volume) : 1);
+          const lang = local.lang;
+          setAssistantVoiceLang(lang === 'fr-FR' || lang === 'en-US' || lang === 'es-ES' ? lang : 'auto');
+          setAssistantAutoRead(Boolean(local.autoRead));
+        }
+      }
     };
 
     loadAssistantSettings();
@@ -688,13 +725,22 @@ export default function DashboardPage() {
     if (selectedVoice) {
       utterance.voice = selectedVoice;
     }
-    utterance.lang = selectedVoice?.lang || (language === "en" ? "en-US" : language === "es" ? "es-ES" : "fr-FR");
+    utterance.lang = selectedVoice?.lang || (assistantVoiceLang === 'auto' ? (language === "en" ? "en-US" : language === "es" ? "es-ES" : "fr-FR") : assistantVoiceLang);
     utterance.rate = Math.min(2, Math.max(0.5, assistantVoiceRate));
     utterance.pitch = Math.min(2, Math.max(0, assistantVoicePitch));
     utterance.volume = Math.min(1, Math.max(0, assistantVoiceVolume));
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   };
+
+  useEffect(() => {
+    if (!assistantAutoRead || assistantMessages.length === 0) return;
+    const lastMessage = assistantMessages[assistantMessages.length - 1];
+    if (!lastMessage || lastMessage.role !== 'assistant') return;
+    if (lastAutoReadMessageIdRef.current === lastMessage.id) return;
+    lastAutoReadMessageIdRef.current = lastMessage.id;
+    speakText(lastMessage.content);
+  }, [assistantMessages, assistantAutoRead]);
 
   const startVoiceInput = () => {
     if (typeof window === "undefined") return;

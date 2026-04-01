@@ -90,6 +90,8 @@ export default function SettingsPage() {
   const [voiceRateDraft, setVoiceRateDraft] = useState(1);
   const [voicePitchDraft, setVoicePitchDraft] = useState(1);
   const [voiceVolumeDraft, setVoiceVolumeDraft] = useState(1);
+  const [voiceLangDraft, setVoiceLangDraft] = useState<'auto' | 'fr-FR' | 'en-US' | 'es-ES'>('auto');
+  const [voiceAutoReadDraft, setVoiceAutoReadDraft] = useState(false);
   const [voiceTestText, setVoiceTestText] = useState('Bonjour, je suis Noa. Regle ma voix avec les potentiometres.');
   const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -257,14 +259,43 @@ export default function SettingsPage() {
     if (!user) return;
 
     const loadAssistantSettings = async () => {
+      const readLocalVoiceSettings = () => {
+        if (typeof window === 'undefined') return null;
+        try {
+          const raw = window.localStorage.getItem('assistant_voice_settings');
+          if (!raw) return null;
+          return JSON.parse(raw) as {
+            voiceName?: string;
+            rate?: number;
+            pitch?: number;
+            volume?: number;
+            lang?: 'auto' | 'fr-FR' | 'en-US' | 'es-ES';
+            autoRead?: boolean;
+          };
+        } catch {
+          return null;
+        }
+      };
+
       const { data, error } = await supabase
         .from('user_ai_settings')
-        .select('assistant_name,proposal_security_code,email_reply_scope,email_global_instructions,email_do_rules,email_dont_rules,email_signature,assistant_voice_name,assistant_voice_rate,assistant_voice_pitch,assistant_voice_volume')
+        .select('assistant_name,proposal_security_code,email_reply_scope,email_global_instructions,email_do_rules,email_dont_rules,email_signature,assistant_voice_name,assistant_voice_rate,assistant_voice_pitch,assistant_voice_volume,assistant_voice_lang,assistant_auto_read')
         .eq('user_id', user.id)
         .maybeSingle();
 
       if (error) {
         console.error('assistant settings load error', error);
+        const local = readLocalVoiceSettings();
+        if (local) {
+          setVoiceNameDraft(String(local.voiceName || '').trim());
+          setVoiceRateDraft(Number.isFinite(Number(local.rate)) ? Number(local.rate) : 1);
+          setVoicePitchDraft(Number.isFinite(Number(local.pitch)) ? Number(local.pitch) : 1);
+          setVoiceVolumeDraft(Number.isFinite(Number(local.volume)) ? Number(local.volume) : 1);
+          const lang = local.lang;
+          setVoiceLangDraft(lang === 'fr-FR' || lang === 'en-US' || lang === 'es-ES' ? lang : 'auto');
+          setVoiceAutoReadDraft(Boolean(local.autoRead));
+        }
+        setVoiceStatus('Chargement voix depuis sauvegarde locale (DB indisponible).');
         return;
       }
 
@@ -276,6 +307,9 @@ export default function SettingsPage() {
       setVoiceRateDraft(Number.isFinite(Number(data?.assistant_voice_rate)) ? Number(data?.assistant_voice_rate) : 1);
       setVoicePitchDraft(Number.isFinite(Number(data?.assistant_voice_pitch)) ? Number(data?.assistant_voice_pitch) : 1);
       setVoiceVolumeDraft(Number.isFinite(Number(data?.assistant_voice_volume)) ? Number(data?.assistant_voice_volume) : 1);
+      const dbVoiceLang = String(data?.assistant_voice_lang || 'auto');
+      setVoiceLangDraft(dbVoiceLang === 'fr-FR' || dbVoiceLang === 'en-US' || dbVoiceLang === 'es-ES' ? dbVoiceLang : 'auto');
+      setVoiceAutoReadDraft(Boolean(data?.assistant_auto_read));
 
       const scopeRaw = String(data?.email_reply_scope || 'to_only');
       const scope: EmailReplyScope = scopeRaw === 'all' || scopeRaw === 'none' ? scopeRaw : 'to_only';
@@ -624,7 +658,7 @@ export default function SettingsPage() {
       utterance.voice = selectedVoice;
       utterance.lang = selectedVoice.lang;
     } else {
-      utterance.lang = language === 'en' ? 'en-US' : language === 'es' ? 'es-ES' : 'fr-FR';
+      utterance.lang = voiceLangDraft === 'auto' ? (language === 'en' ? 'en-US' : language === 'es' ? 'es-ES' : 'fr-FR') : voiceLangDraft;
     }
 
     utterance.rate = Math.min(2, Math.max(0.5, voiceRateDraft));
@@ -647,23 +681,39 @@ export default function SettingsPage() {
 
     setVoiceStatus(null);
 
+    const payload = {
+      voiceName: voiceNameDraft.trim() || '',
+      rate: Math.min(2, Math.max(0.5, voiceRateDraft)),
+      pitch: Math.min(2, Math.max(0, voicePitchDraft)),
+      volume: Math.min(1, Math.max(0, voiceVolumeDraft)),
+      lang: voiceLangDraft,
+      autoRead: voiceAutoReadDraft,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('assistant_voice_settings', JSON.stringify(payload));
+    }
+
     const { error } = await supabase
       .from('user_ai_settings')
       .upsert({
         user_id: user.id,
-        assistant_voice_name: voiceNameDraft.trim() || null,
-        assistant_voice_rate: Math.min(2, Math.max(0.5, voiceRateDraft)),
-        assistant_voice_pitch: Math.min(2, Math.max(0, voicePitchDraft)),
-        assistant_voice_volume: Math.min(1, Math.max(0, voiceVolumeDraft)),
+        assistant_voice_name: payload.voiceName || null,
+        assistant_voice_rate: payload.rate,
+        assistant_voice_pitch: payload.pitch,
+        assistant_voice_volume: payload.volume,
+        assistant_voice_lang: payload.lang,
+        assistant_auto_read: payload.autoRead,
         updated_at: new Date().toISOString(),
       });
 
     if (error) {
-      setVoiceStatus('Erreur sauvegarde parametrage voix IA');
+      setVoiceStatus('Sauvegarde locale OK. Sauvegarde DB en erreur (verifie migration voix).');
       return;
     }
 
-    setVoiceStatus('Parametrage voix IA sauvegarde');
+    setVoiceStatus('Parametrage voix IA sauvegarde (local + DB).');
   };
 
   const learnEmailAiRulesFromCorrections = async () => {
@@ -1056,6 +1106,30 @@ export default function SettingsPage() {
                   </div>
                   <input type="range" min={0} max={1} step={0.01} value={voiceVolumeDraft} onChange={(e) => setVoiceVolumeDraft(Number(e.target.value))} className="w-full accent-cyan-400" />
                 </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium uppercase tracking-wide text-slate-400">Langue de voix</label>
+                  <select
+                    value={voiceLangDraft}
+                    onChange={(e) => setVoiceLangDraft(e.target.value as 'auto' | 'fr-FR' | 'en-US' | 'es-ES')}
+                    className="min-h-11 w-full rounded-xl border border-white/10 bg-slate-950 px-3 text-sm text-white outline-none focus:border-cyan-400/60"
+                  >
+                    <option value="auto">Auto (langue de l app)</option>
+                    <option value="fr-FR">Francais (fr-FR)</option>
+                    <option value="en-US">English (en-US)</option>
+                    <option value="es-ES">Espanol (es-ES)</option>
+                  </select>
+                </div>
+
+                <label className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={voiceAutoReadDraft}
+                    onChange={(e) => setVoiceAutoReadDraft(e.target.checked)}
+                    className="h-4 w-4 accent-cyan-400"
+                  />
+                  Lire automatiquement les reponses de Noa
+                </label>
               </div>
 
               <div className="space-y-1.5">
