@@ -108,6 +108,7 @@ export default function DashboardPage() {
   const [assistantSaveProgress, setAssistantSaveProgress] = useState(0);
   const [assistantFlowStatus, setAssistantFlowStatus] = useState<string | null>(null);
   const [assistantListening, setAssistantListening] = useState(false);
+  const [assistantVoiceConversationMode, setAssistantVoiceConversationMode] = useState(false);
   const [assistantModalOpen, setAssistantModalOpen] = useState(false);
   const [assistantSidebarOpen, setAssistantSidebarOpen] = useState(false);
   const [assistantName, setAssistantName] = useState('Assistant');
@@ -742,6 +743,22 @@ export default function DashboardPage() {
     speakText(lastMessage.content);
   }, [assistantMessages, assistantAutoRead]);
 
+  useEffect(() => {
+    if (!assistantVoiceConversationMode) return;
+    if (!assistantModalOpen) return;
+    if (assistantLoading) return;
+    if (assistantShowFeedback) return;
+    if (assistantListening) return;
+
+    const timer = window.setTimeout(() => {
+      startVoiceInput();
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [assistantVoiceConversationMode, assistantModalOpen, assistantLoading, assistantShowFeedback, assistantListening]);
+
   const startVoiceInput = () => {
     if (typeof window === "undefined") return;
     const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -760,7 +777,9 @@ export default function DashboardPage() {
     }
 
     const recognition = new Ctor();
-    recognition.lang = language === "en" ? "en-US" : language === "es" ? "es-ES" : "fr-FR";
+    recognition.lang = assistantVoiceLang === 'auto'
+      ? (language === "en" ? "en-US" : language === "es" ? "es-ES" : "fr-FR")
+      : assistantVoiceLang;
     recognition.interimResults = true;
     recognition.continuous = true;
     recognition.maxAlternatives = 1;
@@ -785,6 +804,21 @@ export default function DashboardPage() {
         transcript += event.results[i][0].transcript;
       }
       setAssistantQuestion(transcript.trim());
+
+      if (assistantVoiceConversationMode && !assistantLoading) {
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
+        }
+
+        const message = finalTranscript.trim();
+        if (message) {
+          stopVoiceInput();
+          void askAssistant(message);
+        }
+      }
     };
 
     try {
@@ -806,6 +840,7 @@ export default function DashboardPage() {
 
   const closeAssistantModal = () => {
     stopVoiceInput();
+    setAssistantVoiceConversationMode(false);
     setAssistantModalOpen(false);
     setAssistantSidebarOpen(false);
     setAssistantSummaryModalOpen(false);
@@ -831,6 +866,7 @@ export default function DashboardPage() {
 
   const openAssistantWithVoice = () => {
     openAssistantModal();
+    setAssistantVoiceConversationMode(true);
     window.setTimeout(() => {
       startVoiceInput();
     }, 140);
@@ -1058,8 +1094,8 @@ export default function DashboardPage() {
     setAssistantFlowStatus(null);
   };
 
-  const askAssistant = async () => {
-    const question = assistantQuestion.trim();
+  const askAssistant = async (questionOverride?: string) => {
+    const question = (questionOverride ?? assistantQuestion).trim();
     if (!question || assistantLoading) return;
     const targetConversationId = selectedConversation?.status === 'closed' ? null : assistantConversationId;
 
@@ -1088,7 +1124,11 @@ export default function DashboardPage() {
 
       setAssistantConversationId(json.conversationId || null);
       setAssistantMessages((json.messages || []) as AssistantMessage[]);
-      setAssistantQuestion("");
+      if (!questionOverride) {
+        setAssistantQuestion("");
+      } else {
+        setAssistantQuestion('');
+      }
 
       const listResponse = await fetch("/api/dashboard/assistant", {
         headers: await getAuthHeaders(false),
@@ -1819,6 +1859,25 @@ export default function DashboardPage() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => {
+                      const next = !assistantVoiceConversationMode;
+                      setAssistantVoiceConversationMode(next);
+                      if (!next) {
+                        stopVoiceInput();
+                      } else if (!assistantListening) {
+                        startVoiceInput();
+                      }
+                    }}
+                    className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+                      assistantVoiceConversationMode
+                        ? 'border-cyan-300/40 bg-cyan-500/20 text-cyan-100'
+                        : 'border-cyan-300/25 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20'
+                    }`}
+                  >
+                    {assistantVoiceConversationMode ? 'Oral actif' : 'Conversation orale'}
+                  </button>
+                  <button
+                    type="button"
                     onClick={closeAssistantModal}
                     className="rounded-xl border border-white/15 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-800"
                   >
@@ -2021,18 +2080,18 @@ export default function DashboardPage() {
                         <button
                           type="button"
                           onClick={assistantListening ? stopVoiceInput : startVoiceInput}
-                          disabled={assistantShowFeedback}
+                          disabled={assistantShowFeedback || assistantVoiceConversationMode}
                           className={`min-h-12 rounded-xl px-3 text-xs font-semibold ${
                             assistantListening
                               ? 'bg-rose-500 text-white'
                               : 'border border-cyan-300/30 bg-slate-800 text-cyan-100'
                           }`}
                         >
-                          {assistantListening ? 'Stop' : 'Parler'}
+                          {assistantVoiceConversationMode ? 'Oral actif' : assistantListening ? 'Stop' : 'Parler'}
                         </button>
                         <button
                           type="button"
-                          onClick={askAssistant}
+                          onClick={() => { void askAssistant(); }}
                           disabled={assistantLoading || assistantShowFeedback || !assistantQuestion.trim()}
                           className="min-h-12 rounded-xl bg-cyan-400 px-4 text-sm font-semibold text-slate-950 disabled:opacity-50"
                         >
