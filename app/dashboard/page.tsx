@@ -1530,6 +1530,7 @@ export default function DashboardPage() {
       emails: { id: 'emails', label: 'Email', icon: '✉️', link: '/dashboard/emails' },
       planning: { id: 'planning', label: 'Agenda', icon: '📅', link: '/dashboard/agenda/pro' },
       expenses: { id: 'expenses', label: 'Depense', icon: '💰', link: '/dashboard/expenses' },
+      reunions: { id: 'reunion', label: 'Reunion', icon: '🎙️', link: '/dashboard/reunions' },
     };
 
     return cards
