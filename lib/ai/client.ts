@@ -37,6 +37,14 @@ interface OpenAiRequest<TBody> {
   model: string;
 }
 
+interface OpenAiAudioTranscriptionRequest {
+  userId: string;
+  file: File;
+  model?: string;
+  language?: string;
+  prompt?: string;
+}
+
 export async function callOpenAi<TBody>(input: OpenAiRequest<TBody>) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -72,6 +80,53 @@ export async function callOpenAi<TBody>(input: OpenAiRequest<TBody>) {
   });
 
   return json;
+}
+
+export async function callOpenAiAudioTranscription(input: OpenAiAudioTranscriptionRequest) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY manquant');
+  }
+
+  const model = input.model || 'whisper-1';
+  const formData = new FormData();
+  formData.append('model', model);
+  formData.append('file', input.file);
+
+  if (input.language) {
+    formData.append('language', input.language);
+  }
+
+  if (input.prompt) {
+    formData.append('prompt', input.prompt);
+  }
+
+  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: formData,
+  });
+
+  const json = await response.json();
+  if (!response.ok) {
+    throw new Error(json?.error?.message || 'Erreur OpenAI Whisper');
+  }
+
+  await logAiUsage({
+    userId: input.userId,
+    provider: 'openai',
+    service: 'audio/transcriptions',
+    tokensUsed: 0,
+    costEstimate: 0,
+  });
+
+  return json as {
+    text?: string;
+    language?: string;
+    duration?: number;
+  };
 }
 
 export async function callGoogleVision(userId: string, imageBase64: string): Promise<string> {

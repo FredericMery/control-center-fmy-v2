@@ -269,6 +269,8 @@ export default function NotificationPopup() {
 
 function getNotificationIcon(type: string): string {
   switch (type) {
+    case "reunion_followup":
+      return "🎯";
     case "alias_review":
       return "✉️";
     case "deadline":

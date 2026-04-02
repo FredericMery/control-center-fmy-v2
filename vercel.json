@@ -7,6 +7,14 @@
     {
       "path": "/api/calendar/proposals/cron",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/reunions/followups/cron/daily",
+      "schedule": "30 7 * * *"
+    },
+    {
+      "path": "/api/reunions/followups/cron/weekly",
+      "schedule": "0 8 * * 1"
     }
   ]
 }

@@ -1,4 +1,4 @@
-export type DashboardModuleId = 'pro' | 'perso' | 'memoire' | 'expenses' | 'planning' | 'courrier' | 'emails';
+export type DashboardModuleId = 'pro' | 'perso' | 'memoire' | 'expenses' | 'planning' | 'courrier' | 'emails' | 'reunions';
 
 export type DashboardModule = {
   id: DashboardModuleId;
@@ -65,6 +65,14 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
     bgColor: 'bg-indigo-600/10',
     textColor: 'text-indigo-300',
     link: '/dashboard/emails',
+  },
+  {
+    id: 'reunions',
+    title: 'Reunions',
+    icon: '🎙️',
+    bgColor: 'bg-cyan-600/10',
+    textColor: 'text-cyan-300',
+    link: '/dashboard/reunions',
   },
 ];
 
