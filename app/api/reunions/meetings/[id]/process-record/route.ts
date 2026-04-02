@@ -34,7 +34,6 @@ export async function POST(
         transcribeAudioWithWhisper({
           userId,
           file: audio,
-          language: 'fr',
         }),
       ]);
 
