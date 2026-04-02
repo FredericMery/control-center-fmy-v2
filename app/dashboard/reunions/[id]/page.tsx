@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { getAuthHeaders } from '@/lib/auth/clientSession';
 
@@ -55,8 +55,16 @@ export default function ReunionDetailPage() {
   const [transcriptInput, setTranscriptInput] = useState('');
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [recordingSupported, setRecordingSupported] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
   const [collapsedTranscript, setCollapsedTranscript] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const latestRecord = useMemo(() => records[0] || null, [records]);
   const joinUrl = useMemo(() => {
@@ -101,6 +109,113 @@ export default function ReunionDetailPage() {
     if (!meetingId) return;
     void load();
   }, [meetingId, load]);
+
+  useEffect(() => {
+    const supported =
+      typeof window !== 'undefined' &&
+      typeof navigator !== 'undefined' &&
+      !!navigator.mediaDevices?.getUserMedia &&
+      typeof window.MediaRecorder !== 'undefined';
+    setRecordingSupported(supported);
+
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+      if (mediaRecorderRef.current) {
+        try {
+          if (mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+          }
+        } catch {
+          // cleanup
+        }
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
+  async function startLiveRecording() {
+    if (!recordingSupported || isRecording) return;
+
+    setRecordingError(null);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+
+      const preferredTypes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+      ];
+      const mimeType = preferredTypes.find((type) =>
+        typeof window !== 'undefined' &&
+        typeof window.MediaRecorder !== 'undefined' &&
+        window.MediaRecorder.isTypeSupported(type)
+      ) || '';
+
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+
+      const chunks: BlobPart[] = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          chunks.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        try {
+          const outputType = recorder.mimeType || 'audio/webm';
+          const ext = outputType.includes('mp4') ? 'm4a' : outputType.includes('wav') ? 'wav' : 'webm';
+          const blob = new Blob(chunks, { type: outputType });
+          const file = new File([blob], `meeting-live-${Date.now()}.${ext}`, {
+            type: outputType,
+          });
+          setAudioFile(file);
+        } finally {
+          stream.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
+          mediaRecorderRef.current = null;
+          setIsRecording(false);
+          if (recordingTimerRef.current) {
+            clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
+          }
+        }
+      };
+
+      recorder.onerror = () => {
+        setRecordingError('Erreur enregistrement audio.');
+      };
+
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      setRecordingSeconds(0);
+      setIsRecording(true);
+      recorder.start(1000);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch {
+      setRecordingError('Micro non accessible. Autorise le micro sur iPhone puis recommence.');
+    }
+  }
+
+  function stopLiveRecording() {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === 'inactive') return;
+    recorder.stop();
+  }
 
   async function processTranscript() {
     if (!meetingId || (!transcriptInput.trim() && !audioFile)) return;
@@ -239,6 +354,37 @@ export default function ReunionDetailPage() {
                 onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
                 className="mt-3 block w-full rounded-xl border border-white/15 bg-black/40 p-2 text-xs"
               />
+
+              {recordingSupported ? (
+                <div className="mt-3 rounded-xl border border-cyan-300/25 bg-cyan-500/10 p-3">
+                  <p className="text-xs text-cyan-100">Enregistrement direct iPhone</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={startLiveRecording}
+                      disabled={isRecording}
+                      className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-semibold text-slate-900 disabled:opacity-40"
+                    >
+                      Demarrer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={stopLiveRecording}
+                      disabled={!isRecording}
+                      className="rounded-lg bg-rose-400 px-3 py-1.5 text-xs font-semibold text-slate-900 disabled:opacity-40"
+                    >
+                      Stop
+                    </button>
+                    {isRecording ? (
+                      <span className="text-xs text-rose-200">REC {formatDuration(recordingSeconds)}</span>
+                    ) : null}
+                  </div>
+                  {recordingError ? <p className="mt-2 text-xs text-rose-200">{recordingError}</p> : null}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-white/60">Enregistrement direct non supporte sur ce navigateur.</p>
+              )}
+
               {audioFile ? (
                 <p className="mt-2 text-xs text-cyan-200">Audio selectionne: {audioFile.name}</p>
               ) : null}
@@ -285,4 +431,14 @@ function statusStyle(status: Action['status']) {
   if (status === 'in_progress') return 'border-orange-300/50 bg-orange-500/20';
   if (status === 'late') return 'border-red-300/60 bg-red-500/20';
   return 'border-cyan-300/30 bg-cyan-500/10';
+}
+
+function formatDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60)
+    .toString()
+    .padStart(2, '0');
+  const seconds = Math.floor(totalSeconds % 60)
+    .toString()
+    .padStart(2, '0');
+  return `${minutes}:${seconds}`;
 }
