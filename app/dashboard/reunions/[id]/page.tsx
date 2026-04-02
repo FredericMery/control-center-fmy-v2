@@ -65,6 +65,7 @@ export default function ReunionDetailPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoProcessOnStopRef = useRef(false);
 
   const latestRecord = useMemo(() => records[0] || null, [records]);
   const joinUrl = useMemo(() => {
@@ -177,10 +178,22 @@ export default function ReunionDetailPage() {
           const outputType = recorder.mimeType || 'audio/webm';
           const ext = outputType.includes('mp4') ? 'm4a' : outputType.includes('wav') ? 'wav' : 'webm';
           const blob = new Blob(chunks, { type: outputType });
+          const shouldAutoProcess = autoProcessOnStopRef.current;
+          autoProcessOnStopRef.current = false;
+
+          if (!blob.size) {
+            setRecordingError('Enregistrement vide. Reessaie avec le micro actif.');
+            return;
+          }
+
           const file = new File([blob], `meeting-live-${Date.now()}.${ext}`, {
             type: outputType,
           });
           setAudioFile(file);
+
+          if (shouldAutoProcess) {
+            void processCapturedInput({ file, transcript: transcriptInput });
+          }
         } finally {
           stream.getTracks().forEach((track) => track.stop());
           mediaStreamRef.current = null;
@@ -211,24 +224,30 @@ export default function ReunionDetailPage() {
     }
   }
 
-  function stopLiveRecording() {
+  function stopLiveRecording(autoProcess = false) {
     const recorder = mediaRecorderRef.current;
     if (!recorder || recorder.state === 'inactive') return;
+    autoProcessOnStopRef.current = autoProcess;
     recorder.stop();
   }
 
-  async function processTranscript() {
-    if (!meetingId || (!transcriptInput.trim() && !audioFile)) return;
+  async function processCapturedInput(args?: { transcript?: string; file?: File | null }) {
+    if (!meetingId) return;
+
+    const transcript = (args?.transcript ?? transcriptInput).trim();
+    const file = args?.file ?? audioFile;
+    if (!transcript && !file) return;
+
     setProcessing(true);
     setError(null);
 
     try {
       const formData = new FormData();
-      if (transcriptInput.trim()) {
-        formData.append('transcript', transcriptInput.trim());
+      if (transcript) {
+        formData.append('transcript', transcript);
       }
-      if (audioFile) {
-        formData.append('audio', audioFile);
+      if (file) {
+        formData.append('audio', file);
       }
 
       const res = await fetch(`/api/reunions/meetings/${meetingId}/process-record`, {
@@ -248,6 +267,10 @@ export default function ReunionDetailPage() {
     } finally {
       setProcessing(false);
     }
+  }
+
+  async function processTranscript() {
+    await processCapturedInput();
   }
 
   async function toggleAction(actionId: string, current: Action['status']) {
@@ -362,18 +385,18 @@ export default function ReunionDetailPage() {
                     <button
                       type="button"
                       onClick={startLiveRecording}
-                      disabled={isRecording}
+                      disabled={isRecording || processing}
                       className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-semibold text-slate-900 disabled:opacity-40"
                     >
-                      Demarrer
+                      Demarrer reunion
                     </button>
                     <button
                       type="button"
-                      onClick={stopLiveRecording}
-                      disabled={!isRecording}
+                      onClick={() => stopLiveRecording(true)}
+                      disabled={!isRecording || processing}
                       className="rounded-lg bg-rose-400 px-3 py-1.5 text-xs font-semibold text-slate-900 disabled:opacity-40"
                     >
-                      Stop
+                      Stop reunion + CR auto
                     </button>
                     {isRecording ? (
                       <span className="text-xs text-rose-200">REC {formatDuration(recordingSeconds)}</span>
