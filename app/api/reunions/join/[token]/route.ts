@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { createMemory } from '@/lib/memory/memoryService';
 
 function tokenHash(rawToken: string) {
   return crypto.createHash('sha256').update(rawToken).digest('hex');
@@ -69,6 +70,28 @@ export async function POST(
     .single();
 
   if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+
+  try {
+    const email = String(body.email || '').trim();
+    const phone = String(body.phone || '').trim();
+
+    await createMemory({
+      userId: String(meeting.user_id),
+      title: name,
+      type: 'contact',
+      content: `Participant reunion ${meeting.id}`,
+      structuredData: {
+        full_name: name,
+        email: email || null,
+        phone: phone || null,
+        source: 'reunion_qr',
+        meeting_id: meeting.id,
+      },
+      source: 'reunion_qr',
+    });
+  } catch {
+    // Non bloquant: on conserve l'inscription participant meme si l'annuaire echoue.
+  }
 
   return NextResponse.json({ participant });
 }

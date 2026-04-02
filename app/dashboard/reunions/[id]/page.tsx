@@ -11,6 +11,7 @@ type Meeting = {
   description: string;
   meeting_date: string;
   status: 'planned' | 'ongoing' | 'completed';
+  public_join_path?: string | null;
 };
 
 type Participant = {
@@ -58,6 +59,16 @@ export default function ReunionDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   const latestRecord = useMemo(() => records[0] || null, [records]);
+  const joinUrl = useMemo(() => {
+    if (!meeting?.public_join_path) return '';
+    if (typeof window === 'undefined') return meeting.public_join_path;
+    return `${window.location.origin}${meeting.public_join_path}`;
+  }, [meeting?.public_join_path]);
+
+  const joinQrUrl = useMemo(() => {
+    if (!joinUrl) return '';
+    return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(joinUrl)}`;
+  }, [joinUrl]);
 
   const load = useCallback(async () => {
     if (!meetingId) return;
@@ -153,6 +164,20 @@ export default function ReunionDetailPage() {
           <h1 className="mt-1 text-3xl font-semibold">{meeting.title}</h1>
           <p className="mt-3 text-white/85">{latestRecord?.ai_summary || meeting.objective || 'Resume en attente'}</p>
         </header>
+
+        {joinUrl ? (
+          <section className="rounded-2xl border border-emerald-300/30 bg-emerald-500/10 p-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <p className="text-sm text-emerald-100">Flashcode participants</p>
+                <p className="text-xs text-white/80 break-all mt-1">{joinUrl}</p>
+              </div>
+              <div className="rounded-xl bg-white p-2 w-fit">
+                <img src={joinQrUrl} alt="Flashcode participants" className="w-28 h-28" />
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <section className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-4">
           <article className="rounded-2xl border border-white/10 bg-black/30 p-4 md:p-5">

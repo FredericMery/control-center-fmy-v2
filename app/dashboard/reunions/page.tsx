@@ -14,12 +14,19 @@ type MeetingRow = {
   public_join_path?: string | null;
 };
 
+type CreationPreview = {
+  meetingId: string;
+  joinUrl: string;
+  qrUrl: string;
+};
+
 export default function ReunionsPage() {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [meetings, setMeetings] = useState<MeetingRow[]>([]);
   const [kpi, setKpi] = useState({ late: 0, upcoming: 0, completed: 0 });
+  const [creationPreview, setCreationPreview] = useState<CreationPreview | null>(null);
 
   const upcomingMeetings = useMemo(() => {
     const now = Date.now();
@@ -68,9 +75,21 @@ export default function ReunionsPage() {
       const json = (await res.json().catch(() => ({}))) as {
         meeting?: MeetingRow;
         error?: string;
+        joinUrl?: string;
+        qrUrl?: string;
       };
 
       if (!res.ok) throw new Error(json.error || 'Erreur creation reunion');
+
+      const joinUrl = String(json.joinUrl || '').trim();
+      const qrUrl = String(json.qrUrl || '').trim();
+      if (json.meeting?.id && joinUrl && qrUrl) {
+        setCreationPreview({
+          meetingId: json.meeting.id,
+          joinUrl,
+          qrUrl,
+        });
+      }
 
       setPrompt('');
       await loadMeetings();
@@ -107,6 +126,30 @@ export default function ReunionsPage() {
             {error ? <p className="mt-3 text-red-300 text-sm">{error}</p> : null}
           </div>
         </section>
+
+        {creationPreview ? (
+          <section className="rounded-3xl border border-emerald-300/30 bg-emerald-500/10 p-5">
+            <div className="flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
+              <div>
+                <p className="text-sm text-emerald-200">Flashcode de participation pret</p>
+                <p className="text-xs text-white/80 mt-1 break-all">{creationPreview.joinUrl}</p>
+                <Link
+                  href={`/dashboard/reunions/${creationPreview.meetingId}`}
+                  className="inline-flex mt-3 text-sm text-emerald-200 underline"
+                >
+                  Ouvrir la reunion
+                </Link>
+              </div>
+              <div className="rounded-2xl border border-white/15 bg-white p-2 w-fit">
+                <img
+                  src={creationPreview.qrUrl}
+                  alt="QR code de participation"
+                  className="w-40 h-40"
+                />
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <KpiCard label="Reunions prevues" value={String(kpi.upcoming)} tone="cyan" />
