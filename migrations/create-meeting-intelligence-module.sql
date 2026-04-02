@@ -264,7 +264,7 @@ as $$
     m.meeting_date,
     m.status
   from public.mod_reunion_meetings m
-  where m.public_join_token_hash = encode(digest(raw_token, 'sha256'), 'hex')
+  where m.public_join_token_hash = encode(extensions.digest(raw_token, 'sha256'), 'hex')
     and (m.public_join_token_expires_at is null or m.public_join_token_expires_at >= now())
   limit 1;
 $$;
