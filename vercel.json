@@ -15,6 +15,10 @@
     {
       "path": "/api/reunions/followups/cron/weekly",
       "schedule": "0 8 * * 1"
+    },
+    {
+      "path": "/api/tasks/categorize-cron",
+      "schedule": "0 6 * * *"
     }
   ]
 }

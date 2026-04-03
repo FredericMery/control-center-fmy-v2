@@ -16,6 +16,31 @@ import { useI18n } from "@/components/providers/LanguageProvider";
 
 const statuses = ["todo", "in_progress", "waiting", "done"] as const;
 
+// ─── AI Categories ───────────────────────────────────────────────────────────
+const AI_CATEGORIES = [
+  "RH",
+  "Organisation",
+  "Juridique",
+  "Commerce",
+  "Financier",
+  "Communication",
+  "Projet",
+  "Technique",
+  "Autre",
+] as const;
+
+const categoryMeta: Record<string, { emoji: string; pill: string }> = {
+  RH:            { emoji: "👥", pill: "bg-purple-500/20 text-purple-300 border border-purple-400/30" },
+  Organisation:  { emoji: "📋", pill: "bg-blue-500/20 text-blue-300 border border-blue-400/30" },
+  Juridique:     { emoji: "⚖️", pill: "bg-amber-500/20 text-amber-300 border border-amber-400/30" },
+  Commerce:      { emoji: "💰", pill: "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30" },
+  Financier:     { emoji: "📊", pill: "bg-orange-500/20 text-orange-300 border border-orange-400/30" },
+  Communication: { emoji: "📣", pill: "bg-pink-500/20 text-pink-300 border border-pink-400/30" },
+  Projet:        { emoji: "🚀", pill: "bg-cyan-600/20 text-cyan-300 border border-cyan-400/30" },
+  Technique:     { emoji: "🔧", pill: "bg-slate-500/20 text-slate-300 border border-slate-400/30" },
+  Autre:         { emoji: "🏷️", pill: "bg-gray-500/20 text-gray-400 border border-gray-400/20" },
+};
+
 const statusColors: Record<string, string> = {
   todo: "bg-slate-600/30 text-slate-200",
   in_progress: "bg-blue-600/30 text-blue-200",
@@ -61,6 +86,7 @@ export default function TasksPage() {
 
   const [showModal, setShowModal] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [selectedTaskForTransfer, setSelectedTaskForTransfer] = useState<{
     id: string;
@@ -110,8 +136,18 @@ export default function TasksPage() {
 
   const filteredTasks = tasks.filter((task) => {
     if (task.type !== typeParam) return false;
-    return showArchived ? task.archived === true : task.archived !== true;
+    if (!(showArchived ? task.archived === true : task.archived !== true)) return false;
+    if (selectedCategory && task.ai_category !== selectedCategory) return false;
+    return true;
   });
+
+  // Categories present in current active pro tasks (for filter buttons)
+  const availableCategories = useMemo(() => {
+    if (typeParam !== 'pro' || showArchived) return [];
+    const activeTasks = tasks.filter(t => t.type === 'pro' && !t.archived);
+    const cats = new Set(activeTasks.map(t => t.ai_category).filter(Boolean) as string[]);
+    return AI_CATEGORIES.filter(c => cats.has(c));
+  }, [tasks, typeParam, showArchived]);
 
   const activeCount = useMemo(
     () => tasks.filter(t => t.type === typeParam && !t.archived).length,
@@ -245,6 +281,41 @@ export default function TasksPage() {
           </div>
         </section>
 
+        {/* AI CATEGORY FILTERS */}
+        {availableCategories.length > 0 && (
+          <section className="mb-4 overflow-x-auto sm:mb-5">
+            <div className="flex min-w-max items-center gap-2">
+              <button
+                onClick={() => setSelectedCategory(null)}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                  selectedCategory === null
+                    ? 'bg-white/15 text-white border border-white/30'
+                    : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
+                }`}
+              >
+                Toutes
+              </button>
+              {availableCategories.map((cat) => {
+                const meta = categoryMeta[cat];
+                const isActive = selectedCategory === cat;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(isActive ? null : cat)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                      isActive
+                        ? `${meta.pill} opacity-100 scale-105`
+                        : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10 hover:text-gray-300'
+                    }`}
+                  >
+                    {meta.emoji} {cat}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         {filteredTasks.length === 0 ? (
           <div className="py-16 text-center">
             <div className="text-6xl mb-4">🎯</div>
@@ -311,6 +382,15 @@ export default function TasksPage() {
                         >
                           {t(`tasks.status.${task.status}`)}
                         </div>
+
+                        {task.ai_category && categoryMeta[task.ai_category] && (
+                          <div
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${categoryMeta[task.ai_category].pill}`}
+                            title={`Catégorie IA : ${task.ai_category}`}
+                          >
+                            {categoryMeta[task.ai_category].emoji} {task.ai_category}
+                          </div>
+                        )}
 
                         {task.deadline && (
                           <div

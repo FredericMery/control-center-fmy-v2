@@ -11,6 +11,7 @@ export type Task = {
   deadline: string | null;
   archived: boolean;
   created_at?: string;
+  ai_category?: string | null;
 };
 
 type TaskState = {
