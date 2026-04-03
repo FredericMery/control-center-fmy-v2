@@ -102,16 +102,20 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
     setProgress(10);
     setError(null);
 
-    const uploadFiles = normalizeFilesForUpload(files.slice(0, MAIL_MAX_SCAN_FILES));
     const formData = new FormData();
-    uploadFiles.forEach((file) => formData.append("files", file));
+    files.slice(0, MAIL_MAX_SCAN_FILES).forEach((file) => formData.append("files", file));
 
     try {
       setProgress(25);
       setStatus("ocr");
 
-      const res = await fetch("/api/mail/scan", {
+      const endpoint = typeof window !== "undefined"
+        ? `${window.location.origin}/api/mail/scan`
+        : "/api/mail/scan";
+
+      const res = await fetch(endpoint, {
         method: "POST",
+        credentials: "include",
         body: formData,
       });
 
@@ -369,75 +373,6 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
       )}
     </div>
   );
-}
-
-function normalizeFilesForUpload(files: File[]) {
-  return files.map((file) => sanitizeUploadFile(file));
-}
-
-function sanitizeUploadFile(file: File): File {
-  const normalizedType = inferFileMimeType(file) || "application/octet-stream";
-  const normalizedName = sanitizeFileName(file.name, normalizedType);
-
-  const shouldReuseOriginal =
-    normalizedName === (file.name || "") &&
-    normalizedType === (String(file.type || "").trim().toLowerCase() || normalizedType);
-
-  if (shouldReuseOriginal) {
-    return file;
-  }
-
-  return new File([file], normalizedName, {
-    type: normalizedType,
-    lastModified: file.lastModified,
-  });
-}
-
-function inferFileMimeType(file: File) {
-  const directType = String(file.type || "").trim().toLowerCase();
-  if (directType) return directType;
-
-  const lowerName = String(file.name || "").toLowerCase();
-  if (lowerName.endsWith(".pdf")) return "application/pdf";
-  if (lowerName.endsWith(".heic")) return "image/heic";
-  if (lowerName.endsWith(".heif")) return "image/heif";
-  if (lowerName.endsWith(".webp")) return "image/webp";
-  if (lowerName.endsWith(".png")) return "image/png";
-  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) return "image/jpeg";
-  if (lowerName.endsWith(".gif")) return "image/gif";
-  if (lowerName.endsWith(".bmp")) return "image/bmp";
-  if (lowerName.endsWith(".tif") || lowerName.endsWith(".tiff")) return "image/tiff";
-  return "";
-}
-
-function sanitizeFileName(fileName: string, mimeType: string) {
-  const cleanBaseName = String(fileName || "scan")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 80);
-
-  const safeBase = cleanBaseName || "scan";
-  if (safeBase.includes(".")) {
-    return safeBase;
-  }
-
-  const extension = inferExtensionFromMimeType(mimeType);
-  return extension ? `${safeBase}.${extension}` : safeBase;
-}
-
-function inferExtensionFromMimeType(mimeType: string) {
-  if (mimeType === "application/pdf") return "pdf";
-  if (mimeType === "image/jpeg") return "jpg";
-  if (mimeType === "image/png") return "png";
-  if (mimeType === "image/webp") return "webp";
-  if (mimeType === "image/heic") return "heic";
-  if (mimeType === "image/heif") return "heif";
-  if (mimeType === "image/gif") return "gif";
-  if (mimeType === "image/bmp") return "bmp";
-  if (mimeType === "image/tiff") return "tiff";
-  return "";
 }
 
 function mapScanUploadError(message: string) {
