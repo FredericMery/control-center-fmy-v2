@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { MAIL_MAX_SCAN_FILES, type AiMailAnalysis } from "@/types/mail";
+import { getAccessToken } from "@/lib/auth/clientSession";
 
 interface Props {
   onComplete: (data: {
@@ -103,6 +104,7 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
     setError(null);
 
     try {
+      const authHeaders = await buildAuthHeaders();
       const endpoint = typeof window !== "undefined" ? `${window.location.origin}/api/mail/scan` : "/api/mail/scan";
       const filesToUpload = files.slice(0, MAIL_MAX_SCAN_FILES);
       const scanUrls: string[] = [];
@@ -120,6 +122,7 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
         const res = await fetch(endpoint, {
           method: "POST",
           credentials: "include",
+          headers: authHeaders,
           body: formData,
         });
         const json = await readJsonSafely(res);
@@ -423,10 +426,12 @@ async function analyzeMergedText(fullText: string): Promise<AiMailAnalysis | nul
     ? `${window.location.origin}/api/mail/scan/analyze`
     : "/api/mail/scan/analyze";
 
+  const authHeaders = await buildAuthHeaders();
   const res = await fetch(endpoint, {
     method: "POST",
     credentials: "include",
     headers: {
+      ...authHeaders,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ full_text: fullText }),
@@ -466,4 +471,13 @@ async function readJsonSafely(response: Response): Promise<Record<string, unknow
   } catch {
     return null;
   }
+}
+
+async function buildAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getAccessToken();
+  if (!token) return {};
+
+  return {
+    Authorization: `Bearer ${token.trim()}`,
+  };
 }
