@@ -5,12 +5,17 @@ type MailScanSource = {
   name: string;
 };
 
-const PAGE_WIDTH = 595.28;
-const PAGE_HEIGHT = 841.89;
+const A4_PORTRAIT_WIDTH = 595.28;
+const A4_PORTRAIT_HEIGHT = 841.89;
+const A4_LANDSCAPE_WIDTH = 841.89;
+const A4_LANDSCAPE_HEIGHT = 595.28;
 const PAGE_MARGIN = 24;
 let sharpLoader: Promise<SharpLike | null> | null = null;
 
 type SharpLike = (input: Uint8Array) => {
+  rotate: () => {
+    png: (options?: { quality?: number }) => { toBuffer: () => Promise<Buffer> };
+  };
   png: (options?: { quality?: number }) => { toBuffer: () => Promise<Buffer> };
 };
 
@@ -87,27 +92,30 @@ export async function buildMailScansPdfAttachment(args: {
 }
 
 function appendImagePage(doc: PDFDocument, image: PDFImage) {
-  const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  const maxWidth = PAGE_WIDTH - PAGE_MARGIN * 2;
-  const maxHeight = PAGE_HEIGHT - PAGE_MARGIN * 2;
+  const isLandscape = image.width > image.height;
+  const pageWidth = isLandscape ? A4_LANDSCAPE_WIDTH : A4_PORTRAIT_WIDTH;
+  const pageHeight = isLandscape ? A4_LANDSCAPE_HEIGHT : A4_PORTRAIT_HEIGHT;
+  const page = doc.addPage([pageWidth, pageHeight]);
+  const maxWidth = pageWidth - PAGE_MARGIN * 2;
+  const maxHeight = pageHeight - PAGE_MARGIN * 2;
   const scale = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
   const width = image.width * scale;
   const height = image.height * scale;
 
   page.drawImage(image, {
-    x: (PAGE_WIDTH - width) / 2,
-    y: (PAGE_HEIGHT - height) / 2,
+    x: (pageWidth - width) / 2,
+    y: (pageHeight - height) / 2,
     width,
     height,
   });
 }
 
 function appendInfoPage(doc: PDFDocument, font: PDFFont, bold: PDFFont, fileName: string, message: string) {
-  const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  const page = doc.addPage([A4_PORTRAIT_WIDTH, A4_PORTRAIT_HEIGHT]);
 
   page.drawText('Piece jointe non integree visuellement', {
     x: PAGE_MARGIN,
-    y: PAGE_HEIGHT - 70,
+    y: A4_PORTRAIT_HEIGHT - 70,
     size: 16,
     font: bold,
     color: rgb(0.14, 0.14, 0.14),
@@ -115,7 +123,7 @@ function appendInfoPage(doc: PDFDocument, font: PDFFont, bold: PDFFont, fileName
 
   page.drawText(`Nom du document: ${fileName || 'inconnu'}`, {
     x: PAGE_MARGIN,
-    y: PAGE_HEIGHT - 110,
+    y: A4_PORTRAIT_HEIGHT - 110,
     size: 11,
     font,
     color: rgb(0.22, 0.22, 0.22),
@@ -123,11 +131,11 @@ function appendInfoPage(doc: PDFDocument, font: PDFFont, bold: PDFFont, fileName
 
   page.drawText(message, {
     x: PAGE_MARGIN,
-    y: PAGE_HEIGHT - 145,
+    y: A4_PORTRAIT_HEIGHT - 145,
     size: 11,
     font,
     color: rgb(0.3, 0.3, 0.3),
-    maxWidth: PAGE_WIDTH - PAGE_MARGIN * 2,
+    maxWidth: A4_PORTRAIT_WIDTH - PAGE_MARGIN * 2,
     lineHeight: 16,
   });
 }
@@ -178,7 +186,7 @@ async function normalizeForPdfEmbedding(contentType: string, bytes: Uint8Array):
     }
 
     try {
-      const converted = await sharp(bytes).png({ quality: 90 }).toBuffer();
+      const converted = await sharp(bytes).rotate().png({ quality: 90 }).toBuffer();
       return { kind: 'image/png', bytes: new Uint8Array(converted) };
     } catch {
       return {
