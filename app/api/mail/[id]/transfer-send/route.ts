@@ -85,8 +85,7 @@ export async function POST(
     String(process.env.RESEND_EMAIL_ASSISTANT_FROM || '').trim() ||
     'Control Center <traitement@mail.meetsync-ai.com>';
 
-  const toLabel = normalizeText(body.recipient_name);
-  const to = toLabel ? `${toLabel} <${recipientEmail}>` : recipientEmail;
+  const to = recipientEmail;
 
   const sendPromise = resend.emails.send({
     from,
