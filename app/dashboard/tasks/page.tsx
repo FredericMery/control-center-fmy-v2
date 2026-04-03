@@ -87,6 +87,7 @@ export default function TasksPage() {
   const [showModal, setShowModal] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [isCategorizing, setIsCategorizing] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [selectedTaskForTransfer, setSelectedTaskForTransfer] = useState<{
     id: string;
@@ -218,6 +219,41 @@ export default function TasksPage() {
     }
   };
 
+  const runManualCategorization = async () => {
+    if (isCategorizing) return;
+
+    setIsCategorizing(true);
+    try {
+      const res = await fetch('/api/tasks/categorize-cron', {
+        method: 'POST',
+        headers: await getAuthHeaders(false),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        categorized?: number;
+        message?: string;
+        error?: string;
+      };
+
+      if (!res.ok) {
+        alert(json.error || 'Erreur lors de la categorisation IA');
+        return;
+      }
+
+      await fetchTasks();
+      const count = Number(json.categorized || 0);
+      if (count > 0) {
+        alert(`Categorisation terminee: ${count} tache(s) mise(s) a jour`);
+      } else {
+        alert(json.message || 'Aucune tache active non categorisee');
+      }
+    } catch (error) {
+      console.error('Erreur categorisation manuelle:', error);
+      alert('Erreur lors de la categorisation IA');
+    } finally {
+      setIsCategorizing(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#16324a_0%,_#0f172a_42%,_#020617_100%)] text-white">
 
@@ -238,6 +274,16 @@ export default function TasksPage() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
+              {typeParam === 'pro' && !showArchived && (
+                <button
+                  onClick={runManualCategorization}
+                  disabled={isCategorizing}
+                  className="min-h-10 rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-2 text-xs font-medium text-violet-100 transition-all hover:bg-violet-500/25 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4"
+                  title="Categoriser les taches actives non categorisees"
+                >
+                  {isCategorizing ? 'Categorisation...' : 'Categoriser IA'}
+                </button>
+              )}
               <button
                 onClick={toggleArchivedView}
                 className="min-h-10 rounded-full bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition-all hover:bg-white/10 sm:px-4"

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { callOpenAi } from '@/lib/ai/client';
+import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -206,5 +207,52 @@ export async function GET(req: NextRequest) {
     categorized: totalUpdated,
     usersProcessed: byUser.size,
     errors: errors.length > 0 ? errors : undefined,
+  });
+}
+
+export async function POST(req: NextRequest) {
+  const userId = await getUserIdFromRequest(req);
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const supabase = getAdminClient();
+
+  // Manual mode: only active, non-archived, uncategorized pro tasks for the current user.
+  const { data: tasks, error } = await supabase
+    .from('tasks')
+    .select('id, user_id, title')
+    .eq('user_id', userId)
+    .eq('type', 'pro')
+    .eq('archived', false)
+    .or('ai_category.is.null,ai_category.eq.')
+    .not('title', 'is', null);
+
+  if (error) {
+    console.error('[task-categorize:manual] fetch error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (!tasks || tasks.length === 0) {
+    return NextResponse.json({ categorized: 0, message: 'No uncategorized active pro tasks found' });
+  }
+
+  const categorized = await categorizeTasks(userId, tasks as RawTask[]);
+  if (categorized.length === 0) {
+    return NextResponse.json({ categorized: 0, message: 'AI returned no valid category' });
+  }
+
+  const updates = categorized.map(({ id, category }) =>
+    supabase.from('tasks').update({ ai_category: category }).eq('id', id).eq('user_id', userId)
+  );
+
+  const settled = await Promise.allSettled(updates);
+  const succeeded = settled.filter((r) => r.status === 'fulfilled').length;
+  const failed = settled.length - succeeded;
+
+  return NextResponse.json({
+    categorized: succeeded,
+    failed,
+    sourceTasks: tasks.length,
   });
 }
