@@ -103,8 +103,9 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
     setProgress(10);
     setError(null);
 
+    const uploadFiles = await normalizeFilesForUpload(files.slice(0, MAIL_MAX_SCAN_FILES));
     const formData = new FormData();
-    files.slice(0, MAIL_MAX_SCAN_FILES).forEach((file) => formData.append("files", file));
+    uploadFiles.forEach((file) => formData.append("files", file));
 
     try {
       const headers = await buildUploadHeaders();
@@ -140,7 +141,7 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
       }, 600);
     } catch (err: unknown) {
       setStatus("error");
-      setError(err instanceof Error ? err.message : "Erreur inconnue");
+      setError(mapScanUploadError(err instanceof Error ? err.message : "Erreur inconnue"));
     }
   };
 
@@ -374,19 +375,130 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
 }
 
 async function buildUploadHeaders() {
-  const headers = new Headers();
+  const headers: Record<string, string> = {};
   const token = await getAccessToken();
 
   if (token) {
-    headers.set("Authorization", `Bearer ${token.trim()}`);
-  }
-
-  if (typeof window !== "undefined") {
-    const storedLanguage = window.localStorage.getItem("app_language");
-    if (storedLanguage === "fr" || storedLanguage === "en" || storedLanguage === "es") {
-      headers.set("x-app-language", storedLanguage);
-    }
+    headers.Authorization = `Bearer ${token.trim()}`;
   }
 
   return headers;
+}
+
+async function normalizeFilesForUpload(files: File[]) {
+  const normalizedFiles: File[] = [];
+
+  for (const file of files) {
+    const fileType = inferFileMimeType(file);
+    if (fileType === "application/pdf") {
+      normalizedFiles.push(file);
+      continue;
+    }
+
+    if (needsImageConversion(fileType)) {
+      try {
+        normalizedFiles.push(await convertImageToJpegFile(file));
+        continue;
+      } catch {
+        normalizedFiles.push(file);
+        continue;
+      }
+    }
+
+    normalizedFiles.push(file);
+  }
+
+  return normalizedFiles;
+}
+
+function inferFileMimeType(file: File) {
+  const directType = String(file.type || "").trim().toLowerCase();
+  if (directType) return directType;
+
+  const lowerName = String(file.name || "").toLowerCase();
+  if (lowerName.endsWith(".pdf")) return "application/pdf";
+  if (lowerName.endsWith(".heic")) return "image/heic";
+  if (lowerName.endsWith(".heif")) return "image/heif";
+  if (lowerName.endsWith(".webp")) return "image/webp";
+  if (lowerName.endsWith(".png")) return "image/png";
+  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) return "image/jpeg";
+  if (lowerName.endsWith(".gif")) return "image/gif";
+  if (lowerName.endsWith(".bmp")) return "image/bmp";
+  if (lowerName.endsWith(".tif") || lowerName.endsWith(".tiff")) return "image/tiff";
+  return "";
+}
+
+function needsImageConversion(fileType: string) {
+  return ["image/heic", "image/heif", "image/webp", "image/gif", "image/bmp", "image/tiff"].includes(fileType);
+}
+
+async function convertImageToJpegFile(file: File): Promise<File> {
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = await loadImageElement(objectUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Canvas context unavailable");
+    }
+
+    context.drawImage(image, 0, 0, image.width, image.height);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((result) => {
+        if (result) {
+          resolve(result);
+          return;
+        }
+
+        reject(new Error("JPEG conversion failed"));
+      }, "image/jpeg", 0.92);
+    });
+
+    const nextName = replaceFileExtension(file.name, ".jpg");
+    return new File([blob], nextName, {
+      type: "image/jpeg",
+      lastModified: file.lastModified,
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new window.Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Image decode failed"));
+    image.src = src;
+  });
+}
+
+function replaceFileExtension(fileName: string, nextExtension: string) {
+  const cleanName = String(fileName || "scan");
+  if (cleanName.includes(".")) {
+    return cleanName.replace(/\.[^.]+$/, nextExtension);
+  }
+
+  return `${cleanName}${nextExtension}`;
+}
+
+function mapScanUploadError(message: string) {
+  const raw = String(message || "").trim();
+  const lower = raw.toLowerCase();
+
+  if (!raw) return "Erreur lors du scan du courrier.";
+
+  if (
+    lower.includes("did not match the expected pattern") ||
+    lower.includes("expected pattern") ||
+    lower.includes("string did not match")
+  ) {
+    return "Format photo non reconnu. Reessaie avec une photo JPG/PNG ou un PDF.";
+  }
+
+  return raw;
 }
