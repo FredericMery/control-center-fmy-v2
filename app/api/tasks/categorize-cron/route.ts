@@ -5,7 +5,7 @@ import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export const AI_TASK_CATEGORIES = [
+const AI_TASK_CATEGORIES = [
   'RH',
   'Organisation',
   'Juridique',
@@ -16,8 +16,6 @@ export const AI_TASK_CATEGORIES = [
   'Technique',
   'Autre',
 ] as const;
-
-export type AiTaskCategory = (typeof AI_TASK_CATEGORIES)[number];
 
 const VALID_CATEGORIES = new Set<string>(AI_TASK_CATEGORIES);
 
