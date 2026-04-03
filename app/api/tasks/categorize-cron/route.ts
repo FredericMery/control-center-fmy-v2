@@ -30,6 +30,91 @@ interface AiCategoryResult {
   category: string;
 }
 
+function normalizeCategory(input: string): string | null {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+
+  const normalized = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  const map: Record<string, string> = {
+    rh: 'RH',
+    'ressources humaines': 'RH',
+    organisation: 'Organisation',
+    juridique: 'Juridique',
+    legal: 'Juridique',
+    commerce: 'Commerce',
+    commercial: 'Commerce',
+    vente: 'Commerce',
+    financier: 'Financier',
+    finance: 'Financier',
+    communication: 'Communication',
+    projet: 'Projet',
+    technique: 'Technique',
+    tech: 'Technique',
+    autre: 'Autre',
+    divers: 'Autre',
+  };
+
+  if (map[normalized]) return map[normalized];
+
+  // Accept exact canonical categories with case/accents variations.
+  for (const cat of AI_TASK_CATEGORIES) {
+    const catKey = cat.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (catKey === normalized) return cat;
+  }
+
+  return null;
+}
+
+function inferCategoryFromTitle(title: string): string {
+  const text = String(title || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  if (/(recrut|entretien|conge|rh|paie|salaire|formation|embauche)/.test(text)) return 'RH';
+  if (/(contrat|rgpd|conformit|jurid|litige|legal|avocat)/.test(text)) return 'Juridique';
+  if (/(vente|client|prospect|devis|offre|crm|commercial|appel d.offres?)/.test(text)) return 'Commerce';
+  if (/(factur|budget|compta|paiement|tresorerie|finance|reglement)/.test(text)) return 'Financier';
+  if (/(email|mail|newsletter|presentation|rapport|communication|reseaux sociaux|contenu)/.test(text)) return 'Communication';
+  if (/(planning|reunion|agenda|coordination|organis|logistique)/.test(text)) return 'Organisation';
+  if (/(livrable|roadmap|milestone|lancement|projet)/.test(text)) return 'Projet';
+  if (/(bug|infra|systeme|serveur|code|dev|tech|it|config)/.test(text)) return 'Technique';
+  return 'Autre';
+}
+
+function tryParseArray(raw: string): unknown[] {
+  const clean = raw.replace(/```(?:json)?/g, '').trim();
+  try {
+    const parsed = JSON.parse(clean);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === 'object') {
+      const maybeItems = (parsed as { items?: unknown[]; results?: unknown[] }).items
+        || (parsed as { items?: unknown[]; results?: unknown[] }).results;
+      if (Array.isArray(maybeItems)) return maybeItems;
+    }
+  } catch {
+    // noop, try bracket extraction below
+  }
+
+  const start = clean.indexOf('[');
+  const end = clean.lastIndexOf(']');
+  if (start >= 0 && end > start) {
+    try {
+      const sliced = clean.slice(start, end + 1);
+      const parsed = JSON.parse(sliced);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 function isCronAuthorized(token: string | null): boolean {
@@ -110,25 +195,28 @@ async function categorizeTasks(
     const raw = (json as { choices?: { message?: { content?: string } }[] })
       ?.choices?.[0]?.message?.content ?? '';
 
-    let parsed: AiCategoryResult[] = [];
-    try {
-      // Strip potential markdown fences
-      const clean = raw.replace(/```(?:json)?/g, '').trim();
-      parsed = JSON.parse(clean);
-    } catch {
+    const parsed = tryParseArray(raw);
+    if (parsed.length === 0) {
       console.error(`[task-categorize] JSON parse error for user ${userId}:`, raw);
-      continue;
     }
 
     // Validate and collect
     for (const item of parsed) {
-      if (
-        typeof item?.id === 'string' &&
-        typeof item?.category === 'string' &&
-        VALID_CATEGORIES.has(item.category)
-      ) {
-        results.push({ id: item.id, category: item.category });
+      const obj = item as { id?: string; task_id?: string; category?: string; type?: string };
+      const id = typeof obj?.id === 'string' ? obj.id : typeof obj?.task_id === 'string' ? obj.task_id : '';
+      const rawCategory = typeof obj?.category === 'string' ? obj.category : typeof obj?.type === 'string' ? obj.type : '';
+      const category = normalizeCategory(rawCategory);
+
+      if (id && category && VALID_CATEGORIES.has(category)) {
+        results.push({ id, category });
       }
+    }
+
+    // Fallback: if AI response is partially invalid, categorize remaining tasks locally.
+    const categorizedIds = new Set(results.map((r) => r.id));
+    for (const task of batch) {
+      if (categorizedIds.has(task.id)) continue;
+      results.push({ id: task.id, category: inferCategoryFromTitle(task.title) });
     }
   }
 
@@ -232,12 +320,12 @@ export async function POST(req: NextRequest) {
   }
 
   if (!tasks || tasks.length === 0) {
-    return NextResponse.json({ categorized: 0, message: 'No uncategorized active pro tasks found' });
+    return NextResponse.json({ categorized: 0, message: 'Aucune tache active non categorisee' });
   }
 
   const categorized = await categorizeTasks(userId, tasks as RawTask[]);
   if (categorized.length === 0) {
-    return NextResponse.json({ categorized: 0, message: 'AI returned no valid category' });
+    return NextResponse.json({ categorized: 0, message: 'Aucune categorie exploitable retournee par l IA' });
   }
 
   const updates = categorized.map(({ id, category }) =>

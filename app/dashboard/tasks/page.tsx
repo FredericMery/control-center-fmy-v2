@@ -266,24 +266,24 @@ export default function TasksPage() {
       <div className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/75 backdrop-blur-xl">
         <div className="mx-auto max-w-6xl px-3 py-3 sm:px-6 sm:py-4">
           
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3 sm:gap-4">
               <Link href="/dashboard" className="text-xl text-gray-400 transition hover:text-white">
                 ←
               </Link>
               <div className="text-3xl sm:text-4xl">{typeEmoji}</div>
               <div className="min-w-0">
-                <h1 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">{t('tasks.title', { type: typeTitle })}</h1>
+                <h1 className="truncate text-lg font-semibold tracking-tight sm:text-2xl">{t('tasks.title', { type: typeTitle })}</h1>
                 <p className="text-xs text-gray-400 sm:text-sm">{t('tasks.subtitle')}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-3">
               {typeParam === 'pro' && (
                 <button
                   onClick={runManualCategorization}
                   disabled={isCategorizing}
-                  className="min-h-10 rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-2 text-xs font-medium text-violet-100 transition-all hover:bg-violet-500/25 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4"
+                  className="min-h-10 rounded-2xl border border-violet-300/30 bg-violet-500/15 px-3 py-2 text-xs font-medium text-violet-100 transition-all hover:bg-violet-500/25 disabled:cursor-not-allowed disabled:opacity-60 sm:rounded-full sm:px-4"
                   title={`Categoriser les taches actives non categorisees (${uncategorizedActiveProCount})`}
                 >
                   {isCategorizing
@@ -293,7 +293,7 @@ export default function TasksPage() {
               )}
               <button
                 onClick={toggleArchivedView}
-                className="min-h-10 rounded-full bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition-all hover:bg-white/10 sm:px-4"
+                className="min-h-10 rounded-2xl bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition-all hover:bg-white/10 sm:rounded-full sm:px-4"
               >
                 {showArchived ? t('tasks.active') : t('tasks.archives')}
               </button>
@@ -301,11 +301,13 @@ export default function TasksPage() {
                 onClick={() => setShowModal(true)}
                 aria-label={t('tasks.createTask')}
                 title={t('tasks.createTask')}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/35 bg-gradient-to-br from-cyan-300 to-blue-400 text-xl font-semibold leading-none text-slate-950 shadow-lg shadow-cyan-900/40 transition-all hover:scale-105 hover:from-cyan-200 hover:to-blue-300"
+                className="flex h-10 w-full items-center justify-center rounded-2xl border border-cyan-300/35 bg-gradient-to-br from-cyan-300 to-blue-400 text-xl font-semibold leading-none text-slate-950 shadow-lg shadow-cyan-900/40 transition-all hover:scale-105 hover:from-cyan-200 hover:to-blue-300 sm:w-10 sm:rounded-full"
               >
                 +
               </button>
-              <NotificationBell />
+              <div className="flex min-h-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 sm:rounded-full sm:border-0 sm:bg-transparent">
+                <NotificationBell />
+              </div>
             </div>
           </div>
 
