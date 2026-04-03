@@ -30,6 +30,11 @@ interface AiCategoryResult {
   category: string;
 }
 
+interface FeedbackExample {
+  task_title: string;
+  corrected_category: string;
+}
+
 function normalizeCategory(input: string): string | null {
   const raw = String(input || '').trim();
   if (!raw) return null;
@@ -115,6 +120,41 @@ function tryParseArray(raw: string): unknown[] {
   return [];
 }
 
+function normalizeTitle(input: string): string {
+  return String(input || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function loadUserFeedbackExamples(
+  supabase: ReturnType<typeof getAdminClient>,
+  userId: string
+): Promise<FeedbackExample[]> {
+  const { data, error } = await supabase
+    .from('task_category_feedback')
+    .select('task_title, corrected_category')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    // If migration not run yet, we keep categorization working without learning memory.
+    console.warn('[task-categorize] feedback table unavailable or query failed:', error.message);
+    return [];
+  }
+
+  return (data || []).filter(
+    (row): row is FeedbackExample =>
+      typeof row?.task_title === 'string' &&
+      typeof row?.corrected_category === 'string' &&
+      VALID_CATEGORIES.has(row.corrected_category)
+  );
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 function isCronAuthorized(token: string | null): boolean {
@@ -153,7 +193,8 @@ Réponds UNIQUEMENT avec un tableau JSON valide, sans markdown, de la forme:
 
 async function categorizeTasks(
   userId: string,
-  tasks: RawTask[]
+  tasks: RawTask[],
+  feedbackExamples: FeedbackExample[] = []
 ): Promise<AiCategoryResult[]> {
   if (tasks.length === 0) return [];
 
@@ -161,11 +202,39 @@ async function categorizeTasks(
   const BATCH_SIZE = 60;
   const results: AiCategoryResult[] = [];
 
+  const learnedByTitle = new Map<string, string>();
+  for (const example of feedbackExamples) {
+    const key = normalizeTitle(example.task_title);
+    if (!key || learnedByTitle.has(key)) continue;
+    learnedByTitle.set(key, example.corrected_category);
+  }
+
   for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
     const batch = tasks.slice(i, i + BATCH_SIZE);
+    const batchResults: AiCategoryResult[] = [];
 
-    const userContent = batch
+    const remainingForAi: RawTask[] = [];
+    for (const task of batch) {
+      const learned = learnedByTitle.get(normalizeTitle(task.title));
+      if (learned && VALID_CATEGORIES.has(learned)) {
+        batchResults.push({ id: task.id, category: learned });
+      } else {
+        remainingForAi.push(task);
+      }
+    }
+
+    if (remainingForAi.length === 0) {
+      results.push(...batchResults);
+      continue;
+    }
+
+    const userContent = remainingForAi
       .map((t) => `- id: "${t.id}" | titre: "${t.title.replace(/"/g, "'")}"`)
+      .join('\n');
+
+    const learningExamplesBlock = feedbackExamples
+      .slice(0, 12)
+      .map((ex) => `- "${ex.task_title.replace(/"/g, "'")}" => ${ex.corrected_category}`)
       .join('\n');
 
     let json: unknown;
@@ -182,7 +251,7 @@ async function categorizeTasks(
             { role: 'system', content: SYSTEM_PROMPT },
             {
               role: 'user',
-              content: `Tâches à catégoriser:\n${userContent}`,
+              content: `Corrections utilisateur (prioritaires si cas similaire):\n${learningExamplesBlock || '- (aucune)'}\n\nTâches à catégoriser:\n${userContent}`,
             },
           ],
         },
@@ -208,16 +277,18 @@ async function categorizeTasks(
       const category = normalizeCategory(rawCategory);
 
       if (id && category && VALID_CATEGORIES.has(category)) {
-        results.push({ id, category });
+        batchResults.push({ id, category });
       }
     }
 
     // Fallback: if AI response is partially invalid, categorize remaining tasks locally.
-    const categorizedIds = new Set(results.map((r) => r.id));
-    for (const task of batch) {
+    const categorizedIds = new Set(batchResults.map((r) => r.id));
+    for (const task of remainingForAi) {
       if (categorizedIds.has(task.id)) continue;
-      results.push({ id: task.id, category: inferCategoryFromTitle(task.title) });
+      batchResults.push({ id: task.id, category: inferCategoryFromTitle(task.title) });
     }
+
+    results.push(...batchResults);
   }
 
   return results;
@@ -266,7 +337,8 @@ export async function GET(req: NextRequest) {
   // 3. Process each user
   for (const [userId, userTasks] of byUser.entries()) {
     try {
-      const categorized = await categorizeTasks(userId, userTasks);
+      const feedbackExamples = await loadUserFeedbackExamples(supabase, userId);
+      const categorized = await categorizeTasks(userId, userTasks, feedbackExamples);
 
       if (categorized.length === 0) continue;
 
@@ -323,7 +395,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ categorized: 0, message: 'Aucune tache active non categorisee' });
   }
 
-  const categorized = await categorizeTasks(userId, tasks as RawTask[]);
+  const feedbackExamples = await loadUserFeedbackExamples(supabase, userId);
+  const categorized = await categorizeTasks(userId, tasks as RawTask[], feedbackExamples);
   if (categorized.length === 0) {
     return NextResponse.json({ categorized: 0, message: 'Aucune categorie exploitable retournee par l IA' });
   }

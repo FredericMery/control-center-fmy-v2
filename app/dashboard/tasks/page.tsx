@@ -87,6 +87,8 @@ export default function TasksPage() {
   const [showModal, setShowModal] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [categoryDraftByTask, setCategoryDraftByTask] = useState<Record<string, string>>({});
+  const [savingCategoryTaskId, setSavingCategoryTaskId] = useState<string | null>(null);
   const [isCategorizing, setIsCategorizing] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [selectedTaskForTransfer, setSelectedTaskForTransfer] = useState<{
@@ -259,6 +261,41 @@ export default function TasksPage() {
     }
   };
 
+  const saveTaskCategory = async (taskId: string, category: string) => {
+    if (savingCategoryTaskId) return;
+
+    setSavingCategoryTaskId(taskId);
+    try {
+      const res = await fetch('/api/tasks/category-feedback', {
+        method: 'POST',
+        headers: await getAuthHeaders(true),
+        body: JSON.stringify({
+          taskId,
+          correctedCategory: category,
+        }),
+      });
+
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        learned?: boolean;
+        error?: string;
+      };
+
+      if (!res.ok) {
+        alert(json.error || 'Impossible de modifier la categorie');
+        return;
+      }
+
+      await fetchTasks();
+      alert(json.learned ? 'Categorie mise a jour et apprentissage enregistre' : 'Categorie mise a jour');
+    } catch (error) {
+      console.error('Erreur modification categorie:', error);
+      alert('Impossible de modifier la categorie');
+    } finally {
+      setSavingCategoryTaskId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#16324a_0%,_#0f172a_42%,_#020617_100%)] text-white">
 
@@ -393,6 +430,7 @@ export default function TasksPage() {
               const taskLink = parseLinkedEmailFromTaskTitle(transferInfo.cleanTitle);
               const taskPriorityInfo = parseTaskPriorityMarker(taskLink.cleanTitle);
               const displayTaskTitle = taskPriorityInfo.cleanTitle || taskLink.cleanTitle || transferInfo.cleanTitle || task.title;
+              const draftCategory = categoryDraftByTask[task.id] || task.ai_category || 'Autre';
 
               const deadlinePassed = isDeadlinePassed(task.deadline);
               const contactSource = `${displayTaskTitle}`;
@@ -563,6 +601,42 @@ export default function TasksPage() {
                             {statusEmojis[status]} {t(`tasks.status.${status}`)}
                           </button>
                         ))}
+                      </div>
+
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="text-[11px] uppercase tracking-wide text-gray-400">Categorie IA</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {AI_CATEGORIES.map((cat) => {
+                            const active = draftCategory === cat;
+                            const meta = categoryMeta[cat];
+                            return (
+                              <button
+                                key={cat}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCategoryDraftByTask((prev) => ({ ...prev, [task.id]: cat }));
+                                }}
+                                className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-all ${
+                                  active
+                                    ? `${meta.pill} scale-105`
+                                    : 'border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10'
+                                }`}
+                              >
+                                {meta.emoji} {cat}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void saveTaskCategory(task.id, draftCategory);
+                          }}
+                          disabled={savingCategoryTaskId === task.id || (task.ai_category || 'Autre') === draftCategory}
+                          className="mt-3 w-full rounded-lg border border-violet-300/35 bg-violet-500/10 px-4 py-2 text-xs font-medium uppercase text-violet-200 transition-all hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {savingCategoryTaskId === task.id ? 'Enregistrement...' : 'Enregistrer la categorie'}
+                        </button>
                       </div>
 
                       <div className="pt-3 border-t border-white/10">
