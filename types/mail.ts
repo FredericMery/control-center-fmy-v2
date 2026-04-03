@@ -24,6 +24,8 @@ export type MailStatus =
 
 export type MailPriority = 'urgent' | 'haute' | 'normal' | 'basse';
 
+export const MAIL_MAX_SCAN_FILES = 5;
+
 export interface MailItem {
   id: string;
   user_id: string;

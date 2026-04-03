@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
+import { MAIL_MAX_SCAN_FILES } from '@/types/mail';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -148,7 +149,7 @@ export async function DELETE(
 
 function normalizeScanArray(value: unknown, fallback: unknown): string[] {
   if (Array.isArray(value)) {
-    return Array.from(new Set(value.map((entry) => String(entry || '').trim()).filter(Boolean))).slice(0, 10);
+    return Array.from(new Set(value.map((entry) => String(entry || '').trim()).filter(Boolean))).slice(0, MAIL_MAX_SCAN_FILES);
   }
   const single = String(fallback || '').trim();
   return single ? [single] : [];

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
+import { buildMailScansPdfAttachment } from '@/lib/mail/buildMailScansPdfAttachment';
+import { MAIL_MAX_SCAN_FILES } from '@/types/mail';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -66,7 +68,13 @@ export async function POST(
   const taskDeadline = normalizeDate(body.task_deadline) || normalizeDate(mail.due_date);
   const ccEmails = normalizeEmailList(body.cc_emails).filter((email) => email !== recipientEmail);
 
-  const attachments = await buildAttachments(mail.scan_urls, mail.scan_file_names, mail.scan_url, mail.scan_file_name);
+  const attachments = await buildAttachments(
+    mail.scan_urls,
+    mail.scan_file_names,
+    mail.scan_url,
+    mail.scan_file_name,
+    mail.subject
+  );
 
   if (!process.env.RESEND_API_KEY) {
     return NextResponse.json({ error: 'RESEND_API_KEY manquant' }, { status: 500 });
@@ -216,34 +224,29 @@ async function buildAttachments(
   scanUrls: unknown,
   scanFileNames: unknown,
   scanUrlFallback: unknown,
-  scanFileNameFallback: unknown
+  scanFileNameFallback: unknown,
+  subject: unknown
 ): Promise<Array<{ filename: string; content: string }>> {
   const urls = normalizeTextArray(scanUrls, scanUrlFallback);
   const names = normalizeTextArray(scanFileNames, scanFileNameFallback);
-  const results: Array<{ filename: string; content: string }> = [];
+  const sources = urls
+    .map((url, index) => ({
+      url,
+      name: names[index] || `courrier-scan-${index + 1}`,
+    }))
+    .filter((source) => Boolean(source.url));
 
-  for (let index = 0; index < urls.length; index += 1) {
-    const url = urls[index];
-    if (!url) continue;
-    try {
-      const response = await fetch(url);
-      if (!response.ok) continue;
+  const pdfAttachment = await buildMailScansPdfAttachment({
+    sources,
+    subject: normalizeText(subject),
+  });
 
-      const arrayBuffer = await response.arrayBuffer();
-      const content = Buffer.from(arrayBuffer).toString('base64');
-      const filename = names[index] || `courrier-scan-${index + 1}`;
-      results.push({ filename, content });
-    } catch {
-      continue;
-    }
-  }
-
-  return results;
+  return pdfAttachment ? [pdfAttachment] : [];
 }
 
 function normalizeTextArray(value: unknown, fallback: unknown): string[] {
   if (Array.isArray(value)) {
-    return Array.from(new Set(value.map((entry) => normalizeText(entry)).filter(Boolean))).slice(0, 10);
+    return Array.from(new Set(value.map((entry) => normalizeText(entry)).filter(Boolean))).slice(0, MAIL_MAX_SCAN_FILES);
   }
   const single = normalizeText(fallback);
   return single ? [single] : [];

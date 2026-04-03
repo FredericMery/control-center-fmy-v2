@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type {
   MailItem,
   MailContext,
@@ -10,6 +10,7 @@ import type {
   AiMailAnalysis,
 } from "@/types/mail";
 import {
+  MAIL_MAX_SCAN_FILES,
   MAIL_TYPE_LABELS,
   MAIL_TYPE_ICONS,
   MAIL_TYPES,
@@ -92,8 +93,8 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
   }) => {
     if (data.scan_url)       setScanUrl(data.scan_url);
     if (data.scan_file_name) setScanFileName(data.scan_file_name);
-    setScanUrls(Array.isArray(data.scan_urls) ? data.scan_urls.slice(0, 10) : data.scan_url ? [data.scan_url] : []);
-    setScanFileNames(Array.isArray(data.scan_file_names) ? data.scan_file_names.slice(0, 10) : data.scan_file_name ? [data.scan_file_name] : []);
+    setScanUrls(Array.isArray(data.scan_urls) ? data.scan_urls.slice(0, MAIL_MAX_SCAN_FILES) : data.scan_url ? [data.scan_url] : []);
+    setScanFileNames(Array.isArray(data.scan_file_names) ? data.scan_file_names.slice(0, MAIL_MAX_SCAN_FILES) : data.scan_file_name ? [data.scan_file_name] : []);
     if (data.full_text)      setFullText(data.full_text);
     if (data.ai_analysis)    applyAiAnalysis(data.ai_analysis);
     setStep("form");
@@ -160,7 +161,7 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
         <div>
           <h3 className="text-base font-semibold text-white">Scanner le courrier</h3>
           <p className="mt-0.5 text-xs text-slate-400">
-            Photographiez ou importez le scan — l'IA remplira automatiquement les champs
+            Ajoute jusqu&apos;a {MAIL_MAX_SCAN_FILES} documents pour ce courrier. L&apos;analyse IA prend l&apos;ensemble des pieces pour pre-remplir les champs
           </p>
         </div>
         <MailScanUpload
@@ -184,7 +185,7 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
         <div className="flex items-center gap-2 rounded-xl border border-violet-400/30 bg-violet-400/10 px-3 py-2">
           <span className="text-base">✨</span>
           <span className="text-xs text-violet-200">
-            Champs pré-remplis par l'IA
+            Champs pre-remplis par IA
             {aiConfidence !== null && (
               <span className="ml-1 text-violet-400">
                 (confiance : {Math.round(aiConfidence * 100)}%)
@@ -205,7 +206,7 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
         <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2">
           <span className="text-base">📎</span>
           <span className="truncate text-xs text-slate-300">
-            {scanFileNames.length > 1 ? `${scanFileNames.length} pieces jointes` : scanFileName || "scan.jpg"}
+            {scanFileNames.length > 1 ? `${scanFileNames.length} documents attaches` : scanFileName || "scan.jpg"}
           </span>
           <a
             href={scanUrl}
@@ -329,7 +330,7 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-400">Date d'échéance</label>
+          <label className="mb-1 block text-xs text-slate-400">Date limite</label>
           <input
             type="date"
             value={dueDate}

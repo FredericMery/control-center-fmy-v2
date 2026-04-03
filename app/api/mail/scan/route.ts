@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 import { callOpenAi, callGoogleVision } from '@/lib/ai/client';
-import type { AiMailAnalysis, MailType, MailPriority } from '@/types/mail';
+import { MAIL_MAX_SCAN_FILES, type AiMailAnalysis, type MailType, type MailPriority } from '@/types/mail';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,6 +14,8 @@ const ALLOWED_TYPES = new Set([
 ]);
 
 const AI_SYSTEM_PROMPT = `Tu es une archiviste et secrétaire de direction d'élite, spécialisée dans l'analyse de courrier papier numérisé.
+
+Un même courrier peut contenir plusieurs documents numérisés. Tu dois toujours considérer l'ensemble des documents transmis comme un seul dossier de courrier et croiser les informations entre toutes les pièces.
 
 Analyse le texte extrait d'un courrier et retourne un JSON strict avec ces champs EXACTEMENT :
 {
@@ -111,8 +113,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Fichier requis' }, { status: 400 });
   }
 
-  if (files.length > 10) {
-    return NextResponse.json({ error: 'Maximum 10 pieces par courrier' }, { status: 400 });
+  if (files.length > MAIL_MAX_SCAN_FILES) {
+    return NextResponse.json({ error: `Maximum ${MAIL_MAX_SCAN_FILES} pieces par courrier` }, { status: 400 });
   }
   const maxSize = 15 * 1024 * 1024; // 15 MB
   const uploaded: Array<{ url: string; name: string; text: string }> = [];
@@ -171,8 +173,8 @@ export async function POST(request: NextRequest) {
   }
 
   const validUploads = uploaded.filter((entry) => entry.url);
-  const scanUrls = validUploads.map((entry) => entry.url).slice(0, 10);
-  const scanFileNames = validUploads.map((entry) => entry.name).slice(0, 10);
+  const scanUrls = validUploads.map((entry) => entry.url).slice(0, MAIL_MAX_SCAN_FILES);
+  const scanFileNames = validUploads.map((entry) => entry.name).slice(0, MAIL_MAX_SCAN_FILES);
   const ocrText = uploaded
     .map((entry, index) => (entry.text ? `--- Piece ${index + 1}: ${entry.name} ---\n${entry.text}` : ''))
     .filter(Boolean)
@@ -192,7 +194,7 @@ export async function POST(request: NextRequest) {
             { role: 'system', content: AI_SYSTEM_PROMPT },
             {
               role: 'user',
-              content: `Voici le texte extrait du courrier:\n\n${ocrText.slice(0, 4000)}`,
+              content: `Voici le texte extrait de l'ensemble des documents scannes pour un meme courrier. Analyse toutes les pieces ensemble:\n\n${ocrText.slice(0, 4000)}`,
             },
           ],
           temperature: 0.1,

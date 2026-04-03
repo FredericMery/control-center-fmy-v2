@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { MailItem, MailStatus } from "@/types/mail";
+import { MAIL_MAX_SCAN_FILES, type MailItem, type MailStatus } from "@/types/mail";
 import {
   MAIL_TYPE_ICONS,
   MAIL_TYPE_LABELS,
@@ -43,7 +43,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
     : item.scan_url
     ? [{ url: item.scan_url, name: item.scan_file_name || "Voir le scan" }]
     : [])
-    .slice(0, 10);
+    .slice(0, MAIL_MAX_SCAN_FILES);
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [statusLoading, setStatusLoading] = useState(false);
