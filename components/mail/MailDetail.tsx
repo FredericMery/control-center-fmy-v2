@@ -661,7 +661,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
 
       {showTransferModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl border border-cyan-300/20 bg-[radial-gradient(circle_at_10%_0%,rgba(6,182,212,0.16),transparent_40%),radial-gradient(circle_at_90%_10%,rgba(16,185,129,0.14),transparent_45%),rgba(15,23,42,0.95)] shadow-2xl">
+          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-cyan-300/20 bg-[radial-gradient(circle_at_10%_0%,rgba(6,182,212,0.16),transparent_40%),radial-gradient(circle_at_90%_10%,rgba(16,185,129,0.14),transparent_45%),rgba(15,23,42,0.95)] shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-300/70">Courrier workflow</p>
@@ -676,7 +676,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
               </button>
             </div>
 
-            <div className="space-y-3 px-4 py-4">
+            <div className="space-y-3 px-4 py-4 overflow-y-auto flex-1">
               <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
                 <div className="grid grid-cols-4 gap-2">
                   {timelineSteps.map((step) => (
