@@ -9,28 +9,34 @@ import { cookies } from 'next/headers';
 export async function getUserIdFromRequest(request: NextRequest): Promise<string | null> {
   try {
     const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('❌ Pas de header Authorization ou format invalide');
-      return null;
-    }
-
-    const token = authHeader.substring(7); // Enlever "Bearer "
-
-    // Créer un client Supabase côté serveur
+    const cookieStore = await cookies();
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get() { return undefined; },
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
           set() {},
           remove() {},
         },
       }
     );
 
-    // Vérifier le token avec Supabase
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+    let user = null;
+    let error = null;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7).trim();
+      const tokenResult = await supabase.auth.getUser(token);
+      user = tokenResult.data.user;
+      error = tokenResult.error;
+    } else {
+      const cookieResult = await supabase.auth.getUser();
+      user = cookieResult.data.user;
+      error = cookieResult.error;
+    }
 
     if (error || !user) {
       console.error('❌ Erreur auth Supabase:', error?.message);
@@ -39,8 +45,9 @@ export async function getUserIdFromRequest(request: NextRequest): Promise<string
 
     console.log('✅ User authentifié:', user.id);
     return user.id;
-  } catch (error: any) {
-    console.error('❌ Erreur getUserIdFromRequest:', error?.message);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error || 'Erreur inconnue');
+    console.error('❌ Erreur getUserIdFromRequest:', message);
     return null;
   }
 }

@@ -3,7 +3,6 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { MAIL_MAX_SCAN_FILES, type AiMailAnalysis } from "@/types/mail";
-import { getAuthHeaders } from "@/lib/auth/clientSession";
 
 interface Props {
   onComplete: (data: {
@@ -108,13 +107,11 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
     uploadFiles.forEach((file) => formData.append("files", file));
 
     try {
-      const headers = await getAuthHeaders(false);
       setProgress(25);
       setStatus("ocr");
 
       const res = await fetch("/api/mail/scan", {
         method: "POST",
-        headers,
         body: formData,
       });
 
