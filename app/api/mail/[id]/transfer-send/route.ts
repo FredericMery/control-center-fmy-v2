@@ -25,6 +25,12 @@ type TransferSendPayload = {
   task_deadline?: string | null;
 };
 
+type TransferPdfBuildResult = {
+  attachment: { filename: string; content: string };
+  bytes: Buffer;
+  filename: string;
+};
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -50,7 +56,7 @@ export async function POST(
 
   const { data: mail, error: mailError } = await supabase
     .from('mail_items')
-    .select('id,context,subject,summary,action_note,due_date,status,scan_url,scan_file_name,scan_urls,scan_file_names')
+    .select('id,context,subject,summary,action_note,due_date,status,scan_url,scan_file_name,scan_urls,scan_file_names,transfer_baseline_recipient_email,transfer_baseline_recipient_name,transfer_baseline_subject,transfer_baseline_message,transfer_baseline_created_at,transfer_count')
     .eq('id', id)
     .eq('user_id', userId)
     .single();
@@ -68,7 +74,7 @@ export async function POST(
   const taskDeadline = normalizeDate(body.task_deadline) || normalizeDate(mail.due_date);
   const ccEmails = normalizeEmailList(body.cc_emails).filter((email) => email !== recipientEmail);
 
-  const attachments = await buildAttachments(
+  const transferPdf = await buildTransferPdf(
     mail.scan_urls,
     mail.scan_file_names,
     mail.scan_url,
@@ -93,7 +99,7 @@ export async function POST(
     cc: ccEmails.length > 0 ? ccEmails : undefined,
     subject,
     text: message,
-    attachments: attachments.length > 0 ? attachments : undefined,
+    attachments: transferPdf ? [transferPdf.attachment] : undefined,
   });
 
   const taskPromise = supabase
@@ -122,42 +128,104 @@ export async function POST(
     return NextResponse.json({ error: taskResult.error.message || 'Erreur creation tache' }, { status: 500 });
   }
 
-  await supabase
+  const sentAt = new Date().toISOString();
+  const editedByUser = aiBaselineSubject !== subject || aiBaselineMessage !== message;
+  const transferCount = Number(mail.transfer_count || 0) + 1;
+  const baselineRecipient = normalizeEmail(mail.transfer_baseline_recipient_email);
+  const baselineSubject = normalizeText(mail.transfer_baseline_subject);
+  const baselineMessage = normalizeText(mail.transfer_baseline_message);
+
+  let storedPdfUrl: string | null = null;
+  let storedPdfName: string | null = null;
+  if (transferPdf) {
+    const storedPdf = await uploadTransferPdf({
+      userId,
+      mailId: id,
+      bytes: transferPdf.bytes,
+      filename: transferPdf.filename,
+    });
+    storedPdfUrl = storedPdf.url;
+    storedPdfName = storedPdf.name;
+  }
+
+  const { data: updatedMail } = await supabase
     .from('mail_items')
     .update({
       replied: true,
-      replied_at: new Date().toISOString(),
+      replied_at: sentAt,
       reply_note: `Transfere a ${recipientEmail} avec suivi tache ${taskResult.data?.id || ''}`.trim(),
       status: mail.status === 'recu' ? 'en_cours' : mail.status,
+      transfer_count: transferCount,
+      transfer_baseline_recipient_email: baselineRecipient || recipientEmail,
+      transfer_baseline_recipient_name: normalizeText(mail.transfer_baseline_recipient_name) || normalizeText(body.recipient_name) || null,
+      transfer_baseline_subject: baselineSubject || aiBaselineSubject,
+      transfer_baseline_message: baselineMessage || aiBaselineMessage,
+      transfer_baseline_created_at: mail.transfer_baseline_created_at || sentAt,
+      transfer_last_recipient_email: recipientEmail,
+      transfer_last_recipient_name: normalizeText(body.recipient_name) || null,
+      transfer_last_subject: subject,
+      transfer_last_message: message,
+      transfer_last_at: sentAt,
+      transfer_last_pdf_url: storedPdfUrl,
+      transfer_last_pdf_name: storedPdfName,
     })
     .eq('id', id)
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .select('*')
+    .single();
 
-  const editedByUser = aiBaselineSubject !== subject || aiBaselineMessage !== message;
-  await supabase.from('email_processing_logs').insert({
-    user_id: userId,
-    message_id: null,
-    event_type: 'mail_transfer_sent',
-    level: 'info',
-    message: 'Transfert courrier envoye avec suivi',
-    payload: {
+  const providerMessageId = String((sendResult.data as { id?: string } | null)?.id || '');
+
+  await Promise.all([
+    supabase.from('mail_item_transfers').insert({
       mail_item_id: id,
+      user_id: userId,
       recipient_email: recipientEmail,
+      recipient_name: normalizeText(body.recipient_name) || null,
       cc_emails: ccEmails,
+      subject,
+      message,
       ai_baseline_subject: aiBaselineSubject,
-      ai_baseline_body: aiBaselineMessage,
-      final_subject: subject,
-      final_body: message,
+      ai_baseline_message: aiBaselineMessage,
       edited_by_user: editedByUser,
       task_id: taskResult.data?.id || null,
-      provider_message_id: String((sendResult.data as { id?: string } | null)?.id || ''),
-    },
-  });
+      provider_message_id: providerMessageId,
+      pdf_url: storedPdfUrl,
+      pdf_file_name: storedPdfName,
+    }),
+    supabase.from('email_processing_logs').insert({
+      user_id: userId,
+      message_id: null,
+      event_type: 'mail_transfer_sent',
+      level: 'info',
+      message: 'Transfert courrier envoye avec suivi',
+      payload: {
+        mail_item_id: id,
+        recipient_email: recipientEmail,
+        cc_emails: ccEmails,
+        ai_baseline_subject: aiBaselineSubject,
+        ai_baseline_body: aiBaselineMessage,
+        final_subject: subject,
+        final_body: message,
+        edited_by_user: editedByUser,
+        task_id: taskResult.data?.id || null,
+        provider_message_id: providerMessageId,
+        transfer_count: transferCount,
+        transfer_pdf_url: storedPdfUrl,
+        transfer_pdf_name: storedPdfName,
+      },
+    }),
+  ]);
 
   return NextResponse.json({
     success: true,
     task: taskResult.data,
-    provider_message_id: String((sendResult.data as { id?: string } | null)?.id || ''),
+    provider_message_id: providerMessageId,
+    transfer_count: transferCount,
+    last_transfer_at: sentAt,
+    transfer_pdf_url: storedPdfUrl,
+    transfer_pdf_name: storedPdfName,
+    item: updatedMail || null,
   });
 }
 
@@ -219,13 +287,13 @@ function buildDefaultMessage(summary: unknown, actionNote: unknown): string {
     .join('\n');
 }
 
-async function buildAttachments(
+async function buildTransferPdf(
   scanUrls: unknown,
   scanFileNames: unknown,
   scanUrlFallback: unknown,
   scanFileNameFallback: unknown,
   subject: unknown
-): Promise<Array<{ filename: string; content: string }>> {
+): Promise<TransferPdfBuildResult | null> {
   const urls = normalizeTextArray(scanUrls, scanUrlFallback);
   const names = normalizeTextArray(scanFileNames, scanFileNameFallback);
   const sources = urls
@@ -240,7 +308,53 @@ async function buildAttachments(
     subject: normalizeText(subject),
   });
 
-  return pdfAttachment ? [pdfAttachment] : [];
+  if (!pdfAttachment) return null;
+  return {
+    attachment: pdfAttachment,
+    bytes: Buffer.from(pdfAttachment.content, 'base64'),
+    filename: sanitizePdfName(pdfAttachment.filename),
+  };
+}
+
+async function uploadTransferPdf(args: {
+  userId: string;
+  mailId: string;
+  bytes: Buffer;
+  filename: string;
+}): Promise<{ url: string | null; name: string | null }> {
+  const safeName = sanitizePdfName(args.filename);
+  const storagePath = `${args.userId}/transfers/${args.mailId}/${Date.now()}-${safeName}`;
+
+  const { error } = await supabase.storage
+    .from('mail-scans')
+    .upload(storagePath, args.bytes, {
+      contentType: 'application/pdf',
+      upsert: false,
+    });
+
+  if (error) {
+    console.error('upload transfer pdf error:', error);
+    return { url: null, name: null };
+  }
+
+  const { data } = await supabase.storage
+    .from('mail-scans')
+    .createSignedUrl(storagePath, 60 * 60 * 24 * 365 * 10);
+
+  return {
+    url: data?.signedUrl || null,
+    name: safeName,
+  };
+}
+
+function sanitizePdfName(value: string): string {
+  const cleaned = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  if (cleaned.endsWith('.pdf')) return cleaned;
+  return `${cleaned || 'courrier-pieces'}.pdf`;
 }
 
 function normalizeTextArray(value: unknown, fallback: unknown): string[] {

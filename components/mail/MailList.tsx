@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { MailItem } from "@/types/mail";
 import {
   MAIL_TYPE_ICONS,
@@ -14,9 +15,10 @@ interface Props {
   loading: boolean;
   selectedId: string | null;
   onSelect: (item: MailItem) => void;
+  renderExpanded?: (item: MailItem) => ReactNode;
 }
 
-export default function MailList({ items, loading, selectedId, onSelect }: Props) {
+export default function MailList({ items, loading, selectedId, onSelect, renderExpanded }: Props) {
   const hasAttachment = (item: MailItem) =>
     (Array.isArray(item.scan_urls) && item.scan_urls.length > 0) || Boolean(item.scan_url);
   const isTransferred = (item: MailItem) =>
@@ -66,69 +68,75 @@ export default function MailList({ items, loading, selectedId, onSelect }: Props
         const isSelected = selectedId === item.id;
 
         return (
-          <button
-            key={item.id}
-            onClick={() => onSelect(item)}
-            className={`w-full rounded-xl border p-3 text-left transition-all ${
-              isSelected
-                ? "border-violet-400/50 bg-violet-400/10"
-                : overdue
-                ? "border-red-400/20 bg-slate-900/50 hover:border-red-400/40"
-                : "border-white/8 bg-slate-900/40 hover:border-white/20 hover:bg-slate-800/40"
-            }`}
-          >
-            <div className="flex items-start gap-2.5">
-              {/* Icône type */}
-              <span className="text-lg flex-shrink-0 mt-0.5">
-                {MAIL_TYPE_ICONS[item.mail_type]}
-              </span>
+          <div key={item.id} className="space-y-2">
+            <button
+              type="button"
+              onClick={() => onSelect(item)}
+              className={`w-full rounded-xl border p-3 text-left transition-all ${
+                isSelected
+                  ? "border-violet-400/50 bg-violet-400/10"
+                  : overdue
+                  ? "border-red-400/20 bg-slate-900/50 hover:border-red-400/40"
+                  : "border-white/8 bg-slate-900/40 hover:border-white/20 hover:bg-slate-800/40"
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                <span className="text-lg flex-shrink-0 mt-0.5">
+                  {MAIL_TYPE_ICONS[item.mail_type]}
+                </span>
 
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 justify-between">
-                  <p className={`truncate text-sm font-medium ${isSelected ? "text-violet-100" : "text-slate-100"}`}>
-                    {item.subject || "Sans objet"}
-                  </p>
-                  <span className="flex-shrink-0 text-xs text-slate-500">
-                    {formatDate(item.received_at)}
-                  </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 justify-between">
+                    <p className={`truncate text-sm font-medium ${isSelected ? "text-violet-100" : "text-slate-100"}`}>
+                      {item.subject || "Sans objet"}
+                    </p>
+                    <span className="flex-shrink-0 text-xs text-slate-500">
+                      {formatDate(item.received_at)}
+                    </span>
+                  </div>
+
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    {item.sender_name && (
+                      <span className="truncate text-xs text-slate-500 max-w-[120px]">
+                        {item.sender_name}
+                      </span>
+                    )}
+                    {item.sender_name && <span className="text-slate-700">·</span>}
+                    {isTransferred(item) && (
+                      <span className="rounded-full border border-cyan-400/40 bg-cyan-400/10 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-cyan-200">
+                        Transfere
+                      </span>
+                    )}
+                    <span className={`rounded-full border px-1.5 py-px text-[10px] font-medium ${MAIL_STATUS_COLORS[item.status]}`}>
+                      {MAIL_STATUS_LABELS[item.status]}
+                    </span>
+                    {item.priority !== "normal" && (
+                      <span className={`rounded-full border px-1.5 py-px text-[10px] font-medium ${MAIL_PRIORITY_COLORS[item.priority]}`}>
+                        {MAIL_PRIORITY_LABELS[item.priority]}
+                      </span>
+                    )}
+                    {item.action_required && !["traite", "clos"].includes(item.status) && (
+                      <span className="text-[10px] text-orange-400">⚡</span>
+                    )}
+                    {overdue && <span className="text-[10px] text-red-400">⏰</span>}
+                    {item.ai_analyzed && <span className="text-[10px] text-violet-400">✨</span>}
+                    {hasAttachment(item) && <span className="text-[10px] text-slate-500">📎</span>}
+                  </div>
+
+                  {item.summary && (
+                    <p className="mt-1 truncate text-xs text-slate-600">
+                      {item.summary}
+                    </p>
+                  )}
                 </div>
-
-                <div className="mt-0.5 flex items-center gap-1.5">
-                  {item.sender_name && (
-                    <span className="truncate text-xs text-slate-500 max-w-[120px]">
-                      {item.sender_name}
-                    </span>
-                  )}
-                  {item.sender_name && <span className="text-slate-700">·</span>}
-                  {isTransferred(item) && (
-                    <span className="rounded-full border border-cyan-400/40 bg-cyan-400/10 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-cyan-200">
-                      Transfere
-                    </span>
-                  )}
-                  <span className={`rounded-full border px-1.5 py-px text-[10px] font-medium ${MAIL_STATUS_COLORS[item.status]}`}>
-                    {MAIL_STATUS_LABELS[item.status]}
-                  </span>
-                  {item.priority !== "normal" && (
-                    <span className={`rounded-full border px-1.5 py-px text-[10px] font-medium ${MAIL_PRIORITY_COLORS[item.priority]}`}>
-                      {MAIL_PRIORITY_LABELS[item.priority]}
-                    </span>
-                  )}
-                  {item.action_required && !["traite", "clos"].includes(item.status) && (
-                    <span className="text-[10px] text-orange-400">⚡</span>
-                  )}
-                  {overdue && <span className="text-[10px] text-red-400">⏰</span>}
-                  {item.ai_analyzed && <span className="text-[10px] text-violet-400">✨</span>}
-                  {hasAttachment(item) && <span className="text-[10px] text-slate-500">📎</span>}
-                </div>
-
-                {item.summary && (
-                  <p className="mt-1 truncate text-xs text-slate-600">
-                    {item.summary}
-                  </p>
-                )}
               </div>
-            </div>
-          </button>
+            </button>
+            {isSelected && renderExpanded ? (
+              <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
+                {renderExpanded(item)}
+              </div>
+            ) : null}
+          </div>
         );
       })}
     </div>

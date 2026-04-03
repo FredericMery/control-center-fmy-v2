@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { MAIL_MAX_SCAN_FILES, type MailItem, type MailStatus } from "@/types/mail";
+import { MAIL_MAX_SCAN_FILES, type MailItem, type MailStatus, type MailTransferHistoryItem } from "@/types/mail";
 import {
   MAIL_TYPE_ICONS,
   MAIL_TYPE_LABELS,
@@ -21,6 +21,8 @@ type TransferPreview = {
   task_type: "pro" | "perso";
   task_deadline: string | null;
   email_history_candidates?: string[];
+  reused_baseline?: boolean;
+  transfer_count?: number;
 };
 
 type TransferStepState = "idle" | "generating" | "ready" | "sending" | "success";
@@ -35,7 +37,18 @@ interface Props {
 
 export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onClose }: Props) {
   const isTransferred = Boolean(item.replied && String(item.reply_note || "").toLowerCase().includes("transfere"));
-  const scanLinks = (Array.isArray(item.scan_urls) && item.scan_urls.length > 0
+  const [transferMeta, setTransferMeta] = useState({
+    count: Number(item.transfer_count || 0),
+    lastAt: item.transfer_last_at,
+    lastRecipient: item.transfer_last_recipient_email,
+    lastSubject: item.transfer_last_subject,
+    pdfUrl: item.transfer_last_pdf_url,
+    pdfName: item.transfer_last_pdf_name,
+  });
+
+  const transferPdfUrl = transferMeta.pdfUrl || item.transfer_last_pdf_url;
+  const transferPdfName = transferMeta.pdfName || item.transfer_last_pdf_name;
+  const baseScanLinks = (Array.isArray(item.scan_urls) && item.scan_urls.length > 0
     ? item.scan_urls.map((url, index) => ({
         url,
         name: item.scan_file_names?.[index] || `Piece ${index + 1}`,
@@ -44,6 +57,10 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
     ? [{ url: item.scan_url, name: item.scan_file_name || "Voir le scan" }]
     : [])
     .slice(0, MAIL_MAX_SCAN_FILES);
+
+  const scanLinks = transferPdfUrl
+    ? [{ url: transferPdfUrl, name: transferPdfName || "Dossier PDF de transfert" }, ...baseScanLinks]
+    : baseScanLinks;
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [statusLoading, setStatusLoading] = useState(false);
@@ -68,6 +85,10 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
   const [aiBaselineMessage, setAiBaselineMessage] = useState("");
   const [recipientFocused, setRecipientFocused] = useState(false);
   const [ccFocused, setCcFocused] = useState(false);
+  const [previewReusedBaseline, setPreviewReusedBaseline] = useState(false);
+  const [showTransferHistory, setShowTransferHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [transferHistory, setTransferHistory] = useState<MailTransferHistoryItem[]>([]);
 
   const isOverdue =
     item.due_date &&
@@ -124,6 +145,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
     setShowTransferModal(true);
     setTransferError(null);
     setTransferSuccess(null);
+    setPreviewReusedBaseline(false);
     setTransferStepState("generating");
     setLoadingTransferPreview(true);
     try {
@@ -148,12 +170,47 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
       setCcEmailsInput("");
       setAiBaselineSubject(preview?.subject || "");
       setAiBaselineMessage(preview?.message || "");
+      setPreviewReusedBaseline(Boolean(preview?.reused_baseline));
+      if (Number.isFinite(Number(preview?.transfer_count))) {
+        setTransferMeta((prev) => ({
+          ...prev,
+          count: Number(preview?.transfer_count || 0),
+        }));
+      }
       setTransferStepState("ready");
     } catch (error: unknown) {
       setTransferError(error instanceof Error ? error.message : "Erreur de previsualisation");
+      setPreviewReusedBaseline(false);
       setTransferStepState("idle");
     } finally {
       setLoadingTransferPreview(false);
+    }
+  };
+
+  const loadTransferHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`/api/mail/${item.id}/transfer-history`, {
+        headers: await getAuthHeaders(false),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || "Impossible de charger l historique des transferts");
+      }
+      setTransferHistory(Array.isArray(json?.history) ? json.history : []);
+      if (json?.last_transfer) {
+        setTransferMeta((prev) => ({
+          ...prev,
+          count: Number(json.last_transfer.count || prev.count || 0),
+          lastAt: json.last_transfer.at || prev.lastAt,
+          lastRecipient: json.last_transfer.recipient_email || prev.lastRecipient,
+          lastSubject: json.last_transfer.subject || prev.lastSubject,
+        }));
+      }
+    } catch {
+      setTransferHistory([]);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -193,6 +250,20 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
 
       if (item.status === "recu") {
         onStatusChange(item.id, "en_cours");
+      }
+
+      setTransferMeta((prev) => ({
+        ...prev,
+        count: Number(json?.transfer_count || prev.count || 0),
+        lastAt: json?.last_transfer_at || new Date().toISOString(),
+        lastRecipient: recipientEmail.trim() || prev.lastRecipient,
+        lastSubject: transferSubject.trim() || prev.lastSubject,
+        pdfUrl: json?.transfer_pdf_url || prev.pdfUrl,
+        pdfName: json?.transfer_pdf_name || prev.pdfName,
+      }));
+
+      if (showTransferHistory) {
+        loadTransferHistory();
       }
 
       // Lance l apprentissage des regles quand le message IA a ete corrige.
@@ -248,6 +319,17 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
   const formatDate = (d: string | null) => {
     if (!d) return "—";
     return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(d));
+  };
+
+  const formatDateTime = (d: string | null) => {
+    if (!d) return "—";
+    return new Intl.DateTimeFormat("fr-FR", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(d));
   };
 
   const NEXT_STATUS_MAP: Partial<Record<MailStatus, MailStatus>> = {
@@ -420,7 +502,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
         </div>
       )}
 
-      {/* Scan */}
+      {/* Pieces */}
       {scanLinks.length > 0 && (
         <div className="space-y-2">
           {scanLinks.map((scan) => (
@@ -436,6 +518,66 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
               <span className="text-xs text-cyan-400">Ouvrir →</span>
             </a>
           ))}
+        </div>
+      )}
+
+      {/* Historique des transferts */}
+      {transferMeta.count > 0 && (
+        <div className="rounded-xl border border-cyan-400/25 bg-cyan-500/5 p-3">
+          <button
+            type="button"
+            onClick={() => {
+              const next = !showTransferHistory;
+              setShowTransferHistory(next);
+              if (next) {
+                loadTransferHistory();
+              }
+            }}
+            className="w-full text-left"
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-200">Dernier transfert</p>
+            <p className="mt-1 text-sm text-slate-200">
+              {transferMeta.lastRecipient || "Destinataire inconnu"} • {formatDateTime(transferMeta.lastAt)}
+            </p>
+            <p className="mt-0.5 text-xs text-slate-400">
+              {transferMeta.lastSubject || "Sans objet"} • {transferMeta.count} transfert{transferMeta.count > 1 ? "s" : ""}
+            </p>
+            <p className="mt-1 text-[11px] text-cyan-300">
+              {showTransferHistory ? "Masquer l historique complet" : "Voir tout l historique des transferts"}
+            </p>
+          </button>
+
+          {showTransferHistory && (
+            <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+              {historyLoading && (
+                <p className="text-xs text-slate-400">Chargement de l historique...</p>
+              )}
+              {!historyLoading && transferHistory.length === 0 && (
+                <p className="text-xs text-slate-500">Aucun detail de transfert trouve.</p>
+              )}
+              {!historyLoading && transferHistory.map((transfer) => (
+                <div key={transfer.id} className="rounded-lg border border-white/10 bg-slate-900/50 p-2.5">
+                  <p className="text-xs text-slate-300">
+                    {formatDateTime(transfer.created_at)} • {transfer.recipient_email}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-400">{transfer.subject || "Sans objet"}</p>
+                  {transfer.message && (
+                    <p className="mt-1 line-clamp-2 text-xs text-slate-500">{transfer.message}</p>
+                  )}
+                  {transfer.pdf_url && (
+                    <a
+                      href={transfer.pdf_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-flex text-xs text-cyan-300 hover:text-cyan-200"
+                    >
+                      Ouvrir le PDF de ce transfert →
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -564,6 +706,11 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
                 </p>
               ) : (
                 <>
+                  {previewReusedBaseline && (
+                    <p className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                      Message et destinataire reutilises depuis le premier transfert de ce courrier.
+                    </p>
+                  )}
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <label className="mb-1 block text-xs text-slate-400">Destinataire email</label>

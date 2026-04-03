@@ -371,9 +371,18 @@ export default function CourrierPage() {
               loading={loading}
               selectedId={selectedItem?.id || null}
               onSelect={(item) => {
-                setSelectedItem(item);
                 setModal("none");
+                setSelectedItem((prev) => (prev?.id === item.id ? null : item));
               }}
+              renderExpanded={(item) => (
+                <MailDetail
+                  item={item}
+                  onEdit={openEdit}
+                  onDelete={handleDelete}
+                  onStatusChange={handleStatusChange}
+                  onClose={() => setSelectedItem(null)}
+                />
+              )}
             />
 
             {/* Charger plus */}
@@ -394,14 +403,14 @@ export default function CourrierPage() {
         {/* ── Colonne droite : détail / formulaire ── */}
         <div className="lg:col-span-2">
           <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl backdrop-blur min-h-[400px]">
-            {modal === "none" && !selectedItem && (
+            {modal === "none" && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="text-5xl mb-4">📬</div>
                 <p className="text-base font-medium text-slate-400">
-                  Sélectionnez un courrier ou ajoutez-en un nouveau
+                  Le detail s ouvre maintenant directement sous le courrier selectionne
                 </p>
                 <p className="mt-1 text-xs text-slate-600">
-                  L'IA analysera automatiquement vos scans
+                  Utilise ce panneau pour scanner un nouveau courrier
                 </p>
                 <button
                   onClick={() => setModal("new")}
@@ -426,15 +435,6 @@ export default function CourrierPage() {
               </div>
             )}
 
-            {modal === "none" && selectedItem && (
-              <MailDetail
-                item={selectedItem}
-                onEdit={openEdit}
-                onDelete={handleDelete}
-                onStatusChange={handleStatusChange}
-                onClose={() => setSelectedItem(null)}
-              />
-            )}
           </div>
         </div>
       </div>

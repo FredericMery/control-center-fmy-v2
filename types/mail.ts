@@ -55,9 +55,38 @@ export interface MailItem {
   replied: boolean;
   replied_at: string | null;
   reply_note: string | null;
+  transfer_baseline_recipient_email: string | null;
+  transfer_baseline_recipient_name: string | null;
+  transfer_baseline_subject: string | null;
+  transfer_baseline_message: string | null;
+  transfer_baseline_created_at: string | null;
+  transfer_last_recipient_email: string | null;
+  transfer_last_recipient_name: string | null;
+  transfer_last_subject: string | null;
+  transfer_last_message: string | null;
+  transfer_last_at: string | null;
+  transfer_last_pdf_url: string | null;
+  transfer_last_pdf_name: string | null;
+  transfer_count: number;
   notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface MailTransferHistoryItem {
+  id: string;
+  mail_item_id: string;
+  recipient_email: string;
+  recipient_name: string | null;
+  cc_emails: string[];
+  subject: string | null;
+  message: string | null;
+  edited_by_user: boolean;
+  task_id: string | null;
+  provider_message_id: string | null;
+  pdf_url: string | null;
+  pdf_file_name: string | null;
+  created_at: string;
 }
 
 export type MailItemInsert = Omit<MailItem, 'id' | 'user_id' | 'created_at' | 'updated_at'>;

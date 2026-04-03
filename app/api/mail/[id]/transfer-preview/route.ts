@@ -13,6 +13,8 @@ type TransferPreview = {
   task_type: MailContext;
   task_deadline: string | null;
   email_history_candidates?: string[];
+  reused_baseline?: boolean;
+  transfer_count?: number;
 };
 
 const supabase = createClient(
@@ -33,7 +35,7 @@ export async function POST(
 
   const { data: mail, error: mailError } = await supabase
     .from('mail_items')
-    .select('id,context,subject,summary,action_note,due_date,sender_name,sender_email,received_at,scan_file_name')
+    .select('id,context,subject,summary,action_note,due_date,sender_name,sender_email,received_at,scan_file_name,transfer_baseline_recipient_email,transfer_baseline_recipient_name,transfer_baseline_subject,transfer_baseline_message,transfer_count')
     .eq('id', id)
     .eq('user_id', userId)
     .single();
@@ -96,7 +98,27 @@ export async function POST(
     task_type: mail.context === 'perso' ? 'perso' : 'pro',
     task_deadline: normalizeDate(mail.due_date),
     email_history_candidates: emailHistoryCandidates,
+    reused_baseline: false,
+    transfer_count: Number(mail.transfer_count || 0),
   };
+
+  const baselineRecipient = normalizeEmail(mail.transfer_baseline_recipient_email);
+  const baselineRecipientName = normalizeText(mail.transfer_baseline_recipient_name);
+  const baselineSubject = normalizeText(mail.transfer_baseline_subject);
+  const baselineMessage = normalizeText(mail.transfer_baseline_message);
+
+  if (baselineRecipient && baselineSubject && baselineMessage) {
+    return NextResponse.json({
+      preview: {
+        ...fallback,
+        recipient_email: baselineRecipient,
+        recipient_name: baselineRecipientName || fallback.recipient_name,
+        subject: baselineSubject,
+        message: baselineMessage,
+        reused_baseline: true,
+      },
+    });
+  }
 
   if (!fallbackRecipient) {
     return NextResponse.json({ preview: fallback });
@@ -175,6 +197,8 @@ export async function POST(
       task_type: parsed.task_type === 'perso' ? 'perso' : fallback.task_type,
       task_deadline: normalizeDate(parsed.task_deadline) || fallback.task_deadline,
       email_history_candidates: fallback.email_history_candidates,
+      reused_baseline: false,
+      transfer_count: fallback.transfer_count,
     };
 
     return NextResponse.json({ preview });
