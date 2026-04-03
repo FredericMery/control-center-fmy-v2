@@ -102,7 +102,7 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
     setProgress(10);
     setError(null);
 
-    const uploadFiles = await normalizeFilesForUpload(files.slice(0, MAIL_MAX_SCAN_FILES));
+    const uploadFiles = normalizeFilesForUpload(files.slice(0, MAIL_MAX_SCAN_FILES));
     const formData = new FormData();
     uploadFiles.forEach((file) => formData.append("files", file));
 
@@ -371,30 +371,26 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
   );
 }
 
-async function normalizeFilesForUpload(files: File[]) {
-  const normalizedFiles: File[] = [];
+function normalizeFilesForUpload(files: File[]) {
+  return files.map((file) => sanitizeUploadFile(file));
+}
 
-  for (const file of files) {
-    const fileType = inferFileMimeType(file);
-    if (fileType === "application/pdf") {
-      normalizedFiles.push(file);
-      continue;
-    }
+function sanitizeUploadFile(file: File): File {
+  const normalizedType = inferFileMimeType(file) || "application/octet-stream";
+  const normalizedName = sanitizeFileName(file.name, normalizedType);
 
-    if (needsImageConversion(fileType)) {
-      try {
-        normalizedFiles.push(await convertImageToJpegFile(file));
-        continue;
-      } catch {
-        normalizedFiles.push(file);
-        continue;
-      }
-    }
+  const shouldReuseOriginal =
+    normalizedName === (file.name || "") &&
+    normalizedType === (String(file.type || "").trim().toLowerCase() || normalizedType);
 
-    normalizedFiles.push(file);
+  if (shouldReuseOriginal) {
+    return file;
   }
 
-  return normalizedFiles;
+  return new File([file], normalizedName, {
+    type: normalizedType,
+    lastModified: file.lastModified,
+  });
 }
 
 function inferFileMimeType(file: File) {
@@ -414,62 +410,34 @@ function inferFileMimeType(file: File) {
   return "";
 }
 
-function needsImageConversion(fileType: string) {
-  return ["image/heic", "image/heif", "image/webp", "image/gif", "image/bmp", "image/tiff"].includes(fileType);
-}
+function sanitizeFileName(fileName: string, mimeType: string) {
+  const cleanBaseName = String(fileName || "scan")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
 
-async function convertImageToJpegFile(file: File): Promise<File> {
-  const objectUrl = URL.createObjectURL(file);
-
-  try {
-    const image = await loadImageElement(objectUrl);
-    const canvas = document.createElement("canvas");
-    canvas.width = image.width;
-    canvas.height = image.height;
-
-    const context = canvas.getContext("2d");
-    if (!context) {
-      throw new Error("Canvas context unavailable");
-    }
-
-    context.drawImage(image, 0, 0, image.width, image.height);
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((result) => {
-        if (result) {
-          resolve(result);
-          return;
-        }
-
-        reject(new Error("JPEG conversion failed"));
-      }, "image/jpeg", 0.92);
-    });
-
-    const nextName = replaceFileExtension(file.name, ".jpg");
-    return new File([blob], nextName, {
-      type: "image/jpeg",
-      lastModified: file.lastModified,
-    });
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-}
-
-function loadImageElement(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new window.Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Image decode failed"));
-    image.src = src;
-  });
-}
-
-function replaceFileExtension(fileName: string, nextExtension: string) {
-  const cleanName = String(fileName || "scan");
-  if (cleanName.includes(".")) {
-    return cleanName.replace(/\.[^.]+$/, nextExtension);
+  const safeBase = cleanBaseName || "scan";
+  if (safeBase.includes(".")) {
+    return safeBase;
   }
 
-  return `${cleanName}${nextExtension}`;
+  const extension = inferExtensionFromMimeType(mimeType);
+  return extension ? `${safeBase}.${extension}` : safeBase;
+}
+
+function inferExtensionFromMimeType(mimeType: string) {
+  if (mimeType === "application/pdf") return "pdf";
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  if (mimeType === "image/heic") return "heic";
+  if (mimeType === "image/heif") return "heif";
+  if (mimeType === "image/gif") return "gif";
+  if (mimeType === "image/bmp") return "bmp";
+  if (mimeType === "image/tiff") return "tiff";
+  return "";
 }
 
 function mapScanUploadError(message: string) {
@@ -483,7 +451,7 @@ function mapScanUploadError(message: string) {
     lower.includes("expected pattern") ||
     lower.includes("string did not match")
   ) {
-    return "Format photo non reconnu. Reessaie avec une photo JPG/PNG ou un PDF.";
+    return `Erreur iPhone/PWA pendant l'envoi du fichier (${raw}). Essaie de fermer/reouvrir l'app puis reessaye.`;
   }
 
   return raw;
