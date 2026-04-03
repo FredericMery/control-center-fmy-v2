@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { MAIL_MAX_SCAN_FILES, type AiMailAnalysis } from "@/types/mail";
-import { getAccessToken } from "@/lib/auth/clientSession";
+import { getAuthHeaders } from "@/lib/auth/clientSession";
 
 interface Props {
   onComplete: (data: {
@@ -108,7 +108,7 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
     uploadFiles.forEach((file) => formData.append("files", file));
 
     try {
-      const headers = await buildUploadHeaders();
+      const headers = await getAuthHeaders(false);
       setProgress(25);
       setStatus("ocr");
 
@@ -372,17 +372,6 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
       )}
     </div>
   );
-}
-
-async function buildUploadHeaders() {
-  const headers: Record<string, string> = {};
-  const token = await getAccessToken();
-
-  if (token) {
-    headers.Authorization = `Bearer ${token.trim()}`;
-  }
-
-  return headers;
 }
 
 async function normalizeFilesForUpload(files: File[]) {
