@@ -194,6 +194,11 @@ export default function TasksPage() {
     return Math.round((todayDoneCount / todayCreatedCount) * 100);
   }, [todayCreatedCount, todayDoneCount]);
 
+  const uncategorizedActiveProCount = useMemo(
+    () => tasks.filter((t) => t.type === 'pro' && !t.archived && !t.ai_category).length,
+    [tasks]
+  );
+
   const typeTitle = typeParam.charAt(0).toUpperCase() + typeParam.slice(1);
   const typeEmoji = typeParam === "pro" ? "💼" : "🎯";
 
@@ -274,14 +279,16 @@ export default function TasksPage() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
-              {typeParam === 'pro' && !showArchived && (
+              {typeParam === 'pro' && (
                 <button
                   onClick={runManualCategorization}
                   disabled={isCategorizing}
                   className="min-h-10 rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-2 text-xs font-medium text-violet-100 transition-all hover:bg-violet-500/25 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4"
-                  title="Categoriser les taches actives non categorisees"
+                  title={`Categoriser les taches actives non categorisees (${uncategorizedActiveProCount})`}
                 >
-                  {isCategorizing ? 'Categorisation...' : 'Categoriser IA'}
+                  {isCategorizing
+                    ? 'Categorisation...'
+                    : `Categoriser IA (${uncategorizedActiveProCount})`}
                 </button>
               )}
               <button
@@ -435,6 +442,15 @@ export default function TasksPage() {
                             title={`Catégorie IA : ${task.ai_category}`}
                           >
                             {categoryMeta[task.ai_category].emoji} {task.ai_category}
+                          </div>
+                        )}
+
+                        {!task.ai_category && typeParam === 'pro' && (
+                          <div
+                            className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-2.5 py-0.5 text-[11px] font-medium text-gray-300"
+                            title="Tâche non catégorisée par l'IA"
+                          >
+                            🏷️ Non categorisee
                           </div>
                         )}
 
