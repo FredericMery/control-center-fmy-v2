@@ -102,42 +102,66 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
     setProgress(10);
     setError(null);
 
-    const formData = new FormData();
-    files.slice(0, MAIL_MAX_SCAN_FILES).forEach((file) => formData.append("files", file));
-
     try {
-      setProgress(25);
-      setStatus("ocr");
+      const endpoint = typeof window !== "undefined" ? `${window.location.origin}/api/mail/scan` : "/api/mail/scan";
+      const filesToUpload = files.slice(0, MAIL_MAX_SCAN_FILES);
+      const scanUrls: string[] = [];
+      const scanFileNames: string[] = [];
+      const textParts: string[] = [];
 
-      const endpoint = typeof window !== "undefined"
-        ? `${window.location.origin}/api/mail/scan`
-        : "/api/mail/scan";
+      for (let index = 0; index < filesToUpload.length; index += 1) {
+        const progressBase = 10 + Math.round((index / Math.max(1, filesToUpload.length)) * 55);
+        setProgress(progressBase);
+        setStatus("uploading");
 
-      const res = await fetch(endpoint, {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
+        const formData = new FormData();
+        formData.append("file", filesToUpload[index]);
+
+        const res = await fetch(endpoint, {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+        const json = await readJsonSafely(res);
+
+        if (!res.ok) {
+          throw new Error(getApiErrorMessage(json, "Erreur lors du scan"));
+        }
+
+        const chunkUrls = normalizeStringArray(json?.scan_urls, json?.scan_url);
+        const chunkNames = normalizeStringArray(json?.scan_file_names, json?.scan_file_name);
+        scanUrls.push(...chunkUrls);
+        scanFileNames.push(...chunkNames);
+
+        const chunkText = String(json?.full_text || "").trim();
+        if (chunkText) {
+          textParts.push(chunkText);
+        }
+      }
 
       setProgress(70);
+      setStatus("ocr");
+
+      const mergedScanUrls = Array.from(new Set(scanUrls)).slice(0, MAIL_MAX_SCAN_FILES);
+      const mergedScanFileNames = Array.from(new Set(scanFileNames)).slice(0, MAIL_MAX_SCAN_FILES);
+      const fullText = textParts.filter(Boolean).join("\n\n");
+
+      setProgress(85);
       setStatus("ai");
 
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json?.error || "Erreur lors du scan");
-      }
+      const aiAnalysis = await analyzeMergedText(fullText);
 
       setProgress(100);
       setStatus("done");
 
       setTimeout(() => {
         onComplete({
-          scan_url: json.scan_url,
-          scan_file_name: json.scan_file_name,
-          scan_urls: Array.isArray(json.scan_urls) ? json.scan_urls : json.scan_url ? [json.scan_url] : [],
-          scan_file_names: Array.isArray(json.scan_file_names) ? json.scan_file_names : json.scan_file_name ? [json.scan_file_name] : [],
-          full_text: json.full_text,
-          ai_analysis: json.ai_analysis,
+          scan_url: mergedScanUrls[0] || null,
+          scan_file_name: mergedScanFileNames[0] || null,
+          scan_urls: mergedScanUrls,
+          scan_file_names: mergedScanFileNames,
+          full_text: fullText || null,
+          ai_analysis: aiAnalysis,
         });
       }, 600);
     } catch (err: unknown) {
@@ -390,4 +414,56 @@ function mapScanUploadError(message: string) {
   }
 
   return raw;
+}
+
+async function analyzeMergedText(fullText: string): Promise<AiMailAnalysis | null> {
+  if (!fullText || fullText.length < 30) return null;
+
+  const endpoint = typeof window !== "undefined"
+    ? `${window.location.origin}/api/mail/scan/analyze`
+    : "/api/mail/scan/analyze";
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ full_text: fullText }),
+  });
+
+  const json = await readJsonSafely(res);
+  if (!res.ok) {
+    return null;
+  }
+
+  return (json?.ai_analysis || null) as AiMailAnalysis | null;
+}
+
+function normalizeStringArray(value: unknown, fallback: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => String(entry || "").trim())
+      .filter(Boolean);
+  }
+
+  const single = String(fallback || "").trim();
+  return single ? [single] : [];
+}
+
+function getApiErrorMessage(json: unknown, fallback: string): string {
+  if (json && typeof json === "object" && "error" in json) {
+    const message = String((json as { error?: unknown }).error || "").trim();
+    if (message) return message;
+  }
+  return fallback;
+}
+
+async function readJsonSafely(response: Response): Promise<Record<string, unknown> | null> {
+  try {
+    const data = await response.json();
+    return data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
