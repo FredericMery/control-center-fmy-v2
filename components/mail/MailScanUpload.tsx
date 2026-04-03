@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { MAIL_MAX_SCAN_FILES, type AiMailAnalysis } from "@/types/mail";
-import { getAuthHeaders } from "@/lib/auth/clientSession";
+import { getAccessToken } from "@/lib/auth/clientSession";
 
 interface Props {
   onComplete: (data: {
@@ -107,7 +107,7 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
     files.slice(0, MAIL_MAX_SCAN_FILES).forEach((file) => formData.append("files", file));
 
     try {
-      const headers = await getAuthHeaders(false);
+      const headers = await buildUploadHeaders();
       setProgress(25);
       setStatus("ocr");
 
@@ -371,4 +371,22 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
       )}
     </div>
   );
+}
+
+async function buildUploadHeaders() {
+  const headers = new Headers();
+  const token = await getAccessToken();
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token.trim()}`);
+  }
+
+  if (typeof window !== "undefined") {
+    const storedLanguage = window.localStorage.getItem("app_language");
+    if (storedLanguage === "fr" || storedLanguage === "en" || storedLanguage === "es") {
+      headers.set("x-app-language", storedLanguage);
+    }
+  }
+
+  return headers;
 }
