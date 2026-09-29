@@ -63,7 +63,21 @@ type EmailPreview = {
   body_text: string | null;
   body_html: string | null;
   received_at: string | null;
+  email_reply_drafts?: Array<{
+    id: string;
+    is_current: boolean;
+    version: number;
+    proposed_subject: string | null;
+    proposed_body: string;
+  }> | null;
 };
+
+function getProposedReply(preview: EmailPreview | null) {
+  const drafts = Array.isArray(preview?.email_reply_drafts) ? preview.email_reply_drafts : [];
+  if (drafts.length === 0) return null;
+  const sorted = [...drafts].sort((a, b) => Number(b.version || 0) - Number(a.version || 0));
+  return sorted.find((draft) => draft.is_current) || sorted[0];
+}
 
 export default function TasksPage() {
   const { t, language } = useI18n();
@@ -101,6 +115,7 @@ export default function TasksPage() {
   const [emailPreview, setEmailPreview] = useState<EmailPreview | null>(null);
   const [emailPreviewOpen, setEmailPreviewOpen] = useState(false);
   const [emailPreviewLoading, setEmailPreviewLoading] = useState(false);
+  const [replyCopied, setReplyCopied] = useState(false);
 
   /* ============================
      INIT SAFE (ANTI DOUBLE MOUNT)
@@ -204,6 +219,19 @@ export default function TasksPage() {
   const typeTitle = typeParam.charAt(0).toUpperCase() + typeParam.slice(1);
   const typeEmoji = typeParam === "pro" ? "💼" : "🎯";
 
+  const copyProposedReply = async () => {
+    const draft = getProposedReply(emailPreview);
+    const body = String(draft?.proposed_body || '').trim();
+    if (!body) return;
+    try {
+      await navigator.clipboard.writeText(body);
+      setReplyCopied(true);
+      setTimeout(() => setReplyCopied(false), 2000);
+    } catch {
+      alert('Impossible de copier la reponse');
+    }
+  };
+
   const openLinkedEmailPreview = async (emailMessageId: string) => {
     if (!emailMessageId) return;
 
@@ -220,6 +248,7 @@ export default function TasksPage() {
       }
 
       setEmailPreview(json.item);
+      setReplyCopied(false);
       setEmailPreviewOpen(true);
     } finally {
       setEmailPreviewLoading(false);
@@ -665,7 +694,7 @@ export default function TasksPage() {
                             disabled={emailPreviewLoading}
                             className="mt-2 w-full rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-4 py-2 text-xs font-medium uppercase text-cyan-200 transition-all hover:bg-cyan-500/20 disabled:opacity-50"
                           >
-                            {emailPreviewLoading ? 'Chargement email...' : 'Lire email source'}
+                            {emailPreviewLoading ? 'Chargement email...' : 'Lire email source & reponse IA'}
                           </button>
                         )}
                       </div>
@@ -777,6 +806,35 @@ export default function TasksPage() {
                 {emailPreview.body_text || emailPreview.body_html || '(contenu vide)'}
               </p>
             </div>
+            {(() => {
+              const proposedReply = getProposedReply(emailPreview);
+              const proposedBody = String(proposedReply?.proposed_body || '').trim();
+              return (
+                <div className="mt-3 rounded-xl border border-indigo-300/20 bg-indigo-500/5 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-indigo-100">Reponse proposee par l&apos;IA</p>
+                    <button
+                      type="button"
+                      onClick={copyProposedReply}
+                      disabled={!proposedBody}
+                      className="rounded-lg border border-indigo-300/30 bg-indigo-500/10 px-3 py-1.5 text-xs text-indigo-100 hover:bg-indigo-500/20 disabled:opacity-50"
+                    >
+                      {replyCopied ? 'Reponse copiee ✓' : 'Copier la reponse'}
+                    </button>
+                  </div>
+                  {proposedBody ? (
+                    <>
+                      {proposedReply?.proposed_subject && (
+                        <p className="mb-2 text-xs text-slate-400">Objet: {proposedReply.proposed_subject}</p>
+                      )}
+                      <p className="whitespace-pre-wrap text-sm text-slate-100">{proposedBody}</p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-slate-400">Aucune reponse proposee pour cet email.</p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

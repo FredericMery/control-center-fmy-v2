@@ -2,7 +2,7 @@ export type EmailContext = 'pro' | 'perso';
 export type EmailAiAction = 'classer' | 'repondre';
 export type EmailAiStatus = 'pending' | 'analyzed' | 'error';
 export type EmailPriority = 'urgent' | 'high' | 'normal' | 'low';
-export type EmailResponseStatus = 'none' | 'draft_ready' | 'approved' | 'sent' | 'cancelled';
+export type EmailResponseStatus = 'none' | 'draft_ready' | 'approved' | 'sent' | 'cancelled' | 'task_created';
 
 export interface EmailMessage {
   id: string;

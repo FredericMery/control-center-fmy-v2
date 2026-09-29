@@ -17,7 +17,7 @@ export async function GET(
 
   const { data, error } = await supabase
     .from('email_messages')
-    .select('*')
+    .select('*, email_reply_drafts(*)')
     .eq('id', id)
     .eq('user_id', userId)
     .single();
@@ -43,7 +43,7 @@ export async function GET(
           })
           .eq('id', id)
           .eq('user_id', userId)
-          .select('*')
+          .select('*, email_reply_drafts(*)')
           .single();
 
         if (refreshed) {
