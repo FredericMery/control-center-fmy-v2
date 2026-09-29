@@ -63,13 +63,20 @@ export default function CourrierPage() {
   const [showStats, setShowStats]         = useState(false);
   const [stats, setStats]                 = useState<StatsData | null>(null);
   const [statsLoading, setStatsLoading]   = useState(false);
-  const [activeTab, setActiveTab]         = useState<"all" | MailContext>("all");
+  const [activeTab, setActiveTab]         = useState<"all" | MailContext | "traite">("all");
 
   // ------- Chargement liste -------
   const buildQuery = useCallback(() => {
     const params = new URLSearchParams();
     if (context !== "all")  params.set("context", context);
-    if (status !== "all")   params.set("status", status);
+    if (activeTab === "traite") {
+      params.set("status", "traite");
+    } else if (status !== "all") {
+      params.set("status", status);
+    } else {
+      // Les courriers traités n'apparaissent plus dans les onglets d'accueil
+      params.set("exclude_status", "traite");
+    }
     if (mailType !== "all") params.set("mail_type", mailType);
     if (priority !== "all") params.set("priority", priority);
     if (search)             params.set("search", search);
@@ -79,7 +86,7 @@ export default function CourrierPage() {
     if (actionOnly)         params.set("action_required", "1");
     params.set("limit", String(LIMIT));
     return params;
-  }, [context, status, mailType, priority, search, dateFrom, dateTo, overdueOnly, actionOnly]);
+  }, [activeTab, context, status, mailType, priority, search, dateFrom, dateTo, overdueOnly, actionOnly]);
 
   const loadItems = useCallback(async (reset = true) => {
     if (!user) return;
@@ -136,7 +143,7 @@ export default function CourrierPage() {
       return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
     }
     loadItems(true);
-  }, [context, status, mailType, priority, dateFrom, dateTo, overdueOnly, actionOnly]);
+  }, [activeTab, context, status, mailType, priority, dateFrom, dateTo, overdueOnly, actionOnly]);
 
   useEffect(() => {
     if (!search) return;
@@ -151,7 +158,7 @@ export default function CourrierPage() {
 
   // Sync tab → context filter
   useEffect(() => {
-    setContext(activeTab === "all" ? "all" : activeTab);
+    setContext(activeTab === "all" || activeTab === "traite" ? "all" : activeTab);
   }, [activeTab]);
 
   const resetFilters = () => {
@@ -190,11 +197,23 @@ export default function CourrierPage() {
   };
 
   const handleStatusChange = async (id: string, newStatus: MailStatus) => {
-    setItems((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, status: newStatus } : i))
-    );
-    if (selectedItem?.id === id) {
-      setSelectedItem((prev) => prev ? { ...prev, status: newStatus } : null);
+    // Un courrier traité sort des onglets d'accueil ; un courrier non traité
+    // sort de l'onglet "Traités".
+    const leavesCurrentList =
+      status === "all" &&
+      (activeTab === "traite" ? newStatus !== "traite" : newStatus === "traite");
+
+    if (leavesCurrentList) {
+      setItems((prev) => prev.filter((i) => i.id !== id));
+      setTotal((t) => Math.max(0, t - 1));
+      if (selectedItem?.id === id) setSelectedItem(null);
+    } else {
+      setItems((prev) =>
+        prev.map((i) => (i.id === id ? { ...i, status: newStatus } : i))
+      );
+      if (selectedItem?.id === id) {
+        setSelectedItem((prev) => prev ? { ...prev, status: newStatus } : null);
+      }
     }
     loadStats();
   };
@@ -288,9 +307,9 @@ export default function CourrierPage() {
         </section>
       )}
 
-      {/* ── Onglets Pro / Perso ── */}
+      {/* ── Onglets Pro / Perso / Traités ── */}
       <div className="mb-4 flex gap-1 rounded-2xl border border-white/10 bg-slate-900/60 p-1">
-        {(["all", "pro", "perso"] as const).map((tab) => (
+        {(["all", "pro", "perso", "traite"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -300,11 +319,19 @@ export default function CourrierPage() {
                   ? "bg-blue-500/20 text-blue-300 border border-blue-400/30"
                   : tab === "perso"
                   ? "bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30"
+                  : tab === "traite"
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
                   : "bg-violet-500/20 text-violet-200 border border-violet-400/30"
                 : "text-slate-500 hover:text-slate-300"
             }`}
           >
-            {tab === "all" ? "📬 Tout" : tab === "pro" ? "💼 Pro" : "🎯 Perso"}
+            {tab === "all"
+              ? "📬 Tout"
+              : tab === "pro"
+              ? "💼 Pro"
+              : tab === "perso"
+              ? "🎯 Perso"
+              : `✅ Traités${stats ? ` (${stats.stats.traite})` : ""}`}
           </button>
         ))}
       </div>
@@ -428,7 +455,7 @@ export default function CourrierPage() {
                 </h2>
                 <MailForm
                   item={modal === "edit" ? editItem : null}
-                  defaultContext={activeTab !== "all" ? activeTab : "pro"}
+                  defaultContext={activeTab === "pro" || activeTab === "perso" ? activeTab : "pro"}
                   onSave={handleSave}
                   onCancel={() => { setModal("none"); setEditItem(null); }}
                 />
