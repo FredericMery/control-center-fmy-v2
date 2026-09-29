@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { getAuthHeaders } from "@/lib/auth/clientSession";
 import type {
@@ -9,6 +10,11 @@ import type {
   MailType,
   MailStatus,
   MailPriority,
+} from "@/types/mail";
+import {
+  MAIL_STATUSES,
+  MAIL_STATUS_COLORS,
+  MAIL_STATUS_LABELS,
 } from "@/types/mail";
 import MailList from "@/components/mail/MailList";
 import MailFilters from "@/components/mail/MailFilters";
@@ -31,10 +37,11 @@ type StatsData = {
   top_senders: { name: string; count: number }[];
 };
 
-type ModalMode = "none" | "new" | "edit";
+type ModalMode = "none" | "edit";
 
 export default function CourrierPage() {
   const user = useAuthStore((s) => s.user);
+  const router = useRouter();
 
   // --- Liste ---
   const [items, setItems]           = useState<MailItem[]>([]);
@@ -45,8 +52,8 @@ export default function CourrierPage() {
   const LIMIT                        = 30;
 
   // --- Filtres ---
-  const [context, setContext]         = useState<MailContext | "all">("all");
-  const [status, setStatus]           = useState<MailStatus | "all">("all");
+  const [context, setContext]         = useState<MailContext>("pro");
+  const [statuses, setStatuses]       = useState<MailStatus[]>(["recu", "en_cours"]);
   const [mailType, setMailType]       = useState<MailType | "all">("all");
   const [priority, setPriority]       = useState<MailPriority | "all">("all");
   const [search, setSearch]           = useState("");
@@ -63,20 +70,12 @@ export default function CourrierPage() {
   const [showStats, setShowStats]         = useState(false);
   const [stats, setStats]                 = useState<StatsData | null>(null);
   const [statsLoading, setStatsLoading]   = useState(false);
-  const [activeTab, setActiveTab]         = useState<"all" | MailContext | "traite">("all");
 
   // ------- Chargement liste -------
   const buildQuery = useCallback(() => {
     const params = new URLSearchParams();
-    if (context !== "all")  params.set("context", context);
-    if (activeTab === "traite") {
-      params.set("status", "traite");
-    } else if (status !== "all") {
-      params.set("status", status);
-    } else {
-      // Les courriers traités n'apparaissent plus dans les onglets d'accueil
-      params.set("exclude_status", "traite");
-    }
+    params.set("context", context);
+    if (statuses.length > 0) params.set("status", statuses.join(","));
     if (mailType !== "all") params.set("mail_type", mailType);
     if (priority !== "all") params.set("priority", priority);
     if (search)             params.set("search", search);
@@ -86,7 +85,7 @@ export default function CourrierPage() {
     if (actionOnly)         params.set("action_required", "1");
     params.set("limit", String(LIMIT));
     return params;
-  }, [activeTab, context, status, mailType, priority, search, dateFrom, dateTo, overdueOnly, actionOnly]);
+  }, [context, statuses, mailType, priority, search, dateFrom, dateTo, overdueOnly, actionOnly]);
 
   const loadItems = useCallback(async (reset = true) => {
     if (!user) return;
@@ -143,7 +142,7 @@ export default function CourrierPage() {
       return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
     }
     loadItems(true);
-  }, [activeTab, context, status, mailType, priority, dateFrom, dateTo, overdueOnly, actionOnly]);
+  }, [context, statuses, mailType, priority, dateFrom, dateTo, overdueOnly, actionOnly]);
 
   useEffect(() => {
     if (!search) return;
@@ -156,13 +155,9 @@ export default function CourrierPage() {
     if (user) { loadItems(true); loadStats(); }
   }, [user]);
 
-  // Sync tab → context filter
-  useEffect(() => {
-    setContext(activeTab === "all" || activeTab === "traite" ? "all" : activeTab);
-  }, [activeTab]);
-
   const resetFilters = () => {
-    setStatus("all");
+    setContext("pro");
+    setStatuses(["recu", "en_cours"]);
     setMailType("all");
     setPriority("all");
     setSearch("");
@@ -170,6 +165,14 @@ export default function CourrierPage() {
     setDateTo("");
     setOverdueOnly(false);
     setActionOnly(false);
+  };
+
+  const toggleStatus = (value: MailStatus) => {
+    setStatuses((current) =>
+      current.includes(value)
+        ? current.filter((status) => status !== value)
+        : [...current, value]
+    );
   };
 
   const handleSave = (saved: MailItem) => {
@@ -199,9 +202,7 @@ export default function CourrierPage() {
   const handleStatusChange = async (id: string, newStatus: MailStatus) => {
     // Un courrier traité sort des onglets d'accueil ; un courrier non traité
     // sort de l'onglet "Traités".
-    const leavesCurrentList =
-      status === "all" &&
-      (activeTab === "traite" ? newStatus !== "traite" : newStatus === "traite");
+    const leavesCurrentList = statuses.length > 0 && !statuses.includes(newStatus);
 
     if (leavesCurrentList) {
       setItems((prev) => prev.filter((i) => i.id !== id));
@@ -262,7 +263,7 @@ export default function CourrierPage() {
               📊
             </button>
             <button
-              onClick={() => setModal("new")}
+              onClick={() => router.push("/dashboard/courrier/new")}
               className="flex items-center gap-1.5 rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-500 transition-colors sm:px-4"
             >
               <span>+</span>
@@ -307,33 +308,53 @@ export default function CourrierPage() {
         </section>
       )}
 
-      {/* ── Onglets Pro / Perso / Traités ── */}
-      <div className="mb-4 flex gap-1 rounded-2xl border border-white/10 bg-slate-900/60 p-1">
-        {(["all", "pro", "perso", "traite"] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex-1 rounded-xl py-2 text-sm font-medium transition-all ${
-              activeTab === tab
-                ? tab === "pro"
-                  ? "bg-blue-500/20 text-blue-300 border border-blue-400/30"
-                  : tab === "perso"
-                  ? "bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30"
-                  : tab === "traite"
-                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
-                  : "bg-violet-500/20 text-violet-200 border border-violet-400/30"
-                : "text-slate-500 hover:text-slate-300"
-            }`}
-          >
-            {tab === "all"
-              ? "📬 Tout"
-              : tab === "pro"
-              ? "💼 Pro"
-              : tab === "perso"
-              ? "🎯 Perso"
-              : `✅ Traités${stats ? ` (${stats.stats.traite})` : ""}`}
-          </button>
-        ))}
+      {/* ── Filtres visuels ── */}
+      <div className="mb-4 space-y-3 rounded-2xl border border-white/10 bg-slate-900/60 p-3">
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Espace</p>
+          <div className="grid grid-cols-2 gap-2">
+            {(["pro", "perso"] as MailContext[]).map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={context === value}
+                onClick={() => setContext(value)}
+                className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition-all ${
+                  context === value
+                    ? value === "pro"
+                      ? "border-blue-400/50 bg-blue-400/20 text-blue-200 shadow-lg shadow-blue-950/30"
+                      : "border-fuchsia-400/50 bg-fuchsia-400/20 text-fuchsia-200 shadow-lg shadow-fuchsia-950/30"
+                    : "border-white/10 bg-slate-950/30 text-slate-500 hover:border-white/20 hover:text-slate-300"
+                }`}
+              >
+                {value === "pro" ? "💼 Professionnel" : "🎯 Personnel"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Statuts</p>
+          <div className="flex flex-wrap gap-2">
+            {MAIL_STATUSES.map((value) => {
+              const selected = statuses.includes(value);
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => toggleStatus(value)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
+                    selected
+                      ? MAIL_STATUS_COLORS[value]
+                      : "border-white/10 bg-slate-950/30 text-slate-500 hover:border-white/20 hover:text-slate-300"
+                  }`}
+                >
+                  {selected ? "✓ " : ""}{MAIL_STATUS_LABELS[value]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -355,8 +376,6 @@ export default function CourrierPage() {
           {showFilters && (
             <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-3 shadow-lg">
               <MailFilters
-                context={context}
-                status={status}
                 mailType={mailType}
                 priority={priority}
                 search={search}
@@ -364,8 +383,6 @@ export default function CourrierPage() {
                 dateTo={dateTo}
                 overdueOnly={overdueOnly}
                 actionOnly={actionOnly}
-                onContextChange={setContext}
-                onStatusChange={setStatus}
                 onMailTypeChange={setMailType}
                 onPriorityChange={setPriority}
                 onSearchChange={setSearch}
@@ -440,7 +457,7 @@ export default function CourrierPage() {
                   Utilise ce panneau pour scanner un nouveau courrier
                 </p>
                 <button
-                  onClick={() => setModal("new")}
+                  onClick={() => router.push("/dashboard/courrier/new")}
                   className="mt-6 flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors"
                 >
                   📎 Scanner / Ajouter un courrier
@@ -448,14 +465,14 @@ export default function CourrierPage() {
               </div>
             )}
 
-            {(modal === "new" || modal === "edit") && (
+            {modal === "edit" && (
               <div>
                 <h2 className="mb-4 text-base font-semibold text-white">
-                  {modal === "new" ? "📥 Nouveau courrier" : "✏️ Modifier le courrier"}
+                  ✏️ Modifier le courrier
                 </h2>
                 <MailForm
-                  item={modal === "edit" ? editItem : null}
-                  defaultContext={activeTab === "pro" || activeTab === "perso" ? activeTab : "pro"}
+                  item={editItem}
+                  defaultContext={context}
                   onSave={handleSave}
                   onCancel={() => { setModal("none"); setEditItem(null); }}
                 />

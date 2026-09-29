@@ -17,7 +17,10 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const context   = searchParams.get('context') as MailContext | null;
-  const status    = searchParams.get('status') as MailStatus | null;
+  const statuses  = (searchParams.get('status') || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value): value is MailStatus => MAIL_STATUSES.includes(value as MailStatus));
   const excludeStatus = (searchParams.get('exclude_status') || '')
     .split(',')
     .map((s) => s.trim())
@@ -42,7 +45,7 @@ export async function GET(request: NextRequest) {
     .range(offset, offset + limit - 1);
 
   if (context)        query = query.eq('context', context);
-  if (status)         query = query.eq('status', status);
+  if (statuses.length > 0) query = query.in('status', statuses);
   else if (excludeStatus.length > 0) {
     query = query.not('status', 'in', `(${excludeStatus.map((s) => `"${s}"`).join(',')})`);
   }
