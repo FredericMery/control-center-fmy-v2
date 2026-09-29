@@ -1,23 +1,16 @@
 "use client";
 
 import type {
-  MailItem,
-  MailContext,
   MailType,
-  MailStatus,
   MailPriority,
 } from "@/types/mail";
 import {
-  MAIL_STATUSES,
-  MAIL_STATUS_LABELS,
   MAIL_TYPES,
   MAIL_TYPE_LABELS,
   MAIL_TYPE_ICONS,
 } from "@/types/mail";
 
 interface Props {
-  context: MailContext | "all";
-  status: MailStatus | "all";
   mailType: MailType | "all";
   priority: MailPriority | "all";
   search: string;
@@ -25,8 +18,6 @@ interface Props {
   dateTo: string;
   overdueOnly: boolean;
   actionOnly: boolean;
-  onContextChange: (v: MailContext | "all") => void;
-  onStatusChange: (v: MailStatus | "all") => void;
   onMailTypeChange: (v: MailType | "all") => void;
   onPriorityChange: (v: MailPriority | "all") => void;
   onSearchChange: (v: string) => void;
@@ -38,15 +29,15 @@ interface Props {
 }
 
 export default function MailFilters({
-  context, status, mailType, priority,
+  mailType, priority,
   search, dateFrom, dateTo, overdueOnly, actionOnly,
-  onContextChange, onStatusChange, onMailTypeChange, onPriorityChange,
+  onMailTypeChange, onPriorityChange,
   onSearchChange, onDateFromChange, onDateToChange,
   onOverdueOnlyChange, onActionOnlyChange, onReset,
 }: Props) {
   const hasActiveFilters =
-    context !== "all" || status !== "all" || mailType !== "all" ||
-    priority !== "all" || search || dateFrom || dateTo || overdueOnly || actionOnly;
+    mailType !== "all" || priority !== "all" || search ||
+    dateFrom || dateTo || overdueOnly || actionOnly;
 
   return (
     <div className="space-y-3">
@@ -69,30 +60,7 @@ export default function MailFilters({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {/* Contexte */}
-        <select
-          value={context}
-          onChange={(e) => onContextChange(e.target.value as MailContext | "all")}
-          className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-white outline-none focus:border-violet-400/50"
-        >
-          <option value="all">Tous les contextes</option>
-          <option value="pro">💼 Pro</option>
-          <option value="perso">🎯 Perso</option>
-        </select>
-
-        {/* Statut */}
-        <select
-          value={status}
-          onChange={(e) => onStatusChange(e.target.value as MailStatus | "all")}
-          className="rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-white outline-none focus:border-violet-400/50"
-        >
-          <option value="all">Tous les statuts</option>
-          {MAIL_STATUSES.map((s) => (
-            <option key={s} value={s}>{MAIL_STATUS_LABELS[s]}</option>
-          ))}
-        </select>
-
+      <div className="grid grid-cols-2 gap-2">
         {/* Type */}
         <select
           value={mailType}
