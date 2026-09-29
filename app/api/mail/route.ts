@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
-import { MAIL_MAX_SCAN_FILES, type MailContext, type MailStatus, type MailType, type MailPriority } from '@/types/mail';
+import { MAIL_MAX_SCAN_FILES, MAIL_STATUSES, type MailContext, type MailStatus, type MailType, type MailPriority } from '@/types/mail';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,6 +18,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const context   = searchParams.get('context') as MailContext | null;
   const status    = searchParams.get('status') as MailStatus | null;
+  const excludeStatus = (searchParams.get('exclude_status') || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s): s is MailStatus => MAIL_STATUSES.includes(s as MailStatus));
   const mailType  = searchParams.get('mail_type') as MailType | null;
   const priority  = searchParams.get('priority') as MailPriority | null;
   const sender    = searchParams.get('sender');
@@ -39,6 +43,9 @@ export async function GET(request: NextRequest) {
 
   if (context)        query = query.eq('context', context);
   if (status)         query = query.eq('status', status);
+  else if (excludeStatus.length > 0) {
+    query = query.not('status', 'in', `(${excludeStatus.map((s) => `"${s}"`).join(',')})`);
+  }
   if (mailType)       query = query.eq('mail_type', mailType);
   if (priority)       query = query.eq('priority', priority);
   if (sender)         query = query.ilike('sender_name', `%${sender}%`);
