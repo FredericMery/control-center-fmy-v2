@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-  MailItem,
   MailType,
   MailPriority,
 } from "@/types/mail";
