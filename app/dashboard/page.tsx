@@ -2322,14 +2322,14 @@ export default function DashboardPage() {
         <section className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/85 via-slate-900/75 to-slate-950/90 p-2 sm:p-3">
           <div className="flex min-h-0 w-full flex-col items-center justify-center">
             <p className="mb-1 text-xs uppercase tracking-[0.2em] text-slate-400">Ajout rapide</p>
-            <div className="relative flex h-[220px] w-[220px] shrink-0 items-center justify-center">
+            <div className="relative flex h-[264px] w-[264px] shrink-0 items-center justify-center">
               <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(34,211,238,0.16)_0%,rgba(15,23,42,0)_68%)]" />
-              <div className="absolute h-28 w-28 rounded-full border border-cyan-300/20 bg-cyan-300/5" />
-              <div className="absolute h-44 w-44 rounded-full border border-cyan-300/10" />
+              <div className="absolute h-[134px] w-[134px] rounded-full border border-cyan-300/20 bg-cyan-300/5" />
+              <div className="absolute h-[211px] w-[211px] rounded-full border border-cyan-300/10" />
 
               {quickCreateOptions.map((option, index) => {
                 const angle = (-90 + index * (360 / quickCreateOptions.length)) * (Math.PI / 180);
-                const radius = quickCreateOpen ? 78 : 0;
+                const radius = quickCreateOpen ? 94 : 0;
                 const x = Math.cos(angle) * radius;
                 const y = Math.sin(angle) * radius;
 
