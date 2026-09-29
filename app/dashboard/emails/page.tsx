@@ -62,6 +62,15 @@ const actionLabel: Record<string, string> = {
   repondre: 'Repondre',
 };
 
+const responseStatusLabel: Record<string, string> = {
+  none: 'Aucune reponse',
+  draft_ready: 'Brouillon pret',
+  approved: 'Approuve',
+  sent: 'Envoye',
+  cancelled: 'Annule',
+  task_created: 'Traite - tache creee',
+};
+
 export default function EmailAssistantPage() {
   const user = useAuthStore((s) => s.user);
   const userEmail = String(user?.email || '').trim().toLowerCase();
@@ -514,9 +523,11 @@ export default function EmailAssistantPage() {
     if (!selected) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/email/messages/${selected.id}/task`, {
+      const messageId = selected.id;
+      const res = await fetch(`/api/email/messages/${messageId}/task`, {
         method: 'POST',
-        headers: await getAuthHeaders(false),
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ draft_subject: draftSubject, draft_body: draftBody }),
       });
       const json = (await res.json().catch(() => ({}))) as {
         error?: string;
@@ -534,7 +545,12 @@ export default function EmailAssistantPage() {
       const successMessage = taskTitle
         ? `Tache pro creee: ${taskTitle}${actionNote ? ` | Action: ${actionNote}` : ''}`
         : 'Tache pro creee avec succes.';
-      showOk(successMessage);
+      showOk(`${successMessage} Email traite - tache creee.`);
+      setMessageModalOpen(false);
+      if (archiveView === 'active') {
+        setItems((prev) => prev.filter((entry) => entry.id !== messageId));
+        setSelectedId(null);
+      }
       await refreshAll();
     } finally {
       setBusy(false);
@@ -717,7 +733,7 @@ export default function EmailAssistantPage() {
               : 'border-white/10 bg-slate-900/65 hover:border-white/20'
           }`}
         >
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">Archives</p>
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">Traites</p>
           <p className="mt-1 text-xl font-semibold text-slate-400">{String(stats?.stats.archived ?? 0)}</p>
         </button>
       </section>
@@ -725,11 +741,35 @@ export default function EmailAssistantPage() {
       <section className="grid grid-cols-1 gap-3">
         <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-slate-900/90 to-slate-950/90 p-2.5">
           <div className="mb-2 flex items-center justify-between px-2 text-xs text-slate-400">
-            {archiveView === 'archived'
-              ? `Messages archives (${items.length})`
-              : archiveView === 'all'
-                ? `Tous les messages (${items.length})`
-                : `Inbox IA (${items.length})`}
+            <div className="flex items-center gap-2">
+              <div className="flex rounded-full border border-white/10 bg-slate-950/60 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => openVolume('total')}
+                  className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                    archiveView === 'active' ? 'bg-indigo-500/25 text-indigo-100' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  En cours
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openVolume('archives')}
+                  className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                    archiveView === 'archived' ? 'bg-emerald-500/20 text-emerald-100' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Traites
+                </button>
+              </div>
+              <span>
+                {archiveView === 'archived'
+                  ? `Emails traites (${items.length})`
+                  : archiveView === 'all'
+                    ? `Tous les messages (${items.length})`
+                    : `Emails en cours (${items.length})`}
+              </span>
+            </div>
             <span className="text-[10px] text-slate-500">Glisse a gauche pour supprimer</span>
           </div>
           <div className="space-y-2">
@@ -805,7 +845,15 @@ export default function EmailAssistantPage() {
                     )}
                     <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
                       <span>{formatDate(item.received_at)}</span>
-                      <span className="rounded-full border border-white/10 px-1.5 py-0.5">{item.response_status}</span>
+                      <span
+                        className={`rounded-full border px-1.5 py-0.5 ${
+                          item.response_status === 'task_created'
+                            ? 'border-emerald-300/35 bg-emerald-500/10 text-emerald-200'
+                            : 'border-white/10'
+                        }`}
+                      >
+                        {responseStatusLabel[item.response_status] || item.response_status}
+                      </span>
                     </div>
                   </button>
                   {offset <= -88 && (

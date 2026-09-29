@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 import { callOpenAi } from '@/lib/ai/client';
+import { generateReplySuggestionWithAi } from '@/lib/email/assistantService';
+import {
+  buildEmailBehaviorInstructions,
+  canPrepareReply,
+  loadUserEmailAiSettings,
+  loadUserRecipientEmails,
+  resolveRecipientRole,
+} from '@/lib/email/userEmailAiSettings';
 
 export async function POST(
   request: NextRequest,
@@ -11,11 +19,15 @@ export async function POST(
   if (!userId) return NextResponse.json({ error: 'Non authentifie' }, { status: 401 });
 
   const { id } = await params;
+  const requestBody = (await request.json().catch(() => ({}))) as {
+    draft_subject?: unknown;
+    draft_body?: unknown;
+  };
   const supabase = getSupabaseAdminClient();
 
   const { data: message, error: messageError } = await supabase
     .from('email_messages')
-    .select('id,subject,body_text,body_html,sender_email,sender_name,received_at,ai_summary')
+    .select('id,subject,body_text,body_html,sender_email,sender_name,received_at,ai_summary,to_emails,cc_emails')
     .eq('id', id)
     .eq('user_id', userId)
     .single();
@@ -60,12 +72,21 @@ export async function POST(
     return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
 
+  const draft = await ensureProposedReplyDraft({
+    supabase,
+    userId,
+    messageId: id,
+    message,
+    providedSubject: String(requestBody?.draft_subject ?? '').trim(),
+    providedBody: String(requestBody?.draft_body ?? '').trim(),
+  });
+
   await supabase
     .from('email_messages')
     .update({
       archived: true,
       response_required: false,
-      response_status: 'cancelled',
+      response_status: 'task_created',
       ai_action: 'classer',
     })
     .eq('id', id)
@@ -85,17 +106,150 @@ export async function POST(
         sender_email: senderEmail || null,
         sender_name: senderName || null,
         action_note: generated.actionNote,
+        draft_id: draft?.id || null,
       },
     });
 
   return NextResponse.json({
     success: true,
     task,
+    draft,
     generated: {
       action_note: generated.actionNote,
       sender: senderLabel,
     },
   });
+}
+
+type ProposedReplyDraft = {
+  id: string;
+  proposed_subject: string | null;
+  proposed_body: string;
+};
+
+async function ensureProposedReplyDraft(args: {
+  supabase: ReturnType<typeof getSupabaseAdminClient>;
+  userId: string;
+  messageId: string;
+  message: {
+    subject: unknown;
+    body_text: unknown;
+    body_html: unknown;
+    sender_email: unknown;
+    sender_name: unknown;
+    ai_summary: unknown;
+    to_emails: unknown;
+    cc_emails: unknown;
+  };
+  providedSubject: string;
+  providedBody: string;
+}): Promise<ProposedReplyDraft | null> {
+  const { supabase, userId, messageId, message, providedSubject, providedBody } = args;
+  const draftColumns = 'id,proposed_subject,proposed_body';
+
+  try {
+    const { data: currentDraft } = await supabase
+      .from('email_reply_drafts')
+      .select('id,version,proposed_subject,proposed_body')
+      .eq('message_id', messageId)
+      .eq('user_id', userId)
+      .eq('is_current', true)
+      .order('version', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (currentDraft && providedBody) {
+      const unchanged =
+        String(currentDraft.proposed_body || '') === providedBody &&
+        String(currentDraft.proposed_subject || '') === providedSubject;
+      if (unchanged) return currentDraft as ProposedReplyDraft;
+
+      const { data: updated } = await supabase
+        .from('email_reply_drafts')
+        .update({
+          proposed_subject: providedSubject || currentDraft.proposed_subject || null,
+          proposed_body: providedBody,
+          edited_by_user: true,
+        })
+        .eq('id', currentDraft.id)
+        .eq('user_id', userId)
+        .select(draftColumns)
+        .single();
+      return (updated as ProposedReplyDraft | null) || (currentDraft as ProposedReplyDraft);
+    }
+
+    if (currentDraft) return currentDraft as ProposedReplyDraft;
+
+    let subject = providedSubject;
+    let body = providedBody;
+    let confidence: number | null = null;
+    let editedByUser = Boolean(providedBody);
+
+    if (!body) {
+      const [userEmails, emailAiSettings] = await Promise.all([
+        loadUserRecipientEmails(userId),
+        loadUserEmailAiSettings(userId),
+      ]);
+      const recipientRole = resolveRecipientRole({
+        userEmails,
+        toEmails: Array.isArray(message.to_emails) ? (message.to_emails as string[]) : [],
+        ccEmails: Array.isArray(message.cc_emails) ? (message.cc_emails as string[]) : [],
+      });
+      if (!canPrepareReply({ replyScope: emailAiSettings.replyScope, recipientRole })) {
+        return null;
+      }
+
+      const reply = await generateReplySuggestionWithAi({
+        userId,
+        senderEmail: String(message.sender_email || ''),
+        senderName: String(message.sender_name || ''),
+        originalSubject: String(message.subject || ''),
+        originalBody: String(message.body_text || message.body_html || ''),
+        summary: String(message.ai_summary || ''),
+        tone: 'professionnel',
+        globalRules: buildEmailBehaviorInstructions(emailAiSettings),
+        signature: emailAiSettings.signature,
+      });
+      subject = reply.subject;
+      body = reply.body;
+      confidence = reply.confidence;
+      editedByUser = false;
+    }
+
+    if (!String(body || '').trim()) return null;
+
+    const { data: lastDraft } = await supabase
+      .from('email_reply_drafts')
+      .select('version')
+      .eq('message_id', messageId)
+      .eq('user_id', userId)
+      .order('version', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { data: inserted } = await supabase
+      .from('email_reply_drafts')
+      .insert({
+        message_id: messageId,
+        user_id: userId,
+        version: Number(lastDraft?.version || 0) + 1,
+        is_current: true,
+        tone: 'professionnel',
+        language: 'fr',
+        proposed_subject: subject || null,
+        proposed_body: body,
+        ai_model: editedByUser ? null : 'gpt-4.1-mini',
+        ai_confidence: confidence,
+        edited_by_user: editedByUser,
+      })
+      .select(draftColumns)
+      .single();
+
+    return (inserted as ProposedReplyDraft | null) || null;
+  } catch (error) {
+    console.error('email task draft fallback', error);
+    return null;
+  }
 }
 
 type GeneratedTaskAction = {
