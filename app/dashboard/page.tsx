@@ -1511,16 +1511,6 @@ export default function DashboardPage() {
     setAssistantFlowStatus(null);
   };
 
-  const discreetMenuLinks = useMemo(
-    () => cards.slice(0, 8).map((card) => ({
-      id: card.id,
-      title: card.title,
-      icon: card.icon,
-      link: card.link,
-    })),
-    [cards]
-  );
-
   const quickCreateOptions = useMemo(() => {
     const byModuleId: Partial<Record<DashboardModuleId, { id: string; label: string; icon: string; link: string }>> = {
       pro: { id: 'task-pro', label: 'Tache Pro', icon: '💼', link: '/dashboard/tasks?type=pro&new=1' },
@@ -1541,97 +1531,74 @@ export default function DashboardPage() {
   const openOnboardingShowcase = openGuide; // alias conservé pour la section newcomer
 
   return (
-    <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-6">
-      <div className="mx-auto w-full max-w-6xl space-y-5">
-        <section className="relative overflow-hidden rounded-2xl border border-cyan-200/15 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.22),transparent_48%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(15,23,42,0.82)_45%,rgba(8,47,73,0.7))] p-4 shadow-[0_35px_80px_-40px_rgba(14,116,144,0.95)] sm:rounded-3xl sm:p-5">
-          <div className="pointer-events-none absolute -right-14 -top-14 h-44 w-44 rounded-full bg-cyan-300/20 blur-3xl" />
-          <div className="pointer-events-none absolute -left-10 bottom-0 h-28 w-28 rounded-full bg-sky-400/10 blur-2xl" />
-
-          <div className="relative flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-100/80">{t('dashboard.overview')}</p>
-              <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">Control Center</h1>
-              <p className="mt-1 text-sm text-slate-300">Vue operationnelle centralisee pour piloter tes actions critiques.</p>
-            </div>
-
-            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/45 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-200">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]" />
-              Systeme actif
-            </div>
-          </div>
-
-          <div className="relative mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-            <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-3 sm:p-4">
-              <p className="text-xs uppercase tracking-[0.16em] text-slate-300">Mon assistant</p>
-              <p className="mt-1 text-base font-semibold text-cyan-100">{assistantName} te guide sur les emails, taches et priorites du jour.</p>
-              <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-medium text-slate-200">
-                <span className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2.5 py-1">Contexte temps reel</span>
-                <span className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2.5 py-1">Synthese immediate</span>
-                <span className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2.5 py-1">Actions recommandees</span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 sm:min-w-72">
-              <button
-                type="button"
-                onClick={openAssistantModal}
-                className="group relative inline-flex min-h-16 items-center justify-between gap-3 overflow-hidden rounded-2xl border border-cyan-100/80 bg-[linear-gradient(125deg,#cffafe_0%,#93c5fd_50%,#67e8f9_100%)] px-5 py-3 text-left text-slate-950 shadow-[0_28px_62px_-26px_rgba(56,189,248,0.95)] transition duration-300 hover:-translate-y-0.5"
-              >
-                <span className="absolute -right-6 -top-8 h-28 w-28 rounded-full bg-white/35 blur-2xl transition group-hover:scale-110" />
-                <span className="relative flex items-center gap-3">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-900/15 bg-slate-950/10 text-xl shadow-inner">
-                    🗣️
-                  </span>
-                  <span className="flex flex-col">
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-900/80">Assistant IA</span>
-                    <span className="text-sm font-extrabold leading-tight">Discuter avec {assistantName}</span>
-                  </span>
-                </span>
-                <span className="relative rounded-full border border-slate-900/20 bg-white/45 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-900">
-                  Prioritaire
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={openAssistantWithVoice}
-                className="rounded-2xl border border-cyan-300/55 bg-cyan-500/15 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-100 transition hover:bg-cyan-500/25"
-              >
-                Demarrer en vocal
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* — Boutons Guide + Proposition IA — */}
-        <div className="flex gap-3">
+    <div className="h-[calc(100dvh-4rem)] min-h-0 overflow-hidden px-3 py-2 sm:px-6 sm:py-3">
+      <div className="mx-auto flex h-full w-full max-w-6xl flex-col gap-2.5">
+        <section aria-label="Fonctionnalités" className="grid shrink-0 grid-cols-4 gap-1.5 sm:grid-cols-6 sm:gap-2 lg:grid-cols-8">
+          {cards.map((module) => (
+            <Link
+              key={module.id}
+              href={module.link}
+              className="flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-slate-900/65 px-1.5 py-1.5 text-center text-[11px] font-semibold text-slate-100 transition hover:border-cyan-300/50 hover:bg-slate-800 sm:gap-2 sm:px-3 sm:text-sm"
+            >
+              <span className="shrink-0 text-base sm:text-lg">{module.icon}</span>
+              <span className="truncate">{module.title}</span>
+            </Link>
+          ))}
+          <button
+            type="button"
+            onClick={openAssistantModal}
+            className="flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-cyan-300/35 bg-cyan-500/10 px-1.5 py-1.5 text-center text-[11px] font-semibold text-cyan-100 transition hover:bg-cyan-500/20 sm:gap-2 sm:px-3 sm:text-sm"
+          >
+            <span className="shrink-0 text-base sm:text-lg">🗣️</span>
+            <span className="truncate">Assistant</span>
+          </button>
+          <button
+            type="button"
+            onClick={openAssistantWithVoice}
+            className="flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-cyan-300/25 bg-cyan-500/5 px-1.5 py-1.5 text-center text-[11px] font-semibold text-cyan-100 transition hover:bg-cyan-500/15 sm:gap-2 sm:px-3 sm:text-sm"
+          >
+            <span className="shrink-0 text-base sm:text-lg">🎙️</span>
+            <span className="truncate">Vocal</span>
+          </button>
           <button
             type="button"
             onClick={openGuide}
-            className="flex-1 rounded-2xl border border-indigo-300/30 bg-indigo-500/10 py-3 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/20 active:scale-95"
+            className="flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-indigo-300/30 bg-indigo-500/10 px-1.5 py-1.5 text-center text-[11px] font-semibold text-indigo-100 transition hover:bg-indigo-500/20 sm:gap-2 sm:px-3 sm:text-sm"
           >
-            🎬 Guide
+            <span className="shrink-0 text-base sm:text-lg">🎬</span>
+            <span className="truncate">Guide</span>
           </button>
           <button
             type="button"
             onClick={() => setPropositionsOpen((prev) => !prev)}
-            className={`relative flex-1 rounded-2xl border py-3 text-sm font-semibold transition active:scale-95 ${
+            className={`relative flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl border px-1.5 py-1.5 text-center text-[11px] font-semibold transition sm:gap-2 sm:px-3 sm:text-sm ${
               propositionsOpen
                 ? 'border-cyan-300/40 bg-cyan-500/15 text-cyan-100'
-                : 'border-white/15 bg-slate-900/60 text-slate-200 hover:border-white/25'
+                : 'border-white/10 bg-slate-900/65 text-slate-100 hover:border-white/25'
             }`}
           >
-            🤖 Proposition IA
+            <span className="shrink-0 text-base sm:text-lg">🤖</span>
+            <span className="truncate">Propositions</span>
             {proposals.length > 0 && (
-              <span className="ml-2 rounded-full border border-cyan-300/50 bg-cyan-500/25 px-1.5 py-0.5 text-[11px] font-bold text-cyan-100">
+              <span className="absolute -right-1 -top-1 rounded-full border border-cyan-300/50 bg-cyan-500/80 px-1.5 text-[10px] font-bold text-white">
                 {proposals.length}
               </span>
             )}
           </button>
-        </div>
+          {isNewcomer && (
+            <button
+              type="button"
+              onClick={() => setSetupOpen((prev) => !prev)}
+              className="flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-1.5 py-1.5 text-center text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-500/20 sm:gap-2 sm:px-3 sm:text-sm"
+            >
+              <span className="shrink-0 text-base sm:text-lg">⚙️</span>
+              <span className="truncate">Configurer</span>
+            </button>
+          )}
+        </section>
 
-        {isNewcomer && (
-          <section className="rounded-3xl border border-cyan-300/30 bg-cyan-500/10 p-4 sm:p-5">
+        {isNewcomer && setupOpen && (
+          <section className="fixed inset-3 z-40 overflow-y-auto rounded-3xl border border-cyan-300/30 bg-slate-900/95 p-4 shadow-2xl backdrop-blur sm:inset-8 sm:p-5">
             <p className="text-xs uppercase tracking-[0.18em] text-cyan-200">Nouveau ici</p>
             <h2 className="mt-1 text-lg font-semibold text-white">Demarrage assiste</h2>
             <p className="mt-1 text-sm text-slate-200">
@@ -1716,7 +1683,7 @@ export default function DashboardPage() {
 
         {/* — Panneau Propositions IA — */}
         {propositionsOpen && (
-          <section className="rounded-3xl border border-white/10 bg-slate-900/75 p-4 sm:p-5">
+          <section className="fixed inset-3 z-40 overflow-y-auto rounded-3xl border border-white/10 bg-slate-900/95 p-4 shadow-2xl backdrop-blur sm:inset-8 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-cyan-200/80">Assistant IA</p>
@@ -1731,6 +1698,13 @@ export default function DashboardPage() {
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPropositionsOpen(false)}
+                  className="rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                >
+                  Fermer
+                </button>
                 <button
                   type="button"
                   onClick={openUpdateCodeModal}
@@ -2345,19 +2319,17 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/85 via-slate-900/75 to-slate-950/90 p-4 sm:p-6">
-          <div className="flex flex-col items-center justify-center py-4 sm:py-8">
-            <p className="mb-3 text-xs uppercase tracking-[0.2em] text-slate-400">Ajout rapide</p>
-            <p className="mb-8 text-center text-sm text-slate-300">Clique sur le + et choisis ce que tu souhaites ajouter</p>
-
-            <div className="relative flex h-[320px] w-[320px] items-center justify-center sm:h-[420px] sm:w-[420px]">
+        <section className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/85 via-slate-900/75 to-slate-950/90 p-2 sm:p-3">
+          <div className="flex min-h-0 w-full flex-col items-center justify-center">
+            <p className="mb-1 text-xs uppercase tracking-[0.2em] text-slate-400">Ajout rapide</p>
+            <div className="relative flex h-[264px] w-[264px] shrink-0 items-center justify-center">
               <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(34,211,238,0.16)_0%,rgba(15,23,42,0)_68%)]" />
-              <div className="absolute h-44 w-44 rounded-full border border-cyan-300/20 bg-cyan-300/5 sm:h-56 sm:w-56" />
-              <div className="absolute h-60 w-60 rounded-full border border-cyan-300/10 sm:h-72 sm:w-72" />
+              <div className="absolute h-[134px] w-[134px] rounded-full border border-cyan-300/20 bg-cyan-300/5" />
+              <div className="absolute h-[211px] w-[211px] rounded-full border border-cyan-300/10" />
 
               {quickCreateOptions.map((option, index) => {
                 const angle = (-90 + index * (360 / quickCreateOptions.length)) * (Math.PI / 180);
-                const radius = quickCreateOpen ? 142 : 0;
+                const radius = quickCreateOpen ? 94 : 0;
                 const x = Math.cos(angle) * radius;
                 const y = Math.sin(angle) * radius;
 
@@ -2365,15 +2337,15 @@ export default function DashboardPage() {
                   <Link
                     key={option.id}
                     href={option.link}
-                    className={`absolute inline-flex h-20 w-20 flex-col items-center justify-center rounded-full border border-cyan-200/35 bg-slate-900/90 text-center shadow-[0_16px_30px_-20px_rgba(56,189,248,0.8)] transition-all duration-300 hover:border-cyan-200/70 hover:bg-slate-800 ${
+                    className={`absolute inline-flex h-[60px] w-[60px] flex-col items-center justify-center rounded-full border border-cyan-200/35 bg-slate-900/90 text-center shadow-[0_16px_30px_-20px_rgba(56,189,248,0.8)] transition-all duration-300 hover:border-cyan-200/70 hover:bg-slate-800 ${
                       quickCreateOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
                     }`}
                     style={{
                       transform: `translate(${x}px, ${y}px) scale(${quickCreateOpen ? 1 : 0.5})`,
                     }}
                   >
-                    <span className="text-lg">{option.icon}</span>
-                    <span className="mt-1 px-1 text-[10px] font-medium leading-tight text-slate-100">{option.label}</span>
+                    <span className="text-base">{option.icon}</span>
+                    <span className="mt-0.5 px-1 text-[9px] font-medium leading-tight text-slate-100">{option.label}</span>
                   </Link>
                 );
               })}
@@ -2381,31 +2353,13 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setQuickCreateOpen((prev) => !prev)}
-                className="relative z-10 inline-flex h-28 w-28 items-center justify-center rounded-full border border-cyan-100/80 bg-[conic-gradient(from_240deg,_#67e8f9,_#38bdf8,_#93c5fd,_#67e8f9)] text-6xl font-light leading-none text-slate-950 shadow-[0_24px_70px_-24px_rgba(34,211,238,0.95)] transition hover:scale-105"
+                className="relative z-10 inline-flex h-20 w-20 items-center justify-center rounded-full border border-cyan-100/80 bg-[conic-gradient(from_240deg,_#67e8f9,_#38bdf8,_#93c5fd,_#67e8f9)] text-5xl font-light leading-none text-slate-950 shadow-[0_24px_70px_-24px_rgba(34,211,238,0.95)] transition hover:scale-105"
               >
                 <span className="absolute inset-1 rounded-full bg-gradient-to-br from-cyan-200 via-sky-200 to-blue-200" />
                 <span className="relative">+</span>
               </button>
             </div>
 
-            <div className="mt-7 flex w-full flex-wrap items-center justify-center gap-2 border-t border-white/10 pt-4">
-              {discreetMenuLinks.map((entry) => (
-                <Link
-                  key={entry.id}
-                  href={entry.link}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-200 transition hover:border-cyan-300/50 hover:text-cyan-100"
-                >
-                  <span>{entry.icon}</span>
-                  <span>{entry.title}</span>
-                </Link>
-              ))}
-              <Link
-                href="/dashboard/settings"
-                className="inline-flex items-center rounded-full border border-white/15 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300 transition hover:border-white/30 hover:text-white"
-              >
-                Parametres
-              </Link>
-            </div>
           </div>
         </section>
 
