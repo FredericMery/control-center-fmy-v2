@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import { PDFDocument } from "pdf-lib";
 import { MAIL_MAX_SCAN_FILES, type AiMailAnalysis } from "@/types/mail";
 import { getAccessToken } from "@/lib/auth/clientSession";
 
@@ -26,7 +27,18 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
   >("idle");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [cameraSupported, setCameraSupported] = useState(false);
+  const [cameraStarting, setCameraStarting] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraSession, setCameraSession] = useState(false);
+  const [cameraPdf, setCameraPdf] = useState<File | null>(null);
+  const [buildingPdf, setBuildingPdf] = useState(false);
+  const [capturingPage, setCapturingPage] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const mountedRef = useRef(true);
+  const captureInProgressRef = useRef(false);
 
   const STEPS = [
     { key: "uploading", label: "Upload du scan…", pct: 25 },
@@ -49,6 +61,24 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
     };
   }, [files]);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    setCameraSupported(
+      typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia)
+    );
+
+    return () => {
+      mountedRef.current = false;
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!cameraActive || !videoRef.current || !cameraStreamRef.current) return;
+    videoRef.current.srcObject = cameraStreamRef.current;
+    void videoRef.current.play().catch(() => undefined);
+  }, [cameraActive]);
+
   const handleFiles = (nextFiles: File[], mode: "replace" | "append" = "replace") => {
     const mergedFiles = mode === "append" ? [...files, ...nextFiles] : nextFiles;
     const dedupedFiles = Array.from(
@@ -59,6 +89,8 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
     const safeFiles = dedupedFiles.slice(0, MAIL_MAX_SCAN_FILES);
 
     setFiles(safeFiles);
+    setCameraSession(false);
+    setCameraPdf(null);
     setError(null);
 
     if (mode === "append" && dedupedFiles.length > MAIL_MAX_SCAN_FILES) {
@@ -80,6 +112,7 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
   const handleRemoveFile = (indexToRemove: number) => {
     const nextFiles = files.filter((_, index) => index !== indexToRemove);
     setFiles(nextFiles);
+    setCameraPdf(null);
     setError(null);
 
     if (inputRef.current) {
@@ -95,6 +128,111 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
     const [movedFile] = nextFiles.splice(indexToMove, 1);
     nextFiles.splice(targetIndex, 0, movedFile);
     setFiles(nextFiles);
+    setCameraPdf(null);
+  };
+
+  const stopCameraStream = () => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    setCameraActive(false);
+  };
+
+  const startCameraScan = async () => {
+    if (!cameraSupported || cameraActive || cameraStarting) return;
+
+    setError(null);
+    setFiles([]);
+    setCameraPdf(null);
+    setCameraSession(true);
+    setCameraStarting(true);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      });
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      cameraStreamRef.current = stream;
+      setCameraActive(true);
+    } catch {
+      if (mountedRef.current) {
+        setCameraSession(false);
+        setError("Impossible d’accéder à la caméra. Vérifie son autorisation dans le navigateur.");
+      }
+    } finally {
+      if (mountedRef.current) setCameraStarting(false);
+    }
+  };
+
+  const captureCameraPage = async () => {
+    const video = videoRef.current;
+    if (
+      captureInProgressRef.current ||
+      !video ||
+      !video.videoWidth ||
+      !video.videoHeight ||
+      files.length >= MAIL_MAX_SCAN_FILES
+    ) {
+      return;
+    }
+
+    captureInProgressRef.current = true;
+    setCapturingPage(true);
+    try {
+      const maxDimension = 2000;
+      const scale = Math.min(1, maxDimension / Math.max(video.videoWidth, video.videoHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Canvas indisponible");
+
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await canvasToBlob(canvas, "image/jpeg", 0.88);
+      if (!blob) throw new Error("Capture vide");
+
+      setFiles((current) => [
+        ...current,
+        new File([blob], `courrier-page-${current.length + 1}.jpg`, {
+          type: "image/jpeg",
+          lastModified: Date.now(),
+        }),
+      ].slice(0, MAIL_MAX_SCAN_FILES));
+      setCameraPdf(null);
+      setError(null);
+    } catch {
+      setError("Impossible de capturer cette page.");
+    } finally {
+      captureInProgressRef.current = false;
+      setCapturingPage(false);
+    }
+  };
+
+  const finishCameraScan = async () => {
+    if (captureInProgressRef.current) return;
+    if (files.length === 0) {
+      setError("Capture au moins une page avant d’arrêter le scan.");
+      return;
+    }
+
+    stopCameraStream();
+    setBuildingPdf(true);
+    setError(null);
+    try {
+      setCameraPdf(await buildCapturedPagesPdf(files));
+    } catch {
+      setCameraPdf(null);
+      setError("Impossible de créer le PDF. Tu peux recommencer le scan.");
+    } finally {
+      setBuildingPdf(false);
+    }
   };
 
   const handleUpload = async () => {
@@ -111,13 +249,23 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
       const scanFileNames: string[] = [];
       const textParts: string[] = [];
 
-      for (let index = 0; index < filesToUpload.length; index += 1) {
+      const uploadBatches = cameraSession
+        ? [filesToUpload]
+        : filesToUpload.map((file) => [file]);
+
+      for (let index = 0; index < uploadBatches.length; index += 1) {
         const progressBase = 10 + Math.round((index / Math.max(1, filesToUpload.length)) * 55);
         setProgress(progressBase);
         setStatus("uploading");
 
         const formData = new FormData();
-        formData.append("file", filesToUpload[index]);
+        if (cameraSession) {
+          uploadBatches[index].forEach((file) => formData.append("files", file));
+          formData.append("combine_pdf", "true");
+        } else {
+          formData.append("file", uploadBatches[index][0]);
+        }
+        formData.append("skip_ai", "true");
 
         const res = await fetch(endpoint, {
           method: "POST",
@@ -145,8 +293,8 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
       setProgress(70);
       setStatus("ocr");
 
-      const mergedScanUrls = Array.from(new Set(scanUrls)).slice(0, MAIL_MAX_SCAN_FILES);
-      const mergedScanFileNames = Array.from(new Set(scanFileNames)).slice(0, MAIL_MAX_SCAN_FILES);
+      const finalScanUrls = Array.from(new Set(scanUrls)).slice(0, MAIL_MAX_SCAN_FILES);
+      const finalScanFileNames = Array.from(new Set(scanFileNames)).slice(0, MAIL_MAX_SCAN_FILES);
       const fullText = textParts.filter(Boolean).join("\n\n");
 
       setProgress(85);
@@ -159,10 +307,10 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
 
       setTimeout(() => {
         onComplete({
-          scan_url: mergedScanUrls[0] || null,
-          scan_file_name: mergedScanFileNames[0] || null,
-          scan_urls: mergedScanUrls,
-          scan_file_names: mergedScanFileNames,
+          scan_url: finalScanUrls[0] || null,
+          scan_file_name: finalScanFileNames[0] || null,
+          scan_urls: finalScanUrls,
+          scan_file_names: finalScanFileNames,
           full_text: fullText || null,
           ai_analysis: aiAnalysis,
         });
@@ -178,8 +326,85 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
 
   return (
     <div className="space-y-4">
+      {status === "idle" && cameraSupported && !cameraActive && !cameraSession && (
+        <button
+          type="button"
+          onClick={startCameraScan}
+          className="w-full rounded-2xl border border-violet-400/40 bg-violet-400/10 px-4 py-3 text-sm font-semibold text-violet-100 transition-colors hover:bg-violet-400/20"
+        >
+          📷 Scanner plusieurs pages avec la caméra
+        </button>
+      )}
+
+      {status === "idle" && cameraActive && (
+        <div className="space-y-3 rounded-2xl border border-violet-400/30 bg-slate-950/70 p-3">
+          <div className="overflow-hidden rounded-xl bg-black">
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+              className="max-h-[60vh] w-full object-contain"
+            />
+          </div>
+          <p className="text-center text-xs text-slate-400">
+            Cadre une page, capture-la, puis passe à la suivante.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={captureCameraPage}
+              disabled={capturingPage || files.length >= MAIL_MAX_SCAN_FILES}
+              className="rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {capturingPage
+                ? "Capture…"
+                : `📸 Capturer (${files.length}/${MAIL_MAX_SCAN_FILES})`}
+            </button>
+            <button
+              type="button"
+              onClick={finishCameraScan}
+              disabled={capturingPage || files.length === 0}
+              className="rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              ⏹ Stop et créer le PDF
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status === "idle" && cameraSession && !cameraActive && (
+        <div className="flex items-center gap-3 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2.5">
+          <span className="text-xl">{cameraStarting || buildingPdf ? "⏳" : "📄"}</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-emerald-100">
+              {cameraStarting
+                ? "Ouverture de la caméra…"
+                : buildingPdf
+                  ? "Création du PDF…"
+                  : cameraPdf
+                    ? "PDF prêt"
+                    : "Pages prêtes"}
+            </p>
+            {!cameraStarting && (
+              <p className="text-xs text-emerald-300/70">
+                {files.length} page(s) seront réunies dans un seul courrier PDF.
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={startCameraScan}
+            disabled={cameraStarting || buildingPdf}
+            className="text-xs text-emerald-200 underline disabled:opacity-50"
+          >
+            Recommencer
+          </button>
+        </div>
+      )}
+
       {/* Zone de dépôt */}
-      {status === "idle" && (
+      {status === "idle" && !cameraActive && !cameraSession && (
         <div
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
@@ -248,7 +473,13 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
             </div>
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setFiles([]); setPreviewUrls([]); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setFiles([]);
+                setPreviewUrls([]);
+                setCameraPdf(null);
+                setCameraSession(false);
+              }}
               className="text-slate-500 hover:text-red-400 transition-colors text-lg"
             >
               ✕
@@ -373,32 +604,88 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
       )}
 
       {/* Erreur */}
-      {status === "error" && (
+      {error && (status === "error" || status === "idle") && (
         <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
           ⚠️ {error}
         </div>
       )}
 
       {/* Boutons */}
-      {(status === "idle" || status === "error") && (
+      {(status === "idle" || status === "error") && !cameraActive && (
         <div className="flex gap-2">
           <button
-            onClick={onCancel}
+            type="button"
+            onClick={() => {
+              stopCameraStream();
+              onCancel();
+            }}
             className="flex-1 rounded-xl border border-white/10 bg-slate-800 py-2.5 text-sm text-slate-300 hover:bg-slate-700 transition-colors"
           >
             Annuler
           </button>
           {files.length > 0 && (
             <button
+              type="button"
               onClick={handleUpload}
-              className="flex-1 rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors"
+              disabled={buildingPdf}
+              className="flex-1 rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
             >
-              🔍 Scanner & Analyser ({files.length})
+              {cameraSession
+                ? `🔍 Enregistrer le PDF (${files.length} pages)`
+                : `🔍 Scanner & Analyser (${files.length})`}
             </button>
           )}
         </div>
       )}
     </div>
+  );
+}
+
+function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  type: string,
+  quality: number
+): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+async function buildCapturedPagesPdf(files: File[]): Promise<File> {
+  if (files.length === 0) {
+    throw new Error("Aucune page à convertir");
+  }
+
+  const pdf = await PDFDocument.create();
+  const portrait = { width: 595.28, height: 841.89 };
+  const landscape = { width: 841.89, height: 595.28 };
+  const margin = 18;
+
+  for (const file of files) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const image = file.type === "image/png"
+      ? await pdf.embedPng(bytes)
+      : await pdf.embedJpg(bytes);
+    const pageSize = image.width > image.height ? landscape : portrait;
+    const page = pdf.addPage([pageSize.width, pageSize.height]);
+    const scale = Math.min(
+      (pageSize.width - margin * 2) / image.width,
+      (pageSize.height - margin * 2) / image.height
+    );
+    const width = image.width * scale;
+    const height = image.height * scale;
+
+    page.drawImage(image, {
+      x: (pageSize.width - width) / 2,
+      y: (pageSize.height - height) / 2,
+      width,
+      height,
+    });
+  }
+
+  const pdfBytes = await pdf.save();
+  return new File(
+    [new Uint8Array(pdfBytes)],
+    `courrier-scan-${new Date().toISOString().slice(0, 10)}.pdf`,
+    { type: "application/pdf", lastModified: Date.now() }
   );
 }
 

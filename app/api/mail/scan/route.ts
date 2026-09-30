@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { PDFDocument } from 'pdf-lib';
 import { getUserIdFromRequest } from '@/lib/auth/serverAuth';
 import { callOpenAi, callGoogleVision } from '@/lib/ai/client';
 import { MAIL_MAX_SCAN_FILES, type AiMailAnalysis, type MailType, type MailPriority } from '@/types/mail';
@@ -106,6 +107,8 @@ export async function POST(request: NextRequest) {
 
   const rawFiles = formData.getAll('files');
   const singleFile = formData.get('file');
+  const combinePdf = formData.get('combine_pdf') === 'true';
+  const skipAi = formData.get('skip_ai') === 'true';
   const files = (rawFiles.length > 0 ? rawFiles : singleFile ? [singleFile] : [])
     .filter((entry): entry is File => entry instanceof File);
 
@@ -116,8 +119,14 @@ export async function POST(request: NextRequest) {
   if (files.length > MAIL_MAX_SCAN_FILES) {
     return NextResponse.json({ error: `Maximum ${MAIL_MAX_SCAN_FILES} pieces par courrier` }, { status: 400 });
   }
+  if (combinePdf && files.some((file) => !['image/jpeg', 'image/png'].includes(file.type))) {
+    return NextResponse.json(
+      { error: 'Le PDF continu accepte uniquement les captures JPG ou PNG' },
+      { status: 400 }
+    );
+  }
   const maxSize = 15 * 1024 * 1024; // 15 MB
-  const uploaded: Array<{ url: string; name: string; text: string }> = [];
+  const uploaded: Array<{ url: string; name: string; text: string; type: string; buffer: Buffer }> = [];
 
   for (const file of files) {
     if (!ALLOWED_TYPES.has(file.type)) {
@@ -169,7 +178,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    uploaded.push({ url: scanUrl, name: fileName, text: ocrText || '' });
+    uploaded.push({ url: scanUrl, name: fileName, text: ocrText || '', type: file.type, buffer });
   }
 
   const validUploads = uploaded.filter((entry) => entry.url);
@@ -182,7 +191,7 @@ export async function POST(request: NextRequest) {
 
   // 3. Analyse IA via OpenAI
   let aiAnalysis: AiMailAnalysis | null = null;
-  if (ocrText && ocrText.length > 30) {
+  if (!skipAi && ocrText && ocrText.length > 30) {
     try {
       const response = await callOpenAi({
         userId,
@@ -213,12 +222,92 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  let responseScanUrls = scanUrls;
+  let responseScanFileNames = scanFileNames;
+
+  if (combinePdf) {
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = await buildCombinedScanPdf(uploaded);
+    } catch (error) {
+      console.error('Combined PDF creation error:', error);
+      return NextResponse.json({ error: 'Impossible de créer le PDF du courrier' }, { status: 500 });
+    }
+
+    const timestamp = Date.now();
+    const pdfStorageName = `${timestamp}-${Math.random().toString(36).slice(2, 8)}-courrier-scan.pdf`;
+    const pdfStoragePath = `${userId}/${pdfStorageName}`;
+    const { error: pdfUploadError } = await supabase.storage
+      .from('mail-scans')
+      .upload(pdfStoragePath, pdfBuffer, {
+        contentType: 'application/pdf',
+        upsert: false,
+      });
+
+    if (pdfUploadError) {
+      console.error('Combined PDF upload error:', pdfUploadError);
+      return NextResponse.json({ error: 'Erreur upload du PDF final' }, { status: 500 });
+    }
+
+    const { data: pdfSignedData } = await supabase.storage
+      .from('mail-scans')
+      .createSignedUrl(pdfStoragePath, 60 * 60 * 24 * 365 * 10);
+    if (!pdfSignedData?.signedUrl) {
+      return NextResponse.json({ error: 'Impossible de générer le lien du PDF final' }, { status: 500 });
+    }
+
+    responseScanUrls = [pdfSignedData.signedUrl];
+    responseScanFileNames = [pdfStorageName];
+
+    const temporaryPaths = validUploads.map((entry) => `${userId}/${entry.name}`);
+    if (temporaryPaths.length > 0) {
+      const { error: cleanupError } = await supabase.storage
+        .from('mail-scans')
+        .remove(temporaryPaths);
+      if (cleanupError) {
+        console.error('Temporary mail scan cleanup error:', cleanupError);
+      }
+    }
+  }
+
   return NextResponse.json({
-    scan_url: scanUrls[0] || null,
-    scan_file_name: scanFileNames[0] || null,
-    scan_urls: scanUrls,
-    scan_file_names: scanFileNames,
+    scan_url: responseScanUrls[0] || null,
+    scan_file_name: responseScanFileNames[0] || null,
+    scan_urls: responseScanUrls,
+    scan_file_names: responseScanFileNames,
     full_text: ocrText || null,
     ai_analysis: aiAnalysis,
   });
+}
+
+async function buildCombinedScanPdf(
+  sources: Array<{ type: string; buffer: Buffer }>
+): Promise<Buffer> {
+  const pdf = await PDFDocument.create();
+  const portrait = { width: 595.28, height: 841.89 };
+  const landscape = { width: 841.89, height: 595.28 };
+  const margin = 18;
+
+  for (const source of sources) {
+    const image = source.type === 'image/png'
+      ? await pdf.embedPng(source.buffer)
+      : await pdf.embedJpg(source.buffer);
+    const pageSize = image.width > image.height ? landscape : portrait;
+    const page = pdf.addPage([pageSize.width, pageSize.height]);
+    const scale = Math.min(
+      (pageSize.width - margin * 2) / image.width,
+      (pageSize.height - margin * 2) / image.height
+    );
+    const width = image.width * scale;
+    const height = image.height * scale;
+
+    page.drawImage(image, {
+      x: (pageSize.width - width) / 2,
+      y: (pageSize.height - height) / 2,
+      width,
+      height,
+    });
+  }
+
+  return Buffer.from(await pdf.save());
 }
