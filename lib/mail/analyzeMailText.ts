@@ -2,6 +2,8 @@ import { callOpenAi } from '@/lib/ai/client';
 import { MAIL_TYPES, type AiMailAnalysis, type MailPriority, type MailType } from '@/types/mail';
 
 const MAX_AI_INPUT_CHARS = 8000;
+const MAX_HEURISTIC_INPUT_CHARS = 20000;
+const MAX_LINE_CHARS = 200;
 
 function buildSystemPrompt(today: string): string {
   return `Tu es une archiviste et secrétaire de direction d'élite, spécialisée dans l'analyse de courrier papier numérisé.
@@ -47,7 +49,7 @@ const FRENCH_MONTHS: Record<string, number> = {
 };
 
 const STREET_REGEX =
-  /\b(\d{1,4}\s*(bis|ter)?[,\s]+)?(rue|avenue|av\.?|boulevard|bd|chemin|place|all[ée]e|impasse|quai|route|cours|square|voie|parvis|esplanade|lieu[- ]dit|r[ée]sidence|zi|za|zac|parc|b\.?p\.?|c\.?s\.?|tsa)\b/i;
+  /\b(\d{1,4}(?: ?(?:bis|ter))?[, ]+)?(rue|avenue|av\.?|boulevard|bd|chemin|place|all[ée]e|impasse|quai|route|cours|square|voie|parvis|esplanade|lieu[- ]dit|r[ée]sidence|zi|za|zac|parc|b\.?p\.?|c\.?s\.?|tsa)\b/i;
 const POSTAL_LINE_REGEX = /\b(?:F-?\s?)?(\d{2}\s?\d{3})\s+([A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’\- ]{1,40}?)(\s+cedex(\s*\d{1,2})?)?\s*$/i;
 const LEGAL_FORM_REGEX = /\b(SAS|SASU|SARL|EURL|SA|SCI|SNC|SCP|SELARL|GIE|EARL|GAEC|GmbH|Ltd|LLC|Inc\.?|S\.A\.S\.?|S\.A\.R\.L\.?|S\.A\.)\b/;
 const RECIPIENT_PREFIX_REGEX = /^(m\.|mr\.?|mme|mlle|monsieur|madame|mademoiselle|à l'attention|a l'attention|destinataire)\b/i;
@@ -57,7 +59,11 @@ function normalizeText(value: unknown): string {
 }
 
 export function normalizeEmail(value: unknown): string {
-  const cleaned = normalizeText(value).replace(/\s*@\s*/g, '@').replace(/\s*\.\s*/g, '.');
+  const cleaned = normalizeText(value)
+    .slice(0, MAX_HEURISTIC_INPUT_CHARS)
+    .replace(/\s+/g, ' ')
+    .replace(/ ?@ ?/g, '@')
+    .replace(/ ?\. ?/g, '.');
   const match = cleaned.match(EMAIL_REGEX);
   return match ? match[0].toLowerCase() : '';
 }
@@ -78,7 +84,7 @@ function normalizeDueDate(value: unknown): string | null {
   const raw = normalizeText(value);
   if (!raw || raw.toLowerCase() === 'null') return null;
   if (isValidIsoDate(raw)) return raw;
-  return parseFrenchDate(raw);
+  return parseFrenchDate(raw.slice(0, 100).replace(/\s+/g, ' '));
 }
 
 function parseFrenchDate(raw: string): string | null {
@@ -86,7 +92,7 @@ function parseFrenchDate(raw: string): string | null {
   if (numeric) {
     return toIsoDate(Number(numeric[3]), Number(numeric[2]), Number(numeric[1]));
   }
-  const textual = raw.match(/\b(\d{1,2})(?:er)?\s+([a-zéû]+)\s+(\d{4})\b/i);
+  const textual = raw.match(/\b(\d{1,2})(?:er)? ([a-zéû]+) (\d{4})\b/i);
   if (textual) {
     const month = FRENCH_MONTHS[textual[2].toLowerCase()];
     if (month) return toIsoDate(Number(textual[3]), month, Number(textual[1]));
@@ -97,7 +103,7 @@ function parseFrenchDate(raw: string): string | null {
 function getLines(text: string): string[] {
   return text
     .split(/\r?\n/)
-    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .map((line) => line.replace(/\s+/g, ' ').trim().slice(0, MAX_LINE_CHARS))
     .filter((line) => line && !/^---\s*Piece\s+\d+/i.test(line));
 }
 
@@ -137,18 +143,21 @@ function extractCompanyName(lines: string[], fallbackNameLine: string): string {
 
 function extractReference(text: string): string {
   const pattern = new RegExp(
-    /(?:r[ée]f(?:[ée]rence)?s?(?:\s+(?:client|dossier|contrat|facture|adh[ée]rent|courrier))?|n°\s*(?:de\s+)?(?:dossier|contrat|client|facture|adh[ée]rent|police)|(?:num[ée]ro\s+de\s+)?(?:dossier|contrat|client|facture|police))\s*(?:n°|no\.?|num[ée]ro)?\s*[:.]?\s*([A-Z0-9][A-Z0-9\-\/.]{3,30})/.source,
+    /(?:r[ée]f(?:[ée]rence)?s?(?: (?:client|dossier|contrat|facture|adh[ée]rent|courrier))?|n° ?(?:de )?(?:dossier|contrat|client|facture|adh[ée]rent|police)|(?:num[ée]ro de )?(?:dossier|contrat|client|facture|police)) ?(?:n°|no\.?|num[ée]ro)? ?[:.]? ?([A-Z0-9][A-Z0-9\-\/.]{3,30})/.source,
     'gi'
   );
   for (const match of text.matchAll(pattern)) {
-    if (/\d/.test(match[1])) return match[1].replace(/[.\-\/]+$/, '');
+    if (!/\d/.test(match[1])) continue;
+    let reference = match[1];
+    while (/[.\-\/]$/.test(reference)) reference = reference.slice(0, -1);
+    return reference;
   }
   return '';
 }
 
 function extractSubject(lines: string[]): string {
   for (const line of lines) {
-    const match = line.match(/^objet\s*:\s*(.+)$/i);
+    const match = line.match(/^objet ?:(.*)$/i);
     if (match && match[1].trim()) return match[1].trim().slice(0, 200);
   }
   return '';
@@ -156,7 +165,7 @@ function extractSubject(lines: string[]): string {
 
 function extractDueDate(text: string): string | null {
   const match = text.match(
-    /(?:avant le|au plus tard le|date limite(?: de paiement)?|[ée]ch[ée]ance|[àa] r[ée]gler avant|[àa] payer avant|date d'exigibilit[ée])\s*[:\-]?\s*(?:le\s+)?(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}|\d{1,2}(?:er)?\s+[a-zéû]+\s+\d{4})/i
+    /(?:avant le|au plus tard le|date limite(?: de paiement)?|[ée]ch[ée]ance|[àa] r[ée]gler avant|[àa] payer avant|date d'exigibilit[ée]) ?[:\-]? ?(?:le )?(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}|\d{1,2}(?:er)? [a-zéû]+ \d{4})/i
   );
   return match ? parseFrenchDate(match[1]) : null;
 }
@@ -172,7 +181,8 @@ export interface HeuristicMailFields {
 
 /** Extraction déterministe (sans IA) des champs principaux du courrier depuis le texte OCR. */
 export function extractMailFieldsHeuristically(fullText: string): HeuristicMailFields {
-  const text = normalizeText(fullText);
+  const text = normalizeText(fullText).slice(0, MAX_HEURISTIC_INPUT_CHARS);
+  const flatText = text.replace(/\s+/g, ' ');
   const lines = getLines(text);
   const { address, nameLine } = extractAddressBlock(lines);
 
@@ -180,9 +190,9 @@ export function extractMailFieldsHeuristically(fullText: string): HeuristicMailF
     subject: extractSubject(lines),
     sender_name: extractCompanyName(lines, nameLine),
     sender_address: address,
-    sender_email: normalizeEmail(text),
-    reference: extractReference(text),
-    due_date: extractDueDate(text),
+    sender_email: normalizeEmail(flatText),
+    reference: extractReference(flatText),
+    due_date: extractDueDate(flatText),
   };
 }
 
@@ -201,7 +211,11 @@ export function normalizeAiAnalysis(raw: unknown): AiMailAnalysis {
     context,
     subject: normalizeText(source.subject),
     sender_name: normalizeText(source.sender_name),
-    sender_address: normalizeText(source.sender_address).replace(/\s*\n\s*/g, ', '),
+    sender_address: normalizeText(source.sender_address)
+      .split(/\r?\n/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(', '),
     sender_email: normalizeEmail(source.sender_email),
     mail_type: mailType,
     summary: normalizeText(source.summary),
