@@ -248,6 +248,7 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
       const scanUrls: string[] = [];
       const scanFileNames: string[] = [];
       const textParts: string[] = [];
+      let scanAiAnalysis: AiMailAnalysis | null = null;
 
       const uploadBatches = cameraSession
         ? [filesToUpload]
@@ -265,7 +266,6 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
         } else {
           formData.append("file", uploadBatches[index][0]);
         }
-        formData.append("skip_ai", "true");
 
         const res = await fetch(endpoint, {
           method: "POST",
@@ -288,6 +288,9 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
         if (chunkText) {
           textParts.push(chunkText);
         }
+        if (!scanAiAnalysis && json?.ai_analysis) {
+          scanAiAnalysis = json.ai_analysis as AiMailAnalysis;
+        }
       }
 
       setProgress(70);
@@ -300,7 +303,7 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
       setProgress(85);
       setStatus("ai");
 
-      const aiAnalysis = await analyzeMergedText(fullText);
+      const aiAnalysis = await analyzeMergedText(fullText) || scanAiAnalysis;
 
       setProgress(100);
       setStatus("done");
