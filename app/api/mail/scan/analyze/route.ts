@@ -17,13 +17,17 @@ export async function POST(request: NextRequest) {
 
   const fullText = String(body.full_text || '').trim();
   if (!fullText) {
-    return NextResponse.json({ ai_analysis: null });
+    return NextResponse.json({ ai_analysis: null, ai_unavailable: false });
   }
 
+  let aiUnavailable = false;
   try {
-    return NextResponse.json({ ai_analysis: await analyzeMailText(userId, fullText) });
+    const aiAnalysis = await analyzeMailText(userId, fullText, () => {
+      aiUnavailable = true;
+    });
+    return NextResponse.json({ ai_analysis: aiAnalysis, ai_unavailable: aiUnavailable });
   } catch (error) {
     console.error('POST /api/mail/scan/analyze error:', error);
-    return NextResponse.json({ ai_analysis: null });
+    return NextResponse.json({ ai_analysis: null, ai_unavailable: true });
   }
 }

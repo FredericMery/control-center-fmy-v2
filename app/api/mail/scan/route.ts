@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
   }
   const maxSize = 15 * 1024 * 1024; // 15 MB
   const uploaded: Array<{ url: string; name: string; text: string; type: string; buffer: Buffer }> = [];
+  let ocrFailed = false;
 
   for (const file of files) {
     if (!ALLOWED_TYPES.has(file.type)) {
@@ -102,6 +103,7 @@ export async function POST(request: NextRequest) {
         ocrText = await callGoogleVision(userId, base64);
       } catch (err) {
         console.error('OCR error:', err);
+        ocrFailed = true;
       }
     }
 
@@ -118,8 +120,11 @@ export async function POST(request: NextRequest) {
 
   // 3. Analyse IA via OpenAI (+ extraction déterministe en complément)
   let aiAnalysis: AiMailAnalysis | null = null;
+  let aiUnavailable = false;
   if (!skipAi && ocrText) {
-    aiAnalysis = await analyzeMailText(userId, ocrText);
+    aiAnalysis = await analyzeMailText(userId, ocrText, () => {
+      aiUnavailable = true;
+    });
   }
 
   let responseScanUrls = scanUrls;
@@ -177,6 +182,9 @@ export async function POST(request: NextRequest) {
     scan_file_names: responseScanFileNames,
     full_text: ocrText || null,
     ai_analysis: aiAnalysis,
+    ocr_failed: ocrFailed,
+    ocr_text_found: Boolean(ocrText),
+    ai_unavailable: aiUnavailable,
   });
 }
 

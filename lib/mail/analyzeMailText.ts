@@ -272,7 +272,11 @@ function mergeWithHeuristics(ai: AiMailAnalysis | null, fallback: HeuristicMailF
  * Analyse le texte OCR d'un courrier (IA + extraction déterministe en complément)
  * et retourne les valeurs à pré-remplir dans le formulaire.
  */
-export async function analyzeMailText(userId: string, fullText: string): Promise<AiMailAnalysis | null> {
+export async function analyzeMailText(
+  userId: string,
+  fullText: string,
+  onAiUnavailable?: () => void
+): Promise<AiMailAnalysis | null> {
   const text = normalizeText(fullText);
   if (!text) return null;
 
@@ -310,6 +314,8 @@ export async function analyzeMailText(userId: string, fullText: string): Promise
       console.error('Mail AI analysis error:', error);
     }
   }
+
+  if (!aiAnalysis) onAiUnavailable?.();
 
   return mergeWithHeuristics(aiAnalysis, fallback);
 }
