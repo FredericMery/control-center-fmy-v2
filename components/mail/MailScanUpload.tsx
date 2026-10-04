@@ -14,6 +14,7 @@ interface Props {
     scan_file_names: string[];
     full_text: string | null;
     ai_analysis: AiMailAnalysis | null;
+    recognition_warnings: string[];
   }) => void;
   onCancel: () => void;
 }
@@ -249,6 +250,7 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
       const scanFileNames: string[] = [];
       const textParts: string[] = [];
       let scanAiAnalysis: AiMailAnalysis | null = null;
+      let ocrFailed = false;
 
       const uploadBatches = cameraSession
         ? [filesToUpload]
@@ -288,6 +290,7 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
         if (chunkText) {
           textParts.push(chunkText);
         }
+        ocrFailed = ocrFailed || json?.ocr_failed === true;
         if (!scanAiAnalysis && json?.ai_analysis) {
           scanAiAnalysis = json.ai_analysis as AiMailAnalysis;
         }
@@ -303,7 +306,17 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
       setProgress(85);
       setStatus("ai");
 
-      const aiAnalysis = await analyzeMergedText(fullText) || scanAiAnalysis;
+      const mergedAnalysis = await analyzeMergedText(fullText);
+      const aiAnalysis = mergedAnalysis.analysis || scanAiAnalysis;
+      const recognitionWarnings: string[] = [];
+      if (ocrFailed) {
+        recognitionWarnings.push("La lecture a échoué pour au moins un document. Vérifie le fichier ou sa qualité.");
+      }
+      if (!fullText) {
+        recognitionWarnings.push("Aucun texte n’a été reconnu. Le PDF est peut-être un scan image ; tu peux saisir les informations manuellement.");
+      } else if (mergedAnalysis.unavailable) {
+        recognitionWarnings.push("Le texte a été lu, mais l’analyse automatique est indisponible. Vérifie et complète les champs manuellement.");
+      }
 
       setProgress(100);
       setStatus("done");
@@ -316,6 +329,7 @@ export default function MailScanUpload({ onComplete, onCancel }: Props) {
           scan_file_names: finalScanFileNames,
           full_text: fullText || null,
           ai_analysis: aiAnalysis,
+          recognition_warnings: recognitionWarnings,
         });
       }, 600);
     } catch (err: unknown) {
@@ -709,8 +723,10 @@ function mapScanUploadError(message: string) {
   return raw;
 }
 
-async function analyzeMergedText(fullText: string): Promise<AiMailAnalysis | null> {
-  if (!fullText || fullText.length < 30) return null;
+async function analyzeMergedText(fullText: string): Promise<{ analysis: AiMailAnalysis | null; unavailable: boolean }> {
+  if (!fullText || fullText.length < 30) {
+    return { analysis: null, unavailable: Boolean(fullText) };
+  }
 
   const endpoint = typeof window !== "undefined"
     ? `${window.location.origin}/api/mail/scan/analyze`
@@ -729,10 +745,13 @@ async function analyzeMergedText(fullText: string): Promise<AiMailAnalysis | nul
 
   const json = await readJsonSafely(res);
   if (!res.ok) {
-    return null;
+    return { analysis: null, unavailable: true };
   }
 
-  return (json?.ai_analysis || null) as AiMailAnalysis | null;
+  return {
+    analysis: (json?.ai_analysis || null) as AiMailAnalysis | null,
+    unavailable: json?.ai_unavailable === true,
+  };
 }
 
 function normalizeStringArray(value: unknown, fallback: unknown): string[] {

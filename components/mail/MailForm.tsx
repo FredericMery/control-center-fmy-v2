@@ -36,6 +36,7 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aiDetected, setAiDetected] = useState(false);
+  const [recognitionWarnings, setRecognitionWarnings] = useState<string[]>([]);
 
   // Champs du formulaire
   const [context, setContext]               = useState<MailContext>(item?.context ?? defaultContext);
@@ -90,6 +91,7 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
     scan_file_names: string[];
     full_text: string | null;
     ai_analysis: AiMailAnalysis | null;
+    recognition_warnings: string[];
   }) => {
     if (data.scan_url)       setScanUrl(data.scan_url);
     if (data.scan_file_name) setScanFileName(data.scan_file_name);
@@ -97,6 +99,7 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
     setScanFileNames(Array.isArray(data.scan_file_names) ? data.scan_file_names.slice(0, MAIL_MAX_SCAN_FILES) : data.scan_file_name ? [data.scan_file_name] : []);
     if (data.full_text)      setFullText(data.full_text);
     if (data.ai_analysis)    applyAiAnalysis(data.ai_analysis);
+    setRecognitionWarnings(data.recognition_warnings || []);
     setStep("form");
   };
 
@@ -199,6 +202,12 @@ export default function MailForm({ item, defaultContext = "pro", onSave, onCance
           >
             Rescanner
           </button>
+        </div>
+      )}
+
+      {recognitionWarnings.length > 0 && (
+        <div role="status" className="space-y-1 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+          {recognitionWarnings.map((warning) => <p key={warning}>⚠️ {warning}</p>)}
         </div>
       )}
 
