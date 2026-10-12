@@ -53,7 +53,7 @@ export default function CourrierPage() {
 
   // --- Filtres ---
   const [context, setContext]         = useState<MailContext>("pro");
-  const [statuses, setStatuses]       = useState<MailStatus[]>(["recu", "en_cours"]);
+  const [statuses, setStatuses]       = useState<MailStatus[]>([]);
   const [mailType, setMailType]       = useState<MailType | "all">("all");
   const [priority, setPriority]       = useState<MailPriority | "all">("all");
   const [search, setSearch]           = useState("");
@@ -156,8 +156,7 @@ export default function CourrierPage() {
   }, [user]);
 
   const resetFilters = () => {
-    setContext("pro");
-    setStatuses(["recu", "en_cours"]);
+    setStatuses([]);
     setMailType("all");
     setPriority("all");
     setSearch("");
@@ -200,8 +199,7 @@ export default function CourrierPage() {
   };
 
   const handleStatusChange = async (id: string, newStatus: MailStatus) => {
-    // Un courrier traité sort des onglets d'accueil ; un courrier non traité
-    // sort de l'onglet "Traités".
+    // Ne conserver que les courriers correspondant aux statuts filtrés.
     const leavesCurrentList = statuses.length > 0 && !statuses.includes(newStatus);
 
     if (leavesCurrentList) {
@@ -225,27 +223,18 @@ export default function CourrierPage() {
     setSelectedItem(null);
   };
 
-  const hasOverdue = (stats?.stats.overdue || 0) > 0;
-  const hasAction  = (stats?.stats.action_required || 0) > 0;
-
   return (
-    <div className="mx-auto max-w-7xl px-3 pb-24 sm:px-4">
+    <div className="mx-auto max-w-5xl px-3 pb-24 sm:px-4">
 
       {/* ── Header ── */}
-      <section className="mb-6 rounded-3xl border border-violet-200/10 bg-gradient-to-r from-slate-900/80 via-slate-900/75 to-violet-950/60 p-4 sm:p-6">
+      <section className="mb-4 rounded-2xl border border-white/10 bg-slate-900/60 p-4 sm:p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.22em] text-violet-200/70">Module Courrier</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              📬 Gestionnaire de Courrier
+              Courrier
             </h1>
             <p className="mt-1.5 text-sm text-slate-400">
-              Archivage intelligent · Suivi · IA auto-analyse
-              {stats && (
-                <span className="ml-2 text-slate-500">
-                  — {stats.stats.total} courrier{stats.stats.total > 1 ? "s" : ""}
-                </span>
-              )}
+              Retrouvez vos courriers et les actions à effectuer.
             </p>
           </div>
 
@@ -259,11 +248,14 @@ export default function CourrierPage() {
                   : "border-white/10 bg-slate-800/50 text-slate-400 hover:border-white/20"
               }`}
               title="Statistiques"
+              aria-label="Afficher les statistiques"
+              aria-expanded={showStats}
             >
               📊
             </button>
             <button
               onClick={() => router.push("/dashboard/courrier/new")}
+              aria-label="Ajouter un courrier"
               className="flex items-center gap-1.5 rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-500 transition-colors sm:px-4"
             >
               <span>+</span>
@@ -272,27 +264,6 @@ export default function CourrierPage() {
           </div>
         </div>
 
-        {/* Alertes rapides */}
-        {(hasOverdue || hasAction) && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {hasAction && (
-              <button
-                onClick={() => { setActionOnly(true); setOverdueOnly(false); }}
-                className="flex items-center gap-1.5 rounded-full border border-orange-400/30 bg-orange-400/10 px-3 py-1 text-xs font-medium text-orange-300 hover:bg-orange-400/20 transition-colors"
-              >
-                ⚡ {stats!.stats.action_required} action{stats!.stats.action_required > 1 ? "s" : ""} requise{stats!.stats.action_required > 1 ? "s" : ""}
-              </button>
-            )}
-            {hasOverdue && (
-              <button
-                onClick={() => { setOverdueOnly(true); setActionOnly(false); }}
-                className="flex items-center gap-1.5 rounded-full border border-red-400/30 bg-red-400/10 px-3 py-1 text-xs font-medium text-red-300 hover:bg-red-400/20 transition-colors"
-              >
-                ⏰ {stats!.stats.overdue} en retard
-              </button>
-            )}
-          </div>
-        )}
       </section>
 
       {/* ── Stats Panel ── */}
@@ -318,7 +289,7 @@ export default function CourrierPage() {
                 key={value}
                 type="button"
                 aria-pressed={context === value}
-                onClick={() => setContext(value)}
+                onClick={() => { setContext(value); setSelectedItem(null); setModal("none"); }}
                 className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition-all ${
                   context === value
                     ? value === "pro"
@@ -332,9 +303,21 @@ export default function CourrierPage() {
             ))}
           </div>
         </div>
-        <div>
+        {showFilters && <div>
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Statuts</p>
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              aria-pressed={statuses.length === 0}
+              onClick={() => setStatuses([])}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                statuses.length === 0
+                  ? "border-violet-400/40 bg-violet-400/10 text-violet-200"
+                  : "border-white/10 text-slate-400"
+              }`}
+            >
+              Tous les statuts
+            </button>
             {MAIL_STATUSES.map((value) => {
               const selected = statuses.includes(value);
               return (
@@ -354,21 +337,22 @@ export default function CourrierPage() {
               );
             })}
           </div>
-        </div>
+        </div>}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="space-y-4">
 
         {/* ── Colonne gauche : filtres + liste ── */}
-        <div className="space-y-3 lg:col-span-1">
+        <div className="space-y-3">
 
           {/* Toggle filtres */}
           <button
             onClick={() => setShowFilters((v) => !v)}
+            aria-expanded={showFilters}
             className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-slate-900/50 px-3 py-2.5 text-sm text-slate-300 hover:bg-slate-800/50 transition-colors"
           >
             <span className="flex items-center gap-1.5">
-              🔧 <span>Filtres avancés</span>
+              <span>Filtrer les courriers</span>
             </span>
             <span className="text-slate-500">{showFilters ? "▲" : "▼"}</span>
           </button>
@@ -398,7 +382,7 @@ export default function CourrierPage() {
           {/* Compteur */}
           <div className="flex items-center justify-between px-1">
             <p className="text-xs text-slate-500">
-              {total} résultat{total > 1 ? "s" : ""}
+              {total} courrier{total > 1 ? "s" : ""} · Cliquez pour consulter le détail
             </p>
             <button
               onClick={() => loadItems(true)}
@@ -420,6 +404,7 @@ export default function CourrierPage() {
               }}
               renderExpanded={(item) => (
                 <MailDetail
+                  key={item.id}
                   item={item}
                   onEdit={openEdit}
                   onDelete={handleDelete}
@@ -445,27 +430,8 @@ export default function CourrierPage() {
         </div>
 
         {/* ── Colonne droite : détail / formulaire ── */}
-        <div className="lg:col-span-2">
-          <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl backdrop-blur min-h-[400px]">
-            {modal === "none" && (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="text-5xl mb-4">📬</div>
-                <p className="text-base font-medium text-slate-400">
-                  Le detail s ouvre maintenant directement sous le courrier selectionne
-                </p>
-                <p className="mt-1 text-xs text-slate-600">
-                  Utilise ce panneau pour scanner un nouveau courrier
-                </p>
-                <button
-                  onClick={() => router.push("/dashboard/courrier/new")}
-                  className="mt-6 flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors"
-                >
-                  📎 Scanner / Ajouter un courrier
-                </button>
-              </div>
-            )}
-
-            {modal === "edit" && (
+        {modal === "edit" && (
+          <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4">
               <div>
                 <h2 className="mb-4 text-base font-semibold text-white">
                   ✏️ Modifier le courrier
@@ -477,10 +443,8 @@ export default function CourrierPage() {
                   onCancel={() => { setModal("none"); setEditItem(null); }}
                 />
               </div>
-            )}
-
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
