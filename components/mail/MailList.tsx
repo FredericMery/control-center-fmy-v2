@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import type { MailItem } from "@/types/mail";
 import {
-  MAIL_TYPE_ICONS,
+  MAIL_TYPE_LABELS,
   MAIL_STATUS_COLORS,
   MAIL_STATUS_LABELS,
   MAIL_PRIORITY_COLORS,
@@ -19,21 +19,13 @@ interface Props {
 }
 
 export default function MailList({ items, loading, selectedId, onSelect, renderExpanded }: Props) {
-  const hasAttachment = (item: MailItem) =>
-    (Array.isArray(item.scan_urls) && item.scan_urls.length > 0) || Boolean(item.scan_url);
-  const isTransferred = (item: MailItem) =>
-    Boolean(item.replied && String(item.reply_note || '').toLowerCase().includes('transfere'));
-
   const formatDate = (d: string) => {
-    if (!d) return "";
+    if (!d) return "Non renseignée";
     const date = new Date(d);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const days = Math.floor(diff / 86400000);
-    if (days === 0) return "Aujourd'hui";
-    if (days === 1) return "Hier";
-    if (days < 7) return `Il y a ${days}j`;
-    return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short" }).format(date);
+    if (Number.isNaN(date.getTime())) return "Non renseignée";
+    return new Intl.DateTimeFormat("fr-FR", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+    }).format(date);
   };
 
   const isOverdue = (item: MailItem) =>
@@ -62,7 +54,13 @@ export default function MailList({ items, loading, selectedId, onSelect, renderE
   }
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
+      <div className="hidden grid-cols-[140px_minmax(0,1fr)_130px_110px] gap-4 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400 md:grid">
+        <span>Date de réception</span>
+        <span>Type de courrier</span>
+        <span>Statut</span>
+        <span>Urgence</span>
+      </div>
       {items.map((item) => {
         const overdue = isOverdue(item);
         const isSelected = selectedId === item.id;
@@ -72,7 +70,9 @@ export default function MailList({ items, loading, selectedId, onSelect, renderE
             <button
               type="button"
               onClick={() => onSelect(item)}
-              className={`w-full rounded-xl border p-3 text-left transition-all ${
+              aria-expanded={isSelected}
+              aria-controls={isSelected && renderExpanded ? `mail-detail-${item.id}` : undefined}
+              className={`w-full rounded-xl border p-4 text-left transition-all focus-visible:outline-2 focus-visible:outline-violet-400 ${
                 isSelected
                   ? "border-violet-400/50 bg-violet-400/10"
                   : overdue
@@ -80,59 +80,34 @@ export default function MailList({ items, loading, selectedId, onSelect, renderE
                   : "border-white/8 bg-slate-900/40 hover:border-white/20 hover:bg-slate-800/40"
               }`}
             >
-              <div className="flex items-start gap-2.5">
-                <span className="text-lg flex-shrink-0 mt-0.5">
-                  {MAIL_TYPE_ICONS[item.mail_type]}
-                </span>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 justify-between">
-                    <p className={`truncate text-sm font-medium ${isSelected ? "text-violet-100" : "text-slate-100"}`}>
-                      {item.subject || "Sans objet"}
-                    </p>
-                    <span className="flex-shrink-0 text-xs text-slate-500">
-                      {formatDate(item.received_at)}
-                    </span>
-                  </div>
-
-                  <div className="mt-0.5 flex items-center gap-1.5">
-                    {item.sender_name && (
-                      <span className="truncate text-xs text-slate-500 max-w-[120px]">
-                        {item.sender_name}
-                      </span>
-                    )}
-                    {item.sender_name && <span className="text-slate-700">·</span>}
-                    {isTransferred(item) && (
-                      <span className="rounded-full border border-cyan-400/40 bg-cyan-400/10 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-cyan-200">
-                        Transfere
-                      </span>
-                    )}
-                    <span className={`rounded-full border px-1.5 py-px text-[10px] font-medium ${MAIL_STATUS_COLORS[item.status]}`}>
-                      {MAIL_STATUS_LABELS[item.status]}
-                    </span>
-                    {item.priority !== "normal" && (
-                      <span className={`rounded-full border px-1.5 py-px text-[10px] font-medium ${MAIL_PRIORITY_COLORS[item.priority]}`}>
-                        {MAIL_PRIORITY_LABELS[item.priority]}
-                      </span>
-                    )}
-                    {item.action_required && !["traite", "clos"].includes(item.status) && (
-                      <span className="text-[10px] text-orange-400">⚡</span>
-                    )}
-                    {overdue && <span className="text-[10px] text-red-400">⏰</span>}
-                    {item.ai_analyzed && <span className="text-[10px] text-violet-400">✨</span>}
-                    {hasAttachment(item) && <span className="text-[10px] text-slate-500">📎</span>}
-                  </div>
-
-                  {item.summary && (
-                    <p className="mt-1 truncate text-xs text-slate-600">
-                      {item.summary}
-                    </p>
-                  )}
+              <div className="grid grid-cols-2 items-start gap-4 md:grid-cols-[140px_minmax(0,1fr)_130px_110px] md:items-center">
+                <div>
+                  <span className="mb-1 block text-xs text-slate-400 md:hidden">Date de réception</span>
+                  <span className="text-sm text-slate-200">{formatDate(item.received_at)}</span>
+                </div>
+                <div className="min-w-0">
+                  <span className="mb-1 block text-xs text-slate-400 md:hidden">Type de courrier</span>
+                  <p className="text-sm font-semibold text-white">{MAIL_TYPE_LABELS[item.mail_type]}</p>
+                  <p className="mt-1 truncate text-sm text-slate-300">{item.subject || "Sans objet"}</p>
+                  {item.sender_name && <p className="mt-0.5 truncate text-xs text-slate-400">{item.sender_name}</p>}
+                </div>
+                <div>
+                  <span className="mb-1 block text-xs text-slate-400 md:hidden">Statut</span>
+                  <span className={`inline-block rounded-full border px-2.5 py-1 text-xs font-medium ${MAIL_STATUS_COLORS[item.status]}`}>
+                    {MAIL_STATUS_LABELS[item.status]}
+                  </span>
+                </div>
+                <div>
+                  <span className="mb-1 block text-xs text-slate-400 md:hidden">Urgence</span>
+                  <span className={`inline-block rounded-full border px-2.5 py-1 text-xs font-medium ${MAIL_PRIORITY_COLORS[item.priority]}`}>
+                    {MAIL_PRIORITY_LABELS[item.priority]}
+                  </span>
+                  {overdue && <p className="mt-1 text-xs text-red-400">Échéance dépassée</p>}
                 </div>
               </div>
             </button>
             {isSelected && renderExpanded ? (
-              <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
+              <div id={`mail-detail-${item.id}`} className="rounded-xl border border-violet-400/20 bg-slate-950/60 p-4 sm:p-6">
                 {renderExpanded(item)}
               </div>
             ) : null}

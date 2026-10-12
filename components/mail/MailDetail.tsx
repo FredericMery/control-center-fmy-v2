@@ -380,6 +380,7 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
         </div>
         <button
           onClick={onClose}
+          aria-label="Fermer le détail du courrier"
           className="flex-shrink-0 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
         >
           ✕
@@ -413,13 +414,41 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
       </div>
 
       {/* Alerte action requise */}
-      {item.action_required && !["traite", "clos"].includes(item.status) && (
-        <div className="rounded-xl border border-orange-400/30 bg-orange-400/10 px-3 py-2">
-          <p className="text-xs font-semibold text-orange-300">⚡ Action requise</p>
-          {item.action_note && (
-            <p className="mt-0.5 text-xs text-orange-200">{item.action_note}</p>
-          )}
+      <div className="rounded-xl border border-orange-400/30 bg-orange-400/10 p-4">
+        <h4 className="text-sm font-semibold text-orange-300">À faire</h4>
+        <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-orange-100">
+          {["traite", "clos", "archive"].includes(item.status)
+            ? "Ce courrier est traité, clos ou archivé."
+            : item.action_required
+            ? item.action_note || "Une action est requise. Consultez le courrier pour préciser les démarches à effectuer."
+            : item.action_note || "Aucune action requise indiquée pour ce courrier."}
+        </p>
+      </div>
+
+      {scanLinks.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-sm font-semibold text-slate-200">Voir le courrier</h4>
+          {scanLinks.map((scan) => (
+            <a
+              key={`${scan.url}-${scan.name}`}
+              href={scan.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900/40 p-3 hover:bg-slate-800/40 transition-colors"
+            >
+              <span className="text-base">📎</span>
+              <span className="flex-1 truncate text-sm text-slate-300">{scan.name}</span>
+              <span className="text-xs text-cyan-400">Ouvrir →</span>
+            </a>
+          ))}
         </div>
+      )}
+
+      {item.full_text && (
+        <details className="rounded-xl border border-white/10 bg-slate-900/40 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-slate-200">Lire le texte du courrier</summary>
+          <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-300">{item.full_text}</p>
+        </details>
       )}
 
       {/* Alerte retard */}
@@ -499,25 +528,6 @@ export default function MailDetail({ item, onEdit, onDelete, onStatusChange, onC
         <div className="rounded-xl border border-blue-400/20 bg-blue-400/5 p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-blue-400/70 mb-1">Notes</p>
           <p className="text-sm text-slate-300 whitespace-pre-line">{item.notes}</p>
-        </div>
-      )}
-
-      {/* Pieces */}
-      {scanLinks.length > 0 && (
-        <div className="space-y-2">
-          {scanLinks.map((scan) => (
-            <a
-              key={`${scan.url}-${scan.name}`}
-              href={scan.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900/40 p-3 hover:bg-slate-800/40 transition-colors"
-            >
-              <span className="text-base">📎</span>
-              <span className="flex-1 truncate text-sm text-slate-300">{scan.name}</span>
-              <span className="text-xs text-cyan-400">Ouvrir →</span>
-            </a>
-          ))}
         </div>
       )}
 
